@@ -48,9 +48,29 @@ export interface SkippedItem {
 
 export interface SourceResult {
   items: NewsItemDraft[];
+  /** Items present on the platform but unusable (malformed, no media URL, …). Never thrown. */
   skipped: SkippedItem[];
+  /** Non-fatal problems worth showing in the admin console (e.g. "Spotify link lookup failed: …"). */
+  warnings: string[];
   /** e.g. podcast title or "@handle", shown in the admin console. */
   accountLabel: string | null;
+  /**
+   * Opaque value to persist and pass back on the next poll (RSS: ETag/Last-Modified, X: newest post id).
+   * `null` = this source keeps no cursor.
+   */
+  cursor: string | null;
+  /** True when the platform said nothing changed since `cursor` (HTTP 304). `items` is then empty. */
+  notModified: boolean;
+}
+
+/**
+ * Every inbound platform implements this. Re-polling is idempotent: the caller upserts by `dedupeKey`.
+ * `fetchLatest` throws only the typed errors below (auth / rate limit / unavailable / config); a single
+ * bad item is reported in `skipped`, never thrown.
+ */
+export interface ContentSource {
+  readonly source: NewsItemDraft['source'];
+  fetchLatest(cursor: string | null): Promise<SourceResult>;
 }
 
 /** Typed failures so apps/api can show actionable errors in the admin console. */
@@ -72,6 +92,20 @@ export class IntegrationRateLimitError extends Error {
   }
 }
 
+/** The settings are wrong (feed URL 404 / not RSS, unknown user or account id) — admin must fix them. */
+export class IntegrationConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'IntegrationConfigError';
+  }
+}
+
+export type IntegrationError =
+  | IntegrationAuthError
+  | IntegrationRateLimitError
+  | IntegrationUnavailableError
+  | IntegrationConfigError;
+
 export class IntegrationUnavailableError extends Error {
   constructor(
     message: string,
@@ -91,9 +125,14 @@ export interface EpisodeRef {
   episodeNumber: number | null;
 }
 
+/** Links found by resolvers, keyed by `EpisodeRef.dedupeKey`. */
+export type ResolvedPodcastLinks = Map<string, { spotify?: string; apple?: string }>;
+
 /** Resolves platform links for episodes. Spotify/Apple may list an episode minutes–hours after RSS. */
 export interface PodcastLinkResolver {
-  resolve(episodes: readonly EpisodeRef[]): Promise<Map<string, { spotify?: string; apple?: string }>>;
+  readonly platform: 'spotify' | 'apple';
+  /** Keyed by `EpisodeRef.dedupeKey`; episodes not (yet) listed on the platform are simply absent. */
+  resolve(episodes: readonly EpisodeRef[]): Promise<ResolvedPodcastLinks>;
 }
 
 /** Outbound: post text (+ optional image bytes) to a platform. Used for X and WhatsApp. */
