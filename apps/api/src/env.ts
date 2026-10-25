@@ -63,7 +63,9 @@ export function parseOrigins(raw: string): string[] {
 
 /** Parses process.env; throws a readable error listing every bad variable. */
 export function loadEnv(source: Record<string, string | undefined> = process.env): Env {
-  const result = EnvSchema.safeParse(source);
+  // `KEY=` in a .env file means "not set", not "set to an empty string".
+  const cleaned = Object.fromEntries(Object.entries(source).filter(([, v]) => v !== undefined && v.trim() !== ''));
+  const result = EnvSchema.safeParse(cleaned);
   if (!result.success) {
     const lines = result.error.issues.map((i) => `  ${i.path.join('.') || '(env)'}: ${i.message}`);
     throw new Error(`Invalid environment:\n${lines.join('\n')}`);

@@ -5,6 +5,13 @@ import { loadEnv } from './env.js';
 const base = { DATABASE_URL: 'postgresql://u:p@localhost:5432/db' };
 
 describe('env', () => {
+  it('treats blank values (KEY= in .env) as unset', () => {
+    const env = loadEnv({ ...base, FPL_USER_AGENT: '', SECRETS_KEY: '', CRON_SECRET: '  ', PORT: '' });
+    expect(env.SECRETS_KEY).toBeUndefined();
+    expect(env.CRON_SECRET).toBeUndefined();
+    expect(env.PORT).toBe(4000);
+  });
+
   it('applies defaults in development', () => {
     const env = loadEnv(base);
     expect(env).toMatchObject({ PORT: 4000, HOST: '0.0.0.0', FPL_MODE: 'live', NODE_ENV: 'development' });
