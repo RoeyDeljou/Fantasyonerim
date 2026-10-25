@@ -238,8 +238,12 @@ function LiveTable({ index, interval }: { index: FplIndex; interval: number }) {
                         <Movement rank={r.liveRank} lastRank={r.officialRank} />
                       </span>
                       <span className="flex min-w-0 flex-col gap-0.5">
-                        <span className="truncate font-semibold text-ink">{r.entryName}</span>
-                        <span className="truncate text-xs text-muted">{r.managerName}</span>
+                        <span dir="auto" className="truncate text-start font-semibold text-ink">
+                          {r.entryName}
+                        </span>
+                        <span dir="auto" className="truncate text-start text-xs text-muted">
+                          {r.managerName}
+                        </span>
                         <span className="flex flex-wrap items-center gap-1 text-[11px] text-muted">
                           {captain && (
                             <Badge tone="primary" className="px-1.5 py-0">

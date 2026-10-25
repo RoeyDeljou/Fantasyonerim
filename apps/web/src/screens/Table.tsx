@@ -125,8 +125,12 @@ function TableInner() {
                     <Movement rank={r.rank} lastRank={r.lastRank} />
                   </span>
                   <span className="flex min-w-0 flex-col">
-                    <span className="truncate font-semibold text-ink">{r.entryName}</span>
-                    <span className="truncate text-xs text-muted">{r.managerName}</span>
+                    <span dir="auto" className="truncate text-start font-semibold text-ink">
+                      {r.entryName}
+                    </span>
+                    <span dir="auto" className="truncate text-start text-xs text-muted">
+                      {r.managerName}
+                    </span>
                   </span>
                   <span className="text-center font-semibold text-ink tabular">{r.eventTotal}</span>
                   <span className="text-end font-extrabold text-ink tabular">{f.num(r.total)}</span>

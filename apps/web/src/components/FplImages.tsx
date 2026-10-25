@@ -40,9 +40,8 @@ export function ImageWithFallback({
       <span
         aria-hidden="true"
         className={cx(
-          'inline-flex items-center justify-center rounded-full bg-primary font-bold text-on-primary',
-          className,
-          fallbackClassName,
+          'inline-flex shrink-0 items-center justify-center rounded-full bg-primary font-bold text-on-primary',
+          fallbackClassName ?? className,
         )}
       >
         {fallbackText ?? initials(name)}

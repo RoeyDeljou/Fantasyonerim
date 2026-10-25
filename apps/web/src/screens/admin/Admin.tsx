@@ -137,7 +137,8 @@ function SettingsSection() {
     );
   }
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => settings.refetch()} />;
-  return <SettingsForm key={JSON.stringify(settings.data)} initial={settings.data} t={t} />;
+  // Not keyed on the data: a save updates the cache and must not remount (and reset) the form.
+  return <SettingsForm initial={settings.data} t={t} />;
 }
 
 function SettingsForm({ initial, t }: { initial: AdminSettings; t: Messages }) {
@@ -354,10 +355,15 @@ function CaptainBattleEditor() {
   if (battle.isError) return <ErrorState error={battle.error} onRetry={() => battle.refetch()} />;
   if (fpl.isError || !fpl.index) return <ErrorState error={fpl.error} onRetry={() => fpl.refetch()} />;
   const b = fpl.index.bootstrap;
-  const defaultEvent = battle.data?.event ?? b.nextEvent ?? b.currentEvent;
+  // Default: the GW in progress (until it is finished), otherwise the next one.
+  const currentInfo = b.events.find((e) => e.id === b.currentEvent);
+  const defaultEvent =
+    battle.data?.event ??
+    (b.currentEvent !== null && currentInfo && !currentInfo.finished
+      ? b.currentEvent
+      : (b.nextEvent ?? b.currentEvent));
   return (
     <BattleForm
-      key={JSON.stringify(battle.data)}
       index={fpl.index}
       initialEvent={defaultEvent}
       initialRows={(battle.data?.entries ?? []).map((e) => ({ uid: nextUid(), ...e }))}

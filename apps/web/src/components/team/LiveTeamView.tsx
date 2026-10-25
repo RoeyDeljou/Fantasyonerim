@@ -196,7 +196,7 @@ function LivePlayerRow({ pick, index, onSelect }: { pick: LivePick; index: FplIn
             {pick.effectiveMultiplier === 0 ? pick.basePoints : pick.points}
           </span>
           {pick.effectiveMultiplier > 1 && (
-            <span className="text-[11px] text-muted tabular">
+            <span dir="ltr" className="text-[11px] text-muted tabular">
               {pick.basePoints} {fmt(t.live.multiplier, { n: pick.effectiveMultiplier })}
             </span>
           )}
