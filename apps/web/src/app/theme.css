@@ -1,0 +1,108 @@
+/*
+ * Fantasyonerim theme — the ONLY place colours are defined.
+ * Brand (logo): purple #3D185B · mint #C7EFD5 · off-white #F6F4F5.
+ * Light = mint / off-white surfaces with purple primary. Dark = deep purple surfaces with mint primary.
+ * Text pairs were checked for WCAG AA (≥ 4.5:1 body text, ≥ 3:1 large/UI).
+ */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --brand-purple: #3d185b;
+  --brand-mint: #c7efd5;
+  --brand-offwhite: #f6f4f5;
+
+  --canvas: #f6f4f5; /* page background */
+  --surface: #ffffff; /* cards */
+  --surface-2: #eef8f2; /* subtle mint-tinted fills, skeletons, inputs */
+  --surface-3: #e3f4e9; /* pressed / selected fills */
+  --line: #ddd3e5; /* borders, dividers */
+  --ink: #22102f; /* primary text — 15:1 on surface */
+  --muted: #5d4b6b; /* secondary text — 7.6:1 on surface */
+  --primary: #3d185b; /* brand purple: buttons, active tab */
+  --on-primary: #ffffff;
+  --primary-soft: #ece3f3; /* purple tint container */
+  --on-primary-soft: #3d185b;
+  --accent: #c7efd5; /* brand mint container */
+  --on-accent: #2a0f40;
+  --success: #0b6e3c;
+  --success-soft: #d7f3e2;
+  --live: #c8102e;
+  --live-soft: #fde3e6;
+  --warning: #8a4b00;
+  --warning-soft: #fdeccc;
+  --scrim: rgb(20 8 30 / 0.5);
+  --shadow: 0 1px 2px rgb(61 24 91 / 0.06), 0 4px 16px rgb(61 24 91 / 0.08);
+  --pitch-a: #b9e7c9;
+  --pitch-b: #addfbf;
+  --pitch-line: rgb(255 255 255 / 0.85);
+  --pitch-ink: #22102f;
+  --bench: #e9e2ef;
+  --chip-label: rgb(255 255 255 / 0.92);
+  --theme-color: #c7efd5;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: #150a1f;
+  --surface: #21102f;
+  --surface-2: #2a163b;
+  --surface-3: #351d4a;
+  --line: #43295a;
+  --ink: #f6f4f5; /* 16:1 on surface */
+  --muted: #c3b4d1; /* 9:1 on surface */
+  --primary: #c7efd5; /* brand mint */
+  --on-primary: #2a0f40;
+  --primary-soft: #3d185b;
+  --on-primary-soft: #c7efd5;
+  --accent: #3d185b;
+  --on-accent: #c7efd5;
+  --success: #6fdc9f;
+  --success-soft: #133a28;
+  --live: #ff6b78;
+  --live-soft: #4a1422;
+  --warning: #f7c063;
+  --warning-soft: #45300c;
+  --scrim: rgb(0 0 0 / 0.6);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 20px rgb(0 0 0 / 0.35);
+  --pitch-a: #2f1846;
+  --pitch-b: #2a143f;
+  --pitch-line: rgb(199 239 213 / 0.45);
+  --pitch-ink: #f6f4f5;
+  --bench: #1b0d27;
+  --chip-label: rgb(21 10 31 / 0.88);
+  --theme-color: #150a1f;
+}
+
+/* No-JS fallback: follow the system when no explicit theme was set. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --canvas: #150a1f;
+    --surface: #21102f;
+    --surface-2: #2a163b;
+    --surface-3: #351d4a;
+    --line: #43295a;
+    --ink: #f6f4f5;
+    --muted: #c3b4d1;
+    --primary: #c7efd5;
+    --on-primary: #2a0f40;
+    --primary-soft: #3d185b;
+    --on-primary-soft: #c7efd5;
+    --accent: #3d185b;
+    --on-accent: #c7efd5;
+    --success: #6fdc9f;
+    --success-soft: #133a28;
+    --live: #ff6b78;
+    --live-soft: #4a1422;
+    --warning: #f7c063;
+    --warning-soft: #45300c;
+    --scrim: rgb(0 0 0 / 0.6);
+    --pitch-a: #2f1846;
+    --pitch-b: #2a143f;
+    --pitch-line: rgb(199 239 213 / 0.45);
+    --pitch-ink: #f6f4f5;
+    --bench: #1b0d27;
+    --chip-label: rgb(21 10 31 / 0.88);
+    --theme-color: #150a1f;
+  }
+}

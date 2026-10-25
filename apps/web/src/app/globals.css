@@ -1,0 +1,129 @@
+@import 'tailwindcss';
+@import './theme.css';
+
+@theme inline {
+  --font-sans: 'Rubik Variable', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-on-primary-soft: var(--on-primary-soft);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-live: var(--live);
+  --color-live-soft: var(--live-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-scrim: var(--scrim);
+  --color-pitch-a: var(--pitch-a);
+  --color-pitch-b: var(--pitch-b);
+  --color-pitch-line: var(--pitch-line);
+  --color-pitch-ink: var(--pitch-ink);
+  --color-bench: var(--bench);
+  --color-chip-label: var(--chip-label);
+  --shadow-card: var(--shadow);
+}
+
+@custom-variant rtl (&:where([dir='rtl'], [dir='rtl'] *));
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* skeleton shimmer */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 50%, var(--surface-2) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.live-dot {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* bottom sheet (native <dialog>) */
+dialog.sheet {
+  margin: auto auto 0;
+  max-width: min(100vw, 32rem);
+  width: 100%;
+  max-height: 88dvh;
+  border: 0;
+  padding: 0;
+  background: var(--surface);
+  color: var(--ink);
+  border-start-start-radius: 1.25rem;
+  border-start-end-radius: 1.25rem;
+  box-shadow: var(--shadow);
+}
+dialog.sheet::backdrop {
+  background: var(--scrim);
+}
+dialog.sheet[open] {
+  animation: sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
