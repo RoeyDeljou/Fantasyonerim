@@ -132,6 +132,7 @@ function FixtureCard({ fx, index, t, f }: { fx: Fixture; index: FplIndex; t: Mes
         <ImageWithFallback
           src={fplImage.badge(team.code)}
           name={team.shortName}
+          fallbackText={team.shortName}
           className="size-8"
           fallbackClassName="size-8 text-[10px]"
         />

@@ -130,6 +130,7 @@ function PlayerToken<P extends Pick | LivePick>({
           <ImageWithFallback
             src={fplImage.shirt(team.code, player?.position === 'GKP')}
             name={team.shortName}
+            fallbackText={team.shortName}
             className="h-11 w-10 drop-shadow"
             fallbackClassName="size-10 text-xs"
           />
@@ -173,7 +174,10 @@ function PlayerToken<P extends Pick | LivePick>({
           </span>
         )}
       </span>
-      <span className="mt-0.5 block w-full truncate rounded-t-md bg-chip-label px-1 text-center text-[11px] leading-5 font-semibold text-pitch-ink">
+      <span
+        dir="auto"
+        className="mt-0.5 block w-full truncate rounded-t-md bg-chip-label px-1 text-center text-[11px] leading-5 font-semibold text-pitch-ink"
+      >
         {name}
       </span>
       <span
@@ -195,6 +199,7 @@ function PlayerToken<P extends Pick | LivePick>({
   return (
     <button
       type="button"
+      data-testid="pitch-player"
       className={cx(cls, 'rounded-lg focus-visible:outline-offset-1')}
       onClick={() => onSelect(pick)}
     >

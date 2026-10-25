@@ -99,7 +99,7 @@ export function TeamHeader({
                   picks.transfersCost > 0 ? 'text-live' : 'text-muted',
                 )}
               >
-                {picks.transfersCost > 0 ? `(−${picks.transfersCost})` : `(${t.myTeam.noHits})`}
+                {picks.transfersCost > 0 ? `−${picks.transfersCost}` : t.myTeam.noHits}
               </span>
             </>
           }

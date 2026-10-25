@@ -147,6 +147,7 @@ function LivePlayerRow({ pick, index, onSelect }: { pick: LivePick; index: FplIn
           <ImageWithFallback
             src={fplImage.shirt(team.code, player?.position === 'GKP')}
             name={team.shortName}
+            fallbackText={team.shortName}
             className="h-9 w-8 shrink-0"
             fallbackClassName="size-8 text-[10px]"
           />

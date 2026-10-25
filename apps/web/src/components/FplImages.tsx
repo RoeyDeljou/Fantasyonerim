@@ -25,9 +25,12 @@ export function ImageWithFallback({
   name,
   className,
   fallbackClassName,
+  fallbackText,
 }: {
   src: string | null;
   name: string;
+  /** Shown instead of initials, e.g. a club short name ("LIV"). */
+  fallbackText?: string | undefined;
   className?: string;
   fallbackClassName?: string;
 }) {
@@ -42,7 +45,7 @@ export function ImageWithFallback({
           fallbackClassName,
         )}
       >
-        {initials(name)}
+        {fallbackText ?? initials(name)}
       </span>
     );
   }
