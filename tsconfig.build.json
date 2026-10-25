@@ -1,4 +1,17 @@
 {
   "files": [],
-  "references": [{ "path": "./packages/shared" }, { "path": "./packages/fpl" }, { "path": "./apps/api" }]
+  "references": [
+    {
+      "path": "./packages/shared"
+    },
+    {
+      "path": "./packages/fpl"
+    },
+    {
+      "path": "./packages/integrations"
+    },
+    {
+      "path": "./apps/api"
+    }
+  ]
 }

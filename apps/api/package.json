@@ -15,6 +15,7 @@
     "db:test:reset": "node scripts/reset-test-db.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1156.0",
     "@fant/fpl": "0.1.0",
     "@fant/shared": "0.1.0",
     "@fastify/cors": "^11.3.1",
