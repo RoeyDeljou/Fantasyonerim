@@ -1,0 +1,107 @@
+// Fantasyonerim API — Postgres schema.
+// Migrations: `npm run prisma:migrate -w @fant/api` (dev) / `prisma migrate deploy` (prod + tests).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum CaptainBattleEntryKind {
+  COMMUNITY
+  CUSTOM
+}
+
+model User {
+  id               String    @id @default(cuid())
+  name             String
+  /// FPL Team ID. Null only for admin-only accounts. One account per team.
+  entryId          Int?      @unique
+  teamName         String?
+  role             Role      @default(USER)
+  /// "he" | "en" (validated with LocaleSchema on read).
+  locale           String    @default("he")
+  /// argon2id hash of the normalized recovery code (verification).
+  recoveryCodeHash String?
+  /// AES-256-GCM ciphertext of the recovery code (so Profile can show it). Never logged.
+  recoveryCodeEnc  String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  bannedAt         DateTime?
+
+  sessions        Session[]
+  adminCredential AdminCredential?
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  /// SHA-256 (hex) of the opaque bearer token. The token itself is never stored.
+  tokenHash  String   @unique
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  expiresAt  DateTime
+  userAgent  String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AdminCredential {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  /// argon2id
+  passwordHash String
+  userId       String   @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Singleton row (id = 1).
+model AppSettings {
+  id                      Int      @id @default(1)
+  leagueId                Int?
+  leagueName              String?
+  deadlineReminderMinutes Int[]    @default([1440, 120])
+  spotifyUrl              String?
+  appleUrl                String?
+  instagramUrl            String?
+  xUrl                    String?
+  whatsappUrl             String?
+  updatedAt               DateTime @updatedAt
+}
+
+model CaptainBattle {
+  id        String   @id @default(cuid())
+  event     Int      @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries CaptainBattleEntry[]
+
+  @@index([updatedAt])
+}
+
+model CaptainBattleEntry {
+  id       String                 @id @default(cuid())
+  battleId String
+  order    Int
+  label    String
+  playerId Int
+  kind     CaptainBattleEntryKind
+
+  battle CaptainBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
+
+  @@unique([battleId, order])
+}

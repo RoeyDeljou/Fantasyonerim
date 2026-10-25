@@ -97,6 +97,7 @@ export const UpdateMeBodySchema = z.object({
 export type UpdateMeBody = z.infer<typeof UpdateMeBodySchema>;
 
 export const RecoveryCodeResponseSchema = z.object({ recoveryCode: z.string() });
+export type RecoveryCodeResponse = z.infer<typeof RecoveryCodeResponseSchema>;
 
 // ---------- app config (public) ----------
 /** GET /v1/config — public, unauthenticated; what the client needs to render tabs. */
@@ -156,6 +157,8 @@ export type CaptainBattle = z.infer<typeof CaptainBattleSchema>;
 /** GET/PUT /v1/admin/settings */
 export const AdminSettingsSchema = z.object({
   leagueId: FplLeagueIdSchema.nullable(),
+  /** Read-only: resolved from FPL when leagueId is saved. Ignored on PUT. */
+  leagueName: z.string().nullable().optional(),
   /** Minutes before each FPL deadline to send a reminder push, e.g. [1440, 120]. */
   deadlineReminderMinutes: z.array(z.number().int().min(5).max(4320)).max(5),
   socials: PublicConfigSchema.shape.socials,
@@ -163,4 +166,6 @@ export const AdminSettingsSchema = z.object({
 export type AdminSettings = z.infer<typeof AdminSettingsSchema>;
 
 export const CreateAdminBodySchema = AdminLoginBodySchema.extend({ name: DisplayNameSchema });
+export type CreateAdminBody = z.infer<typeof CreateAdminBodySchema>;
 export const AdminAccountSchema = z.object({ userId: UserIdSchema, username: z.string(), name: z.string() });
+export type AdminAccount = z.infer<typeof AdminAccountSchema>;
