@@ -17,10 +17,12 @@ Hard rules:
 - Validate every provider response with Zod. Never crash a poll on one bad item — skip it and report it.
 - Credentials are passed in by the caller (apps/api stores them encrypted); this package never reads env vars or
   a database directly. `fetch`, clock and storage callbacks are injected so tests run offline on recorded payloads.
-- Instagram: Instagram API with Instagram Login (`graph.instagram.com`), professional (Business/Creator) account.
-  Posts via `/me/media` (incl. CAROUSEL children, REELS/VIDEO thumbnails), stories via `/me/stories` (24 h
-  lifetime). Media CDN URLs expire: expose the original URL so apps/api can re-host the bytes. Long-lived token
-  refresh (`refresh_access_token`) must be supported.
+- Instagram: Facebook Login for Business flavour (`graph.facebook.com`, one `GRAPH_API_VERSION` constant), with an
+  Instagram Business/Creator account linked to a Facebook Page — the IG User `stories` edge is reliably available
+  there. Posts via `/{ig-user-id}/media` (incl. CAROUSEL children, REELS/VIDEO thumbnails), stories via
+  `/{ig-user-id}/stories` (24 h lifetime). Media CDN URLs expire: expose the original URL so apps/api can re-host
+  the bytes. Page tokens derived from a long-lived user token don't expire; surface Meta's data-access expiry
+  (~90-day re-consent) so the admin console can warn before it lapses.
 - X: API v2 `GET /2/users/:id/tweets` (exclude replies/retweets configurable, expand media) with a bearer token;
   posting via `POST /2/tweets` with OAuth 1.0a user context. X API is a paid feature for the client — design it to
   be switched on purely by adding keys.

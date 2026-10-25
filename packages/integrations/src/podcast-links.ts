@@ -60,7 +60,11 @@ const HOUR = 3_600_000;
  * Matches RSS episodes to platform episodes, most reliable signal first:
  *   1. GUID (Apple exposes the RSS guid);
  *   2. normalized title (full, then with the "פרק NN -" prefix stripped), unique on the platform side;
- *   3. episode number (RSS itunes:episode vs. number written in the platform title) + date within 48 h.
+ *   3. episode number (RSS itunes:episode vs. number written in the platform title) + date within 48 h;
+ *   4. date alone, only when it is unambiguous: exactly one unmatched platform episode within 12 h of the
+ *      RSS episode, and that RSS episode is the only unmatched one within 12 h of it. Platform episodes
+ *      that carry a GUID (Apple) or a different episode number in their title never match on date.
+ * Pass every recent episode (not just the unresolved one) so tier 4 can see its rivals.
  * Each platform episode is used at most once.
  */
 export function matchEpisodes(
@@ -112,6 +116,22 @@ export function matchEpisodes(
     const best = closest(options, ref.publishedAt);
     if (best !== undefined) take(ref, best);
   }
+
+  const dateWindow = 12 * HOUR;
+  const unmatchedRefs = refs.filter((r) => !result.has(r.dedupeKey));
+  for (const ref of unmatchedRefs) {
+    const options = candidates.filter((ep) => {
+      if (used.has(ep) || ep.guid !== null || distance(ep, ref.publishedAt) > dateWindow) return false;
+      const n = episodeNumberFromTitle(ep.title);
+      return n === null || ref.episodeNumber === null || n === ref.episodeNumber;
+    });
+    const only = options[0];
+    if (options.length !== 1 || only === undefined) continue;
+    const rivals = unmatchedRefs.filter(
+      (r) => !result.has(r.dedupeKey) && distance(only, r.publishedAt) <= dateWindow,
+    );
+    if (rivals.length === 1) take(ref, only);
+  }
   return result;
 }
 
@@ -154,7 +174,11 @@ export function createPodcastSource(config: PodcastSourceConfig, ctx: Integratio
       if (feed.notModified || feed.items.length === 0) return feed;
       const refs = feed.items.map(episodeRefFromDraft).filter((r): r is EpisodeRef => r !== null);
       const { links, warnings } = await resolveEpisodeLinks(refs, config.resolvers);
-      return { ...feed, items: mergePodcastLinks(feed.items, links), warnings: [...feed.warnings, ...warnings] };
+      return {
+        ...feed,
+        items: mergePodcastLinks(feed.items, links),
+        warnings: [...feed.warnings, ...warnings],
+      };
     },
   };
 }
@@ -174,4 +198,3 @@ export async function resolveEpisodeLinks(
   });
   return { links: combineResolvedLinks(maps), warnings };
 }
-

@@ -12,11 +12,7 @@ import type {
   SkippedItem,
   SourceResult,
 } from './types.js';
-import {
-  IntegrationConfigError,
-  IntegrationRateLimitError,
-  IntegrationUnavailableError,
-} from './types.js';
+import { IntegrationConfigError, IntegrationRateLimitError, IntegrationUnavailableError } from './types.js';
 
 export interface PodcastRssConfig {
   /** e.g. https://anchor.fm/s/105778688/podcast/rss */
@@ -148,7 +144,9 @@ export function parsePodcastRss(xml: string): Pick<SourceResult, 'items' | 'skip
     const text = html === null ? null : htmlToPlainText(html) || null;
     const image = httpUrlOrNull(attrOf(it['itunes:image'], 'href')) ?? channelImage;
     const media: MediaDraft[] =
-      image === null ? [] : [{ kind: 'image', sourceUrl: image, posterSourceUrl: null, width: null, height: null }];
+      image === null
+        ? []
+        : [{ kind: 'image', sourceUrl: image, posterSourceUrl: null, width: null, height: null }];
     acceptDraft(
       {
         dedupeKey: `${PODCAST_DEDUPE_PREFIX}${guid}`,
@@ -202,19 +200,28 @@ export async function fetchPodcastFeed(
     };
   }
   if (res.status === 429) {
-    throw new IntegrationRateLimitError('The podcast host rate-limited the RSS request.', retryAfterSec(res, ctx.now()));
+    throw new IntegrationRateLimitError(
+      'The podcast host rate-limited the RSS request.',
+      retryAfterSec(res, ctx.now()),
+    );
   }
   if (res.status === 404 || res.status === 410) {
     throw new IntegrationConfigError(`The podcast RSS URL returned HTTP ${res.status} — check the URL.`);
   }
   if (!res.ok) {
-    throw new IntegrationUnavailableError(`The podcast RSS request failed with HTTP ${res.status}.`, res.status);
+    throw new IntegrationUnavailableError(
+      `The podcast RSS request failed with HTTP ${res.status}.`,
+      res.status,
+    );
   }
   let xml: string;
   try {
     xml = await res.text();
   } catch (err) {
-    throw new IntegrationUnavailableError(`Reading the podcast RSS failed: ${describeError(err)}`, res.status);
+    throw new IntegrationUnavailableError(
+      `Reading the podcast RSS failed: ${describeError(err)}`,
+      res.status,
+    );
   }
   const parsed = parsePodcastRss(xml);
   return {
@@ -235,7 +242,11 @@ export function createPodcastRssSource(config: PodcastRssConfig, ctx: Integratio
 
 /** The lookup key the Spotify/Apple resolvers need, from a podcast draft (`podcast:<guid>`). */
 export function episodeRefFromDraft(draft: NewsItemDraft): EpisodeRef | null {
-  if (draft.source !== 'podcast' || !draft.dedupeKey.startsWith(PODCAST_DEDUPE_PREFIX) || draft.title === null) {
+  if (
+    draft.source !== 'podcast' ||
+    !draft.dedupeKey.startsWith(PODCAST_DEDUPE_PREFIX) ||
+    draft.title === null
+  ) {
     return null;
   }
   return {

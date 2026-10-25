@@ -36,7 +36,8 @@ const NAMED_ENTITIES: Readonly<Record<string, string>> = {
 export function decodeHtmlEntities(input: string): string {
   return input.replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z][a-z0-9]*);/gi, (match, body: string) => {
     if (body.startsWith('#')) {
-      const code = body[1] === 'x' || body[1] === 'X' ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
+      const code =
+        body[1] === 'x' || body[1] === 'X' ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
       if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
         return match;
       }
@@ -60,23 +61,27 @@ export function htmlToPlainText(html: string): string {
   s = s.replace(/<(script|style|head)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '');
   // Source newlines are insignificant in HTML.
   s = s.replace(/\s*\n\s*/g, ' ');
-  s = s.replace(/<a\b[^>]*?href\s*=\s*("([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/a\s*>/gi, (_m, _q, dq, sq, inner) => {
-    const href = decodeHtmlEntities(String(dq ?? sq ?? '')).trim();
-    const label = String(inner);
-    const labelText = decodeHtmlEntities(label.replace(/<[^>]*>/g, '')).trim();
-    if (labelText === '') return href;
-    const labelIsUrl = /^\S+\.\S+$/u.test(labelText) && href.includes(labelText.replace(/^https?:\/\//i, ''));
-    if (!/^https?:\/\//i.test(href) || labelText.includes(href) || labelIsUrl) return label;
-    return `${label} (${href})`;
-  });
+  s = s.replace(
+    /<a\b[^>]*?href\s*=\s*("([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/a\s*>/gi,
+    (_m, _q, dq, sq, inner) => {
+      const href = decodeHtmlEntities(String(dq ?? sq ?? '')).trim();
+      const label = String(inner);
+      const labelText = decodeHtmlEntities(label.replace(/<[^>]*>/g, '')).trim();
+      if (labelText === '') return href;
+      const labelIsUrl =
+        /^\S+\.\S+$/u.test(labelText) && href.includes(labelText.replace(/^https?:\/\//i, ''));
+      if (!/^https?:\/\//i.test(href) || labelText.includes(href) || labelIsUrl) return label;
+      return `${label} (${href})`;
+    },
+  );
   s = s.replace(/<br\s*\/?>/gi, '\n');
-  s = s.replace(/<li\b[^>]*>/gi, '\n• ');
+  s = s.replace(/<li\b[^>]*>/gi, '\n• ').replace(/<\/li\s*>/gi, '');
   s = s.replace(new RegExp(`<\\/?(?:${BLOCK_TAGS})\\b[^>]*>`, 'gi'), (tag) =>
     tag.startsWith('</') || /^<(ul|ol|table)/i.test(tag) ? '\n' : '',
   );
   s = s.replace(/<[^>]*>/g, '');
   s = decodeHtmlEntities(s);
-  const lines = s.split('\n').map((line) => line.replace(/[ \t ]+/g, ' ').trim());
+  const lines = s.split('\n').map((line) => line.replace(/[ \t\u00a0]+/g, ' ').trim());
   return lines
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')

@@ -153,6 +153,8 @@ export const IntegrationStatusSchema = z.object({
   itemsImported: z.number().int().nonnegative(),
   /** Instagram only: when the stored token needs reconnecting (null = never expires). */
   tokenExpiresAt: z.string().datetime({ offset: true }).nullable(),
+  /** Instagram only: Meta data-access expiry (re-consent date), null if not reported. */
+  dataAccessExpiresAt: z.string().datetime({ offset: true }).nullable(),
 });
 export type IntegrationStatus = z.infer<typeof IntegrationStatusSchema>;
 
@@ -162,7 +164,10 @@ export type IntegrationList = z.infer<typeof IntegrationListSchema>;
 /** PUT /v1/admin/integrations/:id — each integration validates its own keys server-side. */
 export const IntegrationUpdateBodySchema = z.object({
   enabled: z.boolean(),
-  /** Non-secret settings. podcast_rss: rssUrl · spotify: showId · apple: podcastId · x: username */
+  /**
+   * Non-secret settings. podcast_rss: rssUrl · spotify: showId · apple: podcastId · x: username (userId resolved
+   * server-side) · instagram: set by OAuth (igUserId, username, pageId).
+   */
   settings: z.record(z.string(), z.string().trim().max(500).nullable()),
   /**
    * Secret settings, write-only. spotify: clientId, clientSecret · x: bearerToken, apiKey, apiSecret,

@@ -101,10 +101,7 @@ export class IntegrationConfigError extends Error {
 }
 
 export type IntegrationError =
-  | IntegrationAuthError
-  | IntegrationRateLimitError
-  | IntegrationUnavailableError
-  | IntegrationConfigError;
+  IntegrationAuthError | IntegrationRateLimitError | IntegrationUnavailableError | IntegrationConfigError;
 
 export class IntegrationUnavailableError extends Error {
   constructor(

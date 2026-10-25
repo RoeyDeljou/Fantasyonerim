@@ -63,12 +63,20 @@ export function createAppleLinkResolver(
       url.searchParams.set('limit', '200');
       if (config.country !== undefined) url.searchParams.set('country', config.country);
 
-      const res = await send(ctx, 'Apple Podcasts', url.toString(), { headers: { Accept: 'application/json' } });
+      const res = await send(ctx, 'Apple Podcasts', url.toString(), {
+        headers: { Accept: 'application/json' },
+      });
       if (res.status === 429 || res.status === 403) {
-        throw new IntegrationRateLimitError('Apple Podcasts lookup was rate-limited.', retryAfterSec(res, ctx.now()));
+        throw new IntegrationRateLimitError(
+          'Apple Podcasts lookup was rate-limited.',
+          retryAfterSec(res, ctx.now()),
+        );
       }
       if (!res.ok) {
-        throw new IntegrationUnavailableError(`Apple Podcasts lookup failed with HTTP ${res.status}.`, res.status);
+        throw new IntegrationUnavailableError(
+          `Apple Podcasts lookup failed with HTTP ${res.status}.`,
+          res.status,
+        );
       }
       const body = parseEnvelope('Apple Podcasts', LookupSchema, await readJson(res), res.status);
       if (body.resultCount === 0) {
