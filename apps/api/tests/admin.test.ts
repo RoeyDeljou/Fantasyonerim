@@ -88,6 +88,7 @@ describe('admin settings', () => {
     const initial = await app.inject({ method: 'GET', url: '/v1/admin/settings', headers: bearer(token) });
     expect(AdminSettingsSchema.parse(initial.json())).toEqual({
       leagueId: null,
+      leagueName: null,
       deadlineReminderMinutes: [1440, 120],
       socials: { spotifyUrl: null, appleUrl: null, instagramUrl: null, xUrl: null, whatsappUrl: null },
     });
@@ -112,6 +113,7 @@ describe('admin settings', () => {
     expect(saved.statusCode).toBe(200);
     expect(AdminSettingsSchema.parse(saved.json())).toMatchObject({
       leagueId: 314,
+      leagueName: 'Fantasyonerim League',
       deadlineReminderMinutes: [1440, 120],
     });
 

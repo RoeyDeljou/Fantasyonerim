@@ -30,6 +30,7 @@ export function toAdminSettings(s: AppSettings): AdminSettings {
     AdminSettingsSchema,
     {
       leagueId: s.leagueId,
+      leagueName: s.leagueName,
       deadlineReminderMinutes: s.deadlineReminderMinutes,
       socials: socialsOf(s),
     },
