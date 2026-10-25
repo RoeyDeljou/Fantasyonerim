@@ -89,6 +89,7 @@ export const FixtureSchema = z.object({
   status: FixtureStatusSchema,
 });
 export type Fixture = z.infer<typeof FixtureSchema>;
+export const FixtureListSchema = z.array(FixtureSchema);
 
 export const EntrySummarySchema = z.object({
   entryId: FplEntryIdSchema,

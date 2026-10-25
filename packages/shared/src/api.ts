@@ -169,3 +169,4 @@ export const CreateAdminBodySchema = AdminLoginBodySchema.extend({ name: Display
 export type CreateAdminBody = z.infer<typeof CreateAdminBodySchema>;
 export const AdminAccountSchema = z.object({ userId: UserIdSchema, username: z.string(), name: z.string() });
 export type AdminAccount = z.infer<typeof AdminAccountSchema>;
+export const AdminAccountListSchema = z.array(AdminAccountSchema);
