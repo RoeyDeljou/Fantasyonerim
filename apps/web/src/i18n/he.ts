@@ -105,15 +105,6 @@ export const he = {
       'זה הקוד היחיד שמחבר אתכם לחשבון. תצטרכו אותו כדי להתחבר בטלפון חדש. אפשר לראות אותו שוב במסך הפרופיל.',
     savedCodeConfirm: 'שמרתי, יאללה',
   },
-  comingSoon: {
-    badge: 'בעדכון הבא',
-    newsTitle: 'כל התוכן של פנטזיונרים — במקום אחד',
-    newsBody:
-      'פרקים חדשים בספוטיפיי ובאפל פודקאסטס, פוסטים וסטוריז מאינסטגרם וציוצים מ־X יופיעו כאן אוטומטית.',
-    communityTitle: 'הקהילה בדרך',
-    communityBody: 'בקרוב תוכלו לפרסם, לשתף את ההרכב שלכם ולהגיב לשאר הפנטזיונרים.',
-    meanwhile: 'בינתיים, עקבו אחרינו',
-  },
   socials: {
     spotify: 'Spotify',
     apple: 'Apple Podcasts',
@@ -642,7 +633,7 @@ export const he = {
     reportsBody: 'מקובצים לפי תוכן. "הסרה" מוחקת את התוכן לכולם, "התעלמות" סוגרת את הדיווחים.',
     reportsEmpty: 'אין דיווחים פתוחים',
     reportCount: '{n} דיווחים',
-    firstReported: 'דיווח ראשון {time}',
+    firstReported: 'דיווח ראשון',
     notes: 'הערות המדווחים',
     kindPost: 'פוסט',
     kindComment: 'תגובה',
@@ -675,7 +666,7 @@ export const he = {
     hiddenTitle: 'פריטי חדשות מוסתרים',
     hiddenBody: 'הוסתר משהו בטעות? "שחזור" מחזיר אותו לפיד החדשות.',
     hiddenEmpty: 'אין פריטים מוסתרים.',
-    hiddenAt: 'הוסתר {time}',
+    hiddenAt: 'הוסתר',
     restore: 'שחזור',
     restored: 'הפריט חזר לפיד החדשות',
     untitled: 'ללא כותרת',

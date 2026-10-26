@@ -11,7 +11,16 @@ import { isBannedError } from '@/lib/banned';
 import { useBootstrap, useCreatePost, useEntry, usePicks } from '@/lib/queries';
 import { BottomSheet } from '@/components/BottomSheet';
 import { CloseIcon, ImageIcon, InfoIcon, SendIcon } from '@/components/icons';
-import { Button, EmptyState, InlineError, Skeleton, Spinner, Switch, cx, errorMessage } from '@/components/ui';
+import {
+  Button,
+  EmptyState,
+  InlineError,
+  Skeleton,
+  Spinner,
+  Switch,
+  cx,
+  errorMessage,
+} from '@/components/ui';
 import { AuthorAvatar, useNotify } from './parts';
 import { TeamPreview } from './TeamSnapshot';
 import type { TeamView } from './TeamSnapshot';
@@ -210,7 +219,10 @@ function ComposerForm({ me, onDone }: { me: Me; onDone(): void }) {
 
       {/* ---------- photo ---------- */}
       {(upload.status === 'uploading' || upload.status === 'done') && (
-        <div className="relative overflow-hidden rounded-2xl border border-line bg-surface-2" data-testid="composer-photo">
+        <div
+          className="relative overflow-hidden rounded-2xl border border-line bg-surface-2"
+          data-testid="composer-photo"
+        >
           <img
             src={upload.status === 'done' ? upload.image.url : upload.preview}
             alt={c.photoPreview}

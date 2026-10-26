@@ -120,7 +120,8 @@ export function communityRoutes(
     const last = page[page.length - 1];
     return serialize(CommunityPageSchema, {
       items: await toPosts(prisma, page, await viewerId(request)),
-      nextCursor: rows.length > query.limit && last !== undefined ? encodeCursor(last.createdAt, last.id) : null,
+      nextCursor:
+        rows.length > query.limit && last !== undefined ? encodeCursor(last.createdAt, last.id) : null,
     });
   });
 
@@ -186,9 +187,8 @@ export function communityRoutes(
         skipDuplicates: true,
       });
       if (inserted.count > 0) {
-        return (
-          await tx.communityPost.update({ where: { id }, data: { likeCount: { increment: 1 } } })
-        ).likeCount;
+        return (await tx.communityPost.update({ where: { id }, data: { likeCount: { increment: 1 } } }))
+          .likeCount;
       }
       return (await tx.communityPost.findUniqueOrThrow({ where: { id } })).likeCount;
     });
@@ -233,7 +233,8 @@ export function communityRoutes(
     const viewer = await viewerId(request);
     return serialize(CommentPageSchema, {
       items: page.map((row) => toComment(row, viewer)),
-      nextCursor: rows.length > query.limit && last !== undefined ? encodeCursor(last.createdAt, last.id) : null,
+      nextCursor:
+        rows.length > query.limit && last !== undefined ? encodeCursor(last.createdAt, last.id) : null,
     });
   });
 

@@ -8,7 +8,16 @@ import { isBannedError, useBanned } from '@/lib/banned';
 import { useComments, useCreateComment, useDeleteComment, useMe, usePost } from '@/lib/queries';
 import { ChatIcon, ChevronStartIcon, RefreshIcon, SendIcon } from '@/components/icons';
 import { LinkifiedText } from '@/components/news/parts';
-import { Button, EmptyState, ErrorState, InlineError, Skeleton, Spinner, cx, errorMessage } from '@/components/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  InlineError,
+  Skeleton,
+  Spinner,
+  cx,
+  errorMessage,
+} from '@/components/ui';
 import { ContentMenu } from './ContentMenu';
 import { AuthorAvatar, AuthorLine, BannedNotice, useNotify } from './parts';
 import { PostCard, PostCardSkeleton } from './PostCard';
@@ -196,7 +205,10 @@ function CommentBar({ postId, disabled }: { postId: PostId; disabled: boolean })
       onSuccess: (cm) => {
         setText('');
         window.setTimeout(
-          () => document.getElementById(`comment-${cm.id}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
+          () =>
+            document
+              .getElementById(`comment-${cm.id}`)
+              ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
           50,
         );
       },

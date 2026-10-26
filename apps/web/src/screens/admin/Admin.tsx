@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { IntegrationsView } from './Integrations';
+import { ModerationView } from './Moderation';
 import type { FormEvent, ReactNode } from 'react';
 import {
   AdminSettingsSchema,
@@ -79,7 +80,7 @@ export function AdminScreen() {
   );
 }
 
-type AdminView = 'settings' | 'integrations';
+type AdminView = 'settings' | 'integrations' | 'community';
 
 /**
  * `/admin/?view=integrations` — and the Instagram OAuth callback lands on `/admin/?instagram=connected` or
@@ -108,7 +109,12 @@ function AdminViews() {
     router.replace('/admin/?view=integrations', { scroll: false });
   }, [ig, reason, router, t]);
 
-  const view: AdminView = viewParam === 'integrations' || ig ? 'integrations' : 'settings';
+  const view: AdminView =
+    viewParam === 'integrations' || ig
+      ? 'integrations'
+      : viewParam === 'community'
+        ? 'community'
+        : 'settings';
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-extrabold text-ink">{t.admin.title}</h1>
@@ -125,6 +131,7 @@ function AdminViews() {
         options={[
           { value: 'settings', label: t.integrations.viewSettings },
           { value: 'integrations', label: t.integrations.viewIntegrations },
+          { value: 'community', label: t.moderation.view },
         ]}
       />
       {view === 'settings' ? (
@@ -133,8 +140,10 @@ function AdminViews() {
           <CaptainBattleEditor />
           <AdminsSection />
         </>
-      ) : (
+      ) : view === 'integrations' ? (
         <IntegrationsView />
+      ) : (
+        <ModerationView />
       )}
     </div>
   );

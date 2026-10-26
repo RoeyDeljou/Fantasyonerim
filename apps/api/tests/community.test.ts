@@ -10,7 +10,14 @@ import type { FastifyInstance } from 'fastify';
 import sharp from 'sharp';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { cleanupJob } from '../src/jobs/fpl.js';
-import { createComment, createPost, makeFullPicks, makeImage, multipart, upload } from './communityFixtures.js';
+import {
+  createComment,
+  createPost,
+  makeFullPicks,
+  makeImage,
+  multipart,
+  upload,
+} from './communityFixtures.js';
 import { FakePushProvider, MemoryMediaStore, subscribe } from './fakes.js';
 import type { FakeFplService } from './fakeFpl.js';
 import {
@@ -64,7 +71,11 @@ async function get(url: string, token: string | null = null) {
   return app.inject({ method: 'GET', url, headers: token === null ? {} : bearer(token) });
 }
 
-async function uploadRaw(token: string, bytes: Uint8Array, part: { filename?: string; contentType?: string; field?: string } = {}) {
+async function uploadRaw(
+  token: string,
+  bytes: Uint8Array,
+  part: { filename?: string; contentType?: string; field?: string } = {},
+) {
   const body = multipart({ ...part, bytes });
   return app.inject({
     method: 'POST',
@@ -102,14 +113,26 @@ describe('POST /v1/uploads', () => {
     expect(Buffer.from(stored?.bytes ?? new Uint8Array()).includes('Secret Model')).toBe(false);
 
     const row = await prisma.upload.findUniqueOrThrow({ where: { id: res.uploadId } });
-    expect(row).toMatchObject({ ownerId: fan.user.id, storageKey: key, width: 100, height: 300, usedAt: null });
+    expect(row).toMatchObject({
+      ownerId: fan.user.id,
+      storageKey: key,
+      width: 100,
+      height: 300,
+      usedAt: null,
+    });
   });
 
   it('fits large images inside 2048 px (never upscales small ones); accepts png and webp', async () => {
     const fan = await registerUser(app, fpl, 102);
-    const big = await upload(app, fan.token, await makeImage('png', 4000, 1000), { filename: 'x.png', contentType: 'image/png' });
+    const big = await upload(app, fan.token, await makeImage('png', 4000, 1000), {
+      filename: 'x.png',
+      contentType: 'image/png',
+    });
     expect(big.image).toMatchObject({ width: 2048, height: 512 });
-    const small = await upload(app, fan.token, await makeImage('webp', 640, 480), { filename: 'x.webp', contentType: 'image/webp' });
+    const small = await upload(app, fan.token, await makeImage('webp', 640, 480), {
+      filename: 'x.webp',
+      contentType: 'image/webp',
+    });
     expect(small.image).toMatchObject({ width: 640, height: 480 });
     // The declared type is ignored: a PNG sent as image/jpeg is fine (bytes decide).
     const mislabeled = await upload(app, fan.token, await makeImage('png', 50, 60), { filename: 'a.jpg' });
@@ -124,7 +147,9 @@ describe('POST /v1/uploads', () => {
     expect(errorOf(res).message).toMatch(/Unsupported image type/);
 
     const gif = Buffer.from('GIF89a\x01\x00\x01\x00\x00\x00\x00;', 'latin1');
-    expect((await uploadRaw(fan.token, gif, { filename: 'a.gif', contentType: 'image/gif' })).statusCode).toBe(415);
+    expect(
+      (await uploadRaw(fan.token, gif, { filename: 'a.gif', contentType: 'image/gif' })).statusCode,
+    ).toBe(415);
 
     const corrupt = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 7)]);
     const bad = await uploadRaw(fan.token, corrupt);
@@ -147,7 +172,12 @@ describe('POST /v1/uploads', () => {
   it('401 anonymous, 400 without a multipart "file" field or with an empty file', async () => {
     const fan = await registerUser(app, fpl, 105);
     const body = multipart({ bytes: await makeImage('jpeg', 10, 10) });
-    const anon = await app.inject({ method: 'POST', url: '/v1/uploads', headers: body.headers, payload: body.payload });
+    const anon = await app.inject({
+      method: 'POST',
+      url: '/v1/uploads',
+      headers: body.headers,
+      payload: body.payload,
+    });
     expect(anon.statusCode).toBe(401);
     expect((await post(fan.token, '/v1/uploads', { file: 'x' })).statusCode).toBe(400);
     const wrongField = await uploadRaw(fan.token, await makeImage('jpeg', 10, 10), { field: 'image' });
@@ -202,7 +232,14 @@ describe('posts', () => {
       author: { id: fan.user.id, name: 'Dana', entryId: 201, teamName: 'Team 201', role: 'user' },
     });
 
-    for (const payload of [{}, { text: '   ' }, { text: 'x'.repeat(1001) }, { text: 'bell\u0007' }, { text: 'nul\u0000' }, { text: 5 }]) {
+    for (const payload of [
+      {},
+      { text: '   ' },
+      { text: 'x'.repeat(1001) },
+      { text: 'bell\u0007' },
+      { text: 'nul\u0000' },
+      { text: 5 },
+    ]) {
       const res = await post(fan.token, '/v1/community/posts', payload);
       expect(res.statusCode, JSON.stringify(payload)).toBe(400);
       expect(errorOf(res).code).toBe('bad_request');
@@ -333,7 +370,9 @@ describe('posts', () => {
     const other = await createPost(app, bob.token);
     expect((await del(admin, other.id)).statusCode).toBe(204);
     expect((await get('/v1/community/posts/nope')).statusCode).toBe(404);
-    expect((await app.inject({ method: 'DELETE', url: `/v1/community/posts/${other.id}` })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'DELETE', url: `/v1/community/posts/${other.id}` })).statusCode).toBe(
+      401,
+    );
   });
 
   it('admin posts carry role "admin"', async () => {
@@ -351,7 +390,11 @@ describe('likes, comments and counters', () => {
     const carol = await registerUser(app, fpl, 303);
     const p = await createPost(app, alice.token);
     const like = async (token: string, method: 'PUT' | 'DELETE') => {
-      const res = await app.inject({ method, url: `/v1/community/posts/${p.id}/like`, headers: bearer(token) });
+      const res = await app.inject({
+        method,
+        url: `/v1/community/posts/${p.id}/like`,
+        headers: bearer(token),
+      });
       expect(res.statusCode).toBe(200);
       return LikeResultSchema.parse(res.json());
     };
@@ -391,11 +434,24 @@ describe('likes, comments and counters', () => {
 
     // Deleted post: likes / comments / comment list all 404.
     await app.inject({ method: 'DELETE', url: `/v1/community/posts/${p.id}`, headers: bearer(alice.token) });
-    expect((await app.inject({ method: 'PUT', url: `/v1/community/posts/${p.id}/like`, headers: bearer(bob.token) })).statusCode).toBe(404);
-    expect((await post(bob.token, `/v1/community/posts/${p.id}/comments`, { text: 'hello?' })).statusCode).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: 'PUT',
+          url: `/v1/community/posts/${p.id}/like`,
+          headers: bearer(bob.token),
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect(
+      (await post(bob.token, `/v1/community/posts/${p.id}/comments`, { text: 'hello?' })).statusCode,
+    ).toBe(404);
     expect((await get(`/v1/community/posts/${p.id}/comments`)).statusCode).toBe(404);
     const remaining = await prisma.comment.findFirstOrThrow({ where: { postId: p.id, deletedAt: null } });
-    expect((await delComment(remaining.authorId === bob.user.id ? bob.token : carol.token, remaining.id)).statusCode).toBe(404);
+    expect(
+      (await delComment(remaining.authorId === bob.user.id ? bob.token : carol.token, remaining.id))
+        .statusCode,
+    ).toBe(404);
   });
 
   it('lists comments oldest-first with a cursor; validates comment text', async () => {
@@ -406,7 +462,9 @@ describe('likes, comments and counters', () => {
       if (i % 2 === 0) clock.advance(1000);
       await createComment(app, i % 2 === 0 ? bob.token : alice.token, p.id, `c${i}`);
     }
-    const first = CommentPageSchema.parse((await get(`/v1/community/posts/${p.id}/comments?limit=4`, bob.token)).json());
+    const first = CommentPageSchema.parse(
+      (await get(`/v1/community/posts/${p.id}/comments?limit=4`, bob.token)).json(),
+    );
     expect(first.items.map((c) => c.text)).toEqual(['c0', 'c1', 'c2', 'c3']);
     expect(first.items.map((c) => c.mine)).toEqual([true, false, true, false]);
     expect(first.items[0]?.author.id).toBe(bob.user.id);
@@ -422,7 +480,9 @@ describe('likes, comments and counters', () => {
       expect(res.statusCode, JSON.stringify(payload)).toBe(400);
     }
     expect((await post(null, `/v1/community/posts/${p.id}/comments`, { text: 'hi' })).statusCode).toBe(401);
-    expect((await post(bob.token, '/v1/community/posts/missing/comments', { text: 'hi' })).statusCode).toBe(404);
+    expect((await post(bob.token, '/v1/community/posts/missing/comments', { text: 'hi' })).statusCode).toBe(
+      404,
+    );
     expect((await get(`/v1/community/posts/${p.id}/comments?cursor=%%%`)).statusCode).toBe(400);
     expect((await get('/v1/community/posts/missing/comments')).statusCode).toBe(404);
   });
@@ -435,7 +495,8 @@ describe('likes, comments and counters', () => {
     await subscribe(app, fan.token, 'https://push.test/fan');
     const p = await createPost(app, author.token);
 
-    const long = 'Salah is the only captain this week, no doubt about it — Haaland blanks against them every time';
+    const long =
+      'Salah is the only captain this week, no doubt about it — Haaland blanks against them every time';
     const c = await createComment(app, fan.token, p.id, long);
     expect(push.sent.map((s) => s.endpoint).sort()).toEqual([
       'https://push.test/author-laptop',
@@ -541,7 +602,9 @@ describe('rate limits (per user, not per IP)', () => {
     const likeUrl = `/v1/community/posts/${p.id}/like`;
     const codes: number[] = [];
     for (let i = 0; i < 5; i += 1) {
-      codes.push((await limited.inject({ method: 'PUT', url: likeUrl, headers: bearer(a.token) })).statusCode);
+      codes.push(
+        (await limited.inject({ method: 'PUT', url: likeUrl, headers: bearer(a.token) })).statusCode,
+      );
     }
     expect(codes).toEqual([200, 200, 200, 200, 429]);
   });

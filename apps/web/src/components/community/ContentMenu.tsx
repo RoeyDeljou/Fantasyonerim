@@ -216,9 +216,7 @@ function ReportForm({ target, onDone }: { target: ReportTarget; onDone(): void }
         />
       </div>
       {report.isError && (
-        <InlineError>
-          {isBannedError(report.error) ? c.banned : errorMessage(t, report.error)}
-        </InlineError>
+        <InlineError>{isBannedError(report.error) ? c.banned : errorMessage(t, report.error)}</InlineError>
       )}
       <Button type="submit" block disabled={!reason || report.isPending}>
         {report.isPending ? <Spinner /> : <FlagIcon size={18} />}

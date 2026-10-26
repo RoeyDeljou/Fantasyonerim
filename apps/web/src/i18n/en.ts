@@ -102,15 +102,6 @@ export const en: Messages = {
       "It's the only thing that links you to your account — you'll need it to sign in on a new phone. You can see it again in Profile.",
     savedCodeConfirm: "Saved it, let's go",
   },
-  comingSoon: {
-    badge: 'Next update',
-    newsTitle: 'Everything Fantasyonerim — in one place',
-    newsBody:
-      'New episodes on Spotify and Apple Podcasts, Instagram posts and stories, and posts from X will show up here automatically.',
-    communityTitle: 'Community is on its way',
-    communityBody: 'Soon you will be able to post, share your team and reply to other Fantasyonerim fans.',
-    meanwhile: 'Meanwhile, follow us',
-  },
   socials: {
     spotify: 'Spotify',
     apple: 'Apple Podcasts',
@@ -602,7 +593,8 @@ export const en: Messages = {
     commentDeleted: 'Comment deleted',
     report: 'Report',
     reportTitle: 'Report content',
-    reportBody: 'What’s wrong? The Fantasyonerim team reviews every report. The author never sees who reported.',
+    reportBody:
+      'What’s wrong? The Fantasyonerim team reviews every report. The author never sees who reported.',
     reason_spam: 'Spam or advertising',
     reason_abuse: 'Harassment or bullying',
     reason_hate: 'Hate or racism',
@@ -648,7 +640,7 @@ export const en: Messages = {
     reportsBody: 'Grouped by content. "Remove" deletes it for everyone, "Dismiss" closes the reports.',
     reportsEmpty: 'No open reports',
     reportCount: '{n} reports',
-    firstReported: 'First reported {time}',
+    firstReported: 'First reported',
     notes: 'Reporter notes',
     kindPost: 'Post',
     kindComment: 'Comment',
@@ -681,7 +673,7 @@ export const en: Messages = {
     hiddenTitle: 'Hidden News items',
     hiddenBody: 'Hid something by mistake? "Restore" puts it back in the News feed.',
     hiddenEmpty: 'No hidden items.',
-    hiddenAt: 'Hidden {time}',
+    hiddenAt: 'Hidden',
     restore: 'Restore',
     restored: 'The item is back in News',
     untitled: 'Untitled',

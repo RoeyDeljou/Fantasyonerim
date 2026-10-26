@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { PostIdSchema } from '@fant/shared';
 import type { CommunityPost, Me } from '@fant/shared';
@@ -157,11 +158,7 @@ function Feed() {
   if (!feed.data) return <ErrorState error={feed.error} onRetry={() => feed.refetch()} />;
   if (items.length === 0) {
     return (
-      <EmptyState
-        icon={<CommunityIcon width={32} height={32} />}
-        title={c.emptyTitle}
-        body={c.emptyBody}
-      />
+      <EmptyState icon={<CommunityIcon width={32} height={32} />} title={c.emptyTitle} body={c.emptyBody} />
     );
   }
 
@@ -213,7 +210,6 @@ function Feed() {
 }
 
 /** Thread links inside the feed remember they came from here (so "back" restores the scroll position). */
-function onThreadLinkClick(e: React.MouseEvent<HTMLLIElement>) {
-  const a = (e.target as HTMLElement).closest('a[data-testid=comments-link]');
-  if (a) markOpenedFromFeed();
+function onThreadLinkClick(e: MouseEvent<HTMLLIElement>) {
+  if (e.target instanceof Element && e.target.closest('a[data-testid=comments-link]')) markOpenedFromFeed();
 }

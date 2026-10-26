@@ -100,7 +100,9 @@ describe('bans', () => {
     const aliceComment = await createComment(app, bob.token, alicePost.id);
     const bobComment = await createComment(app, bob.token, bobPost.id);
 
-    const ban = await call('POST', `/v1/admin/users/${bob.user.id}/ban`, admin, { reason: '  Spamming links ' });
+    const ban = await call('POST', `/v1/admin/users/${bob.user.id}/ban`, admin, {
+      reason: '  Spamming links ',
+    });
     expect(ban.statusCode).toBe(204);
     const row = await prisma.user.findUniqueOrThrow({ where: { id: bob.user.id } });
     expect(row.bannedAt?.toISOString()).toBe(clock.now().toISOString());
@@ -134,7 +136,9 @@ describe('bans', () => {
     // Reads still work, as does the rest of the account.
     expect((await call('GET', '/v1/community/posts', bob.token)).statusCode).toBe(200);
     expect((await call('GET', `/v1/community/posts/${alicePost.id}`, bob.token)).statusCode).toBe(200);
-    expect((await call('GET', `/v1/community/posts/${alicePost.id}/comments`, bob.token)).statusCode).toBe(200);
+    expect((await call('GET', `/v1/community/posts/${alicePost.id}/comments`, bob.token)).statusCode).toBe(
+      200,
+    );
     expect((await call('GET', '/v1/me', bob.token)).statusCode).toBe(200);
 
     // Banning again keeps the original timestamp, updates the reason.
@@ -162,7 +166,13 @@ describe('bans', () => {
 
     expect((await call('POST', '/v1/admin/users/nobody/ban', admin, { reason: 'x' })).statusCode).toBe(404);
     expect((await call('DELETE', '/v1/admin/users/nobody/ban', admin)).statusCode).toBe(404);
-    for (const payload of [{}, { reason: '' }, { reason: '   ' }, { reason: 'x'.repeat(201) }, { reason: 'a\u0000' }]) {
+    for (const payload of [
+      {},
+      { reason: '' },
+      { reason: '   ' },
+      { reason: 'x'.repeat(201) },
+      { reason: 'a\u0000' },
+    ]) {
       const bad = await call('POST', `/v1/admin/users/${fan.user.id}/ban`, admin, payload);
       expect(bad.statusCode, JSON.stringify(payload)).toBe(400);
     }
@@ -184,21 +194,34 @@ describe('admin users list', () => {
     await call('POST', `/v1/admin/users/${yossi.user.id}/ban`, admin, { reason: 'abuse' });
 
     const list = async (q?: string) => {
-      const res = await call('GET', `/v1/admin/users${q === undefined ? '' : `?query=${encodeURIComponent(q)}`}`, admin);
+      const res = await call(
+        'GET',
+        `/v1/admin/users${q === undefined ? '' : `?query=${encodeURIComponent(q)}`}`,
+        admin,
+      );
       expect(res.statusCode).toBe(200);
       return AdminUserListSchema.parse(res.json()).items;
     };
     const all = await list();
     expect(all).toHaveLength(3); // + the admin
     const d = all.find((u) => u.id === dana.user.id);
-    expect(d).toMatchObject({ name: 'Dana Levi', entryId: 1201, teamName: 'Haaland Hunters', role: 'user', postCount: 2, bannedAt: null, banReason: null });
+    expect(d).toMatchObject({
+      name: 'Dana Levi',
+      entryId: 1201,
+      teamName: 'Haaland Hunters',
+      role: 'user',
+      postCount: 2,
+      bannedAt: null,
+      banReason: null,
+    });
     expect(all.find((u) => u.id === yossi.user.id)).toMatchObject({ banReason: 'abuse', postCount: 0 });
     expect(all.find((u) => u.role === 'admin')).toMatchObject({ entryId: null });
 
     expect((await list('dana')).map((u) => u.id)).toEqual([dana.user.id]);
     expect((await list('HUNTERS')).map((u) => u.id)).toEqual([dana.user.id]);
     expect((await list('1202')).map((u) => u.id)).toEqual([yossi.user.id]);
-    expect(await list('120')).toEqual([]); // Team ID must be exact
+    expect((await list('1201')).map((u) => u.id)).toEqual([dana.user.id]);
+    expect(await list('99')).toEqual([]); // Team ID must match exactly
     expect(await list('zzz')).toEqual([]);
     expect(await list('')).toHaveLength(3);
     expect((await call('GET', `/v1/admin/users?query=${'x'.repeat(101)}`, admin)).statusCode).toBe(400);
@@ -221,12 +244,23 @@ describe('reports and moderation', () => {
     const own = await call('POST', url, alice.token, { reason: 'spam' });
     expect(own.statusCode).toBe(400);
     expect(errorOf(own).message).toMatch(/your own post/);
-    const ownComment = await call('POST', `/v1/community/comments/${c.id}/report`, alice.token, { reason: 'spam' });
+    const ownComment = await call('POST', `/v1/community/comments/${c.id}/report`, alice.token, {
+      reason: 'spam',
+    });
     expect(ownComment.statusCode).toBe(400);
 
-    expect((await call('POST', '/v1/community/posts/nope/report', bob.token, { reason: 'spam' })).statusCode).toBe(404);
-    expect((await call('POST', '/v1/community/comments/nope/report', bob.token, { reason: 'spam' })).statusCode).toBe(404);
-    for (const payload of [{}, { reason: 'boring' }, { reason: 'other', note: 'x'.repeat(301) }, { reason: 'other', note: '\u0001' }]) {
+    expect(
+      (await call('POST', '/v1/community/posts/nope/report', bob.token, { reason: 'spam' })).statusCode,
+    ).toBe(404);
+    expect(
+      (await call('POST', '/v1/community/comments/nope/report', bob.token, { reason: 'spam' })).statusCode,
+    ).toBe(404);
+    for (const payload of [
+      {},
+      { reason: 'boring' },
+      { reason: 'other', note: 'x'.repeat(301) },
+      { reason: 'other', note: '\u0001' },
+    ]) {
       expect((await call('POST', url, bob.token, payload)).statusCode, JSON.stringify(payload)).toBe(400);
     }
     expect((await call('POST', url, null, { reason: 'spam' })).statusCode).toBe(401);
@@ -243,7 +277,10 @@ describe('reports and moderation', () => {
 
     await call('POST', `/v1/community/posts/${p.id}/report`, bob.token, { reason: 'spam' });
     clock.advance(1000);
-    await call('POST', `/v1/community/posts/${p.id}/report`, carol.token, { reason: 'abuse', note: ' scam link ' });
+    await call('POST', `/v1/community/posts/${p.id}/report`, carol.token, {
+      reason: 'abuse',
+      note: ' scam link ',
+    });
     await call('POST', `/v1/community/posts/${p.id}/report`, dave.token, { reason: 'abuse', note: '' });
     await call('POST', `/v1/community/comments/${c.id}/report`, bob.token, { reason: 'hate', note: 'slur' });
 
@@ -305,9 +342,13 @@ describe('reports and moderation', () => {
 
     expect((await resolve(`post:${fine.id}`, 'dismiss')).statusCode).toBe(204);
     expect((await call('GET', `/v1/community/posts/${fine.id}`, null)).statusCode).toBe(200);
-    expect((await prisma.report.findFirstOrThrow({ where: { targetId: fine.id } })).resolution).toBe('dismissed');
+    expect((await prisma.report.findFirstOrThrow({ where: { targetId: fine.id } })).resolution).toBe(
+      'dismissed',
+    );
     // After a dismissal the same user can report again (one OPEN report per user/target).
-    expect((await call('POST', `/v1/community/posts/${fine.id}/report`, bob.token, { reason: 'spam' })).statusCode).toBe(204);
+    expect(
+      (await call('POST', `/v1/community/posts/${fine.id}/report`, bob.token, { reason: 'spam' })).statusCode,
+    ).toBe(204);
     expect(await prisma.report.count({ where: { targetId: fine.id } })).toBe(2);
     expect((await resolve(`post:${fine.id}`, 'dismiss')).statusCode).toBe(204);
 
@@ -316,13 +357,14 @@ describe('reports and moderation', () => {
     expect((await prisma.communityPost.findUniqueOrThrow({ where: { id: p3.id } })).commentCount).toBe(1);
     expect((await resolve(`comment:${c.id}`, 'remove')).statusCode).toBe(404);
     expect(await reports(admin)).toEqual([]);
-    expect(CommunityPageSchema.parse((await call('GET', '/v1/community/posts', null)).json()).items.map((p) => p.id)).toEqual([
-      p3.id,
-      fine.id,
-    ]);
+    expect(
+      CommunityPageSchema.parse((await call('GET', '/v1/community/posts', null)).json()).items.map(
+        (p) => p.id,
+      ),
+    ).toEqual([p3.id, fine.id]);
   });
 
-  it("deleting reported content (author or with its post) closes its reports so the queue never shows ghosts", async () => {
+  it('deleting reported content (author or with its post) closes its reports so the queue never shows ghosts', async () => {
     const admin = await adminToken(app, prisma);
     const alice = await registerUser(app, fpl, 1601);
     const bob = await registerUser(app, fpl, 1602);
@@ -333,8 +375,12 @@ describe('reports and moderation', () => {
     expect(await reports(admin)).toHaveLength(2);
     await call('DELETE', `/v1/community/posts/${p.id}`, alice.token);
     expect(await reports(admin)).toEqual([]);
-    expect((await prisma.report.findMany()).every((r) => r.resolution === 'deleted' && r.isOpen === null)).toBe(true);
-    expect((await call('POST', `/v1/community/comments/${c.id}/report`, bob.token, { reason: 'spam' })).statusCode).toBe(404);
+    expect(
+      (await prisma.report.findMany()).every((r) => r.resolution === 'deleted' && r.isOpen === null),
+    ).toBe(true);
+    expect(
+      (await call('POST', `/v1/community/comments/${c.id}/report`, bob.token, { reason: 'spam' })).statusCode,
+    ).toBe(404);
   });
 });
 
@@ -364,8 +410,12 @@ describe('hidden news', () => {
 
     expect((await call('POST', `/v1/admin/news/${item.id}/restore`, admin)).statusCode).toBe(204);
     expect((await call('POST', `/v1/admin/news/${item.id}/restore`, admin)).statusCode).toBe(204);
-    expect(NewsPageSchema.parse((await call('GET', '/v1/news', null)).json()).items.map((i) => i.id)).toEqual([item.id]);
-    expect(HiddenNewsListSchema.parse((await call('GET', '/v1/admin/news/hidden', admin)).json()).items).toEqual([]);
+    expect(NewsPageSchema.parse((await call('GET', '/v1/news', null)).json()).items.map((i) => i.id)).toEqual(
+      [item.id],
+    );
+    expect(
+      HiddenNewsListSchema.parse((await call('GET', '/v1/admin/news/hidden', admin)).json()).items,
+    ).toEqual([]);
     expect((await call('POST', '/v1/admin/news/nope/restore', admin)).statusCode).toBe(404);
   });
 });

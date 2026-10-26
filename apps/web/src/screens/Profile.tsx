@@ -17,6 +17,7 @@ import type { ListenPref } from '@/lib/localState';
 import { AppShell } from '@/components/AppShell';
 import { IosInstallSteps } from '@/components/InstallGuide';
 import { NotificationsCard } from '@/components/NotificationsCard';
+import { MyPostsCard } from '@/components/community/MyPosts';
 import { CheckIcon, ChevronEndIcon, DownloadIcon, KeyIcon, LogOutIcon, ShieldIcon } from '@/components/icons';
 import {
   Badge,
@@ -94,6 +95,8 @@ function ProfileInner() {
           </Row>
         </div>
       </Card>
+
+      <MyPostsCard userId={user.id} />
 
       <Card className="flex flex-col gap-4">
         <div>

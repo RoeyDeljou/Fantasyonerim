@@ -39,6 +39,8 @@ src/jobs/                 job registry, JobLease runner + in-process scheduler, 
 src/news/                 draft upsert (idempotent by dedupeKey, media re-hosting), serializer, new-item push
 src/media/                MediaStore (LocalDisk for dev, S3/R2 for prod) + size/type-limited downloader
 src/push/                 PushProvider (WebPushProvider / VAPID), notify() with dedupe + prefs, he/en copy
+src/community/            image pipeline (sniff + sharp), plain-text rules, ban guard, serializers, moderation
+src/routes/community.ts   posts, likes, comments, reports · uploads.ts · adminCommunity.ts (reports, users, bans)
 ```
 
 ## News, jobs and push (Phase 2)
@@ -59,6 +61,40 @@ src/push/                 PushProvider (WebPushProvider / VAPID), notify() with 
 - **Media**: Instagram media is downloaded (15 MB image / 100 MB video cap, type allow-list) and re-hosted under
   deterministic keys `instagram/<mediaId>/<n>.<ext>`. `MEDIA_STORE=s3` (R2) is mandatory in production.
 - `npm run vapid -w @fant/api` prints a fresh VAPID key pair.
+
+## Community (Phase 3)
+
+- **Posts** (`CommunityPost`): text ≤ 1000, optional image (`uploadId`) and/or a frozen `TeamSnapshot` of a
+  started GW (`shareTeamEvent` ≤ FPL's current GW; picks + names copied at creation, later FPL changes don't
+  touch it). Soft-deleted (`deletedAt`/`deletedBy`); deleted posts and everything under them 404.
+  `likeCount`/`commentCount` are denormalized and updated in the same transaction as the like/comment row.
+- **Pagination**: opaque keyset cursor `base64url(JSON [createdAt ISO, id])` — posts newest first,
+  comments oldest first (`?cursor=&limit=`, limit 1..50, default 20).
+- **Uploads** (`POST /v1/uploads`, multipart field `file`, ≤ 10 MB → 413): the format is sniffed from magic
+  bytes (JPEG / PNG / WebP / HEIC-family; anything else or undecodable → 415, the filename and declared type
+  are ignored), then sharp auto-rotates by EXIF orientation, drops **all** metadata (EXIF, GPS, XMP, ICC),
+  fits it inside 2048×2048 and writes webp q82 to `uploads/<userId>/<uploadId>.webp`. An upload can be
+  attached once, only by its owner; unused uploads older than 24 h are deleted by the hourly `cleanup` job.
+  HEIC decoding depends on the libvips build: the prebuilt sharp binaries ship without an HEVC decoder, so
+  most iPhone HEICs get a 415 asking for a JPEG (Safari normally converts HEIC to JPEG on upload anyway).
+- **Text** is plain text: `\r\n` → `\n`, tabs/newlines kept, any other control character → 400.
+- **Push**: a comment notifies the post author (pref `community`, never yourself), once per comment
+  (`NotificationLog` key `comment:<commentId>`), url `/community/?post=<postId>`.
+- **Reports** (`Report`): one open report per reporter + target (unique index over
+  `targetKind, targetId, reporterId, isOpen` where `isOpen` is `true` while open and `NULL` once resolved),
+  so repeats are no-ops and a dismissed target can be reported again. Reporting your own content is 400.
+  Deleting content (by its author, an admin, or with its post) closes its open reports (`resolution =
+deleted | removed`).
+- **Moderation target ids** (`GET /v1/admin/reports`, `POST /v1/admin/reports/:targetId/resolve`):
+  `post:<postId>` or `comment:<commentId>` (URL-encode the colon if your client requires it).
+  `remove` soft-deletes the target and closes all its reports; `dismiss` only closes them. No open reports → 404. Groups are sorted most-reported first, then oldest.
+- **Bans**: `POST /v1/admin/users/:id/ban { reason }` sets `bannedAt` (kept on re-ban) + `banReason`;
+  banned users get 403 `forbidden` "Your account can't post right now" on every community write (create /
+  delete posts and comments, likes, reports, uploads) but can read. Admins can't be banned (400).
+- **Rate limits** (per signed-in user, not per IP): 10 posts/hour, 60 comments/hour, 30 uploads/hour; likes,
+  reports and deletes share the per-minute write limit.
+- **Hidden news**: `GET /v1/admin/news/hidden` (newest hidden first, expired stories excluded) and
+  `POST /v1/admin/news/:id/restore` (idempotent, no re-push).
 
 ## Auth
 

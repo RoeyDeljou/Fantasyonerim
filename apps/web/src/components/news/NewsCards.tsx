@@ -6,7 +6,7 @@ import type { NewsItem } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import { openExternal } from '@/lib/external';
 import { setListenPref, useListenPref } from '@/lib/localState';
-import { episodeTitle, formatDuration } from '@/lib/newsFormat';
+import { episodeTitle, formatDuration, relativeParts } from '@/lib/newsFormat';
 import { useHideNews } from '@/lib/queries';
 import { BottomSheet } from '@/components/BottomSheet';
 import { Logo } from '@/components/AppShell';
@@ -25,7 +25,7 @@ import {
 } from '@/components/icons';
 import { Badge, Button, IconButton, InlineError, Spinner, cx, errorMessage } from '@/components/ui';
 import { MediaCarousel, MediaGrid } from './Media';
-import { ExpandableText, ExternalButton, MediaImage, RelativeTime } from './parts';
+import { ExpandableText, ExternalButton, MediaImage, RelativeTime, useNow } from './parts';
 
 type FeedSource = Exclude<NewsItem['source'], 'instagram_story'>;
 
@@ -162,6 +162,10 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
     else if (links.length > 1) setChoosing(true);
   };
   const canListen = links.length > 0;
+  // Older than a week, the header's relative time already *is* the date — don't repeat it in the meta line.
+  const now = useNow();
+  const headerShowsDate = now === 0 || relativeParts(item.publishedAt, now) === null;
+  const showDuration = duration !== null && duration > 0;
 
   const coverEl = (
     <div className="relative size-24 shrink-0 overflow-hidden rounded-2xl bg-accent shadow-card">
@@ -209,17 +213,17 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
               title
             )}
           </h2>
-          <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
-            <time dateTime={item.publishedAt}>{f.date(item.publishedAt)}</time>
-            {duration !== null && duration > 0 && (
-              <>
-                <span aria-hidden="true">·</span>
-                <bdi dir="ltr" className="tabular">
+          {(!headerShowsDate || showDuration) && (
+            <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
+              {!headerShowsDate && <time dateTime={item.publishedAt}>{f.date(item.publishedAt)}</time>}
+              {!headerShowsDate && showDuration && <span aria-hidden="true">·</span>}
+              {showDuration && (
+                <bdi dir="ltr" className="tabular" data-testid="episode-duration">
                   {formatDuration(duration)}
                 </bdi>
-              </>
-            )}
-          </p>
+              )}
+            </p>
+          )}
         </div>
       </div>
       {item.text && item.title && <ExpandableText text={item.text} platform="none" lines={3} />}

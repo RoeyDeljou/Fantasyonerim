@@ -109,7 +109,12 @@ export function CommunityToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <Toast key={toast?.key} message={toast?.message ?? null} tone={toast?.tone} onDone={done} />
+      <Toast
+        key={toast?.key}
+        message={toast?.message ?? null}
+        tone={toast?.tone ?? 'success'}
+        onDone={done}
+      />
     </ToastContext.Provider>
   );
 }

@@ -162,7 +162,7 @@ function PushPrompt() {
       <BottomSheet open={guide} onClose={() => setGuide(false)} title={t.profile.installTitle}>
         <div className="flex flex-col gap-3">
           <p className="text-sm text-muted">{t.push.needsInstallHelp}</p>
-          <IosInstallSteps />
+          <IosInstallSteps showNote={false} />
         </div>
       </BottomSheet>
     </section>

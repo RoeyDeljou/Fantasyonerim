@@ -93,7 +93,7 @@ export function NotificationsCard() {
       {push.state === 'needs-install' && (
         <>
           <Help>{t.push.needsInstallHelp}</Help>
-          <IosInstallSteps />
+          <IosInstallSteps showNote={false} />
         </>
       )}
       {error && <InlineError>{pushErrorText(t, error)}</InlineError>}

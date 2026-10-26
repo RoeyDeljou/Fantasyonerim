@@ -213,6 +213,8 @@ function IntegrationCard({ status: s }: { status: IntegrationStatus }) {
   const [synced, setSynced] = useState(false);
   const [open, setOpen] = useState(!s.configured && s.id !== 'instagram');
   const hasForm = SETTINGS[s.id].length > 0 || SECRETS[s.id].length > 0;
+  // Instagram syncs only through the OAuth connection — no "Sync now" until an account is connected.
+  const igNotConnected = s.id === 'instagram' && !instagramConnected(s);
 
   useEffect(() => {
     if (!synced) return;
@@ -291,14 +293,21 @@ function IntegrationCard({ status: s }: { status: IntegrationStatus }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="secondary"
-          disabled={sync.isPending || !s.configured}
-          onClick={() => sync.mutate(undefined, { onSuccess: () => setSynced(true) })}
-        >
-          {sync.isPending ? <Spinner /> : <RefreshIcon size={18} />}
-          {sync.isPending ? it.syncing : it.syncNow}
-        </Button>
+        {igNotConnected ? (
+          <p className="flex items-center gap-1.5 text-sm text-muted" data-testid="ig-sync-hint">
+            <InfoIcon size={16} className="shrink-0" />
+            {it.igSyncHint}
+          </p>
+        ) : (
+          <Button
+            variant="secondary"
+            disabled={sync.isPending || !s.configured}
+            onClick={() => sync.mutate(undefined, { onSuccess: () => setSynced(true) })}
+          >
+            {sync.isPending ? <Spinner /> : <RefreshIcon size={18} />}
+            {sync.isPending ? it.syncing : it.syncNow}
+          </Button>
+        )}
         {synced && (
           <span role="status" className="flex items-center gap-1 text-sm font-semibold text-success">
             <CheckIcon size={16} />
@@ -473,6 +482,10 @@ function SettingsForm({ status: s }: { status: IntegrationStatus }) {
 
 // ---------- instagram ----------
 
+function instagramConnected(s: IntegrationStatus): boolean {
+  return s.configured && ((s.settings.username ?? null) !== null || s.accountLabel !== null);
+}
+
 function InstagramConnect({ status: s }: { status: IntegrationStatus }) {
   const { t, f } = useI18n();
   const it = t.integrations;
@@ -483,7 +496,7 @@ function InstagramConnect({ status: s }: { status: IntegrationStatus }) {
   const now = Date.now();
 
   const username = s.settings.username ?? null;
-  const connected = s.configured && (username !== null || s.accountLabel !== null);
+  const connected = instagramConnected(s);
   const shown = username ? `@${username.replace(/^@/, '')}` : (s.accountLabel ?? '');
   const wrongAccount = username !== null && username.replace(/^@/, '').toLowerCase() !== EXPECTED_IG;
 

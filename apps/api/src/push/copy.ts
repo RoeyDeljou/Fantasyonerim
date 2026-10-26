@@ -124,7 +124,8 @@ export const COMMENT_SNIPPET_CHARS = 60;
 /** "💬 <name> commented on your post" + the start of the comment. */
 export function commentCopy(locale: Locale, commenterName: string, text: string): PushText {
   return {
-    title: locale === 'he' ? `💬 ${commenterName} הגיב/ה לפוסט שלך` : `💬 ${commenterName} commented on your post`,
+    title:
+      locale === 'he' ? `💬 ${commenterName} הגיב/ה לפוסט שלך` : `💬 ${commenterName} commented on your post`,
     body: snippet(text, COMMENT_SNIPPET_CHARS),
   };
 }

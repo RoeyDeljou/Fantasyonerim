@@ -83,7 +83,12 @@ export async function makeImage(
   if (options.exif === true) {
     img = img.withExif({
       IFD0: { Make: 'TestPhone', Model: 'Secret Model', Copyright: 'someone' },
-      IFD3: { GPSLatitudeRef: 'N', GPSLatitude: '32/1 4/1 0/1', GPSLongitudeRef: 'E', GPSLongitude: '34/1 46/1 0/1' },
+      IFD3: {
+        GPSLatitudeRef: 'N',
+        GPSLatitude: '32/1 4/1 0/1',
+        GPSLongitudeRef: 'E',
+        GPSLongitude: '34/1 46/1 0/1',
+      },
     });
   }
   if (options.orientation !== undefined) img = img.withMetadata({ orientation: options.orientation });

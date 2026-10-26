@@ -350,7 +350,11 @@ export const api = {
     remove: (id: PostId): Promise<void> =>
       request('DELETE', `/v1/community/posts/${encodeURIComponent(id)}`, noContent),
     like: (id: PostId, liked: boolean): Promise<LikeResult> =>
-      request(liked ? 'PUT' : 'DELETE', `/v1/community/posts/${encodeURIComponent(id)}/like`, LikeResultSchema),
+      request(
+        liked ? 'PUT' : 'DELETE',
+        `/v1/community/posts/${encodeURIComponent(id)}/like`,
+        LikeResultSchema,
+      ),
     comments: (id: PostId, cursor: string | undefined, o: Signal = {}): Promise<CommentPage> =>
       request('GET', `/v1/community/posts/${encodeURIComponent(id)}/comments`, CommentPageSchema, {
         ...o,

@@ -661,7 +661,10 @@ export function useDeleteComment(postId: PostId) {
       patchPost(qc, postId, (p) => ({ ...p, commentCount: Math.max(0, p.commentCount - 1) }));
       qc.setQueryData<CommentsData>(qk.comments(postId), (data) =>
         data
-          ? { ...data, pages: data.pages.map((pg) => ({ ...pg, items: pg.items.filter((c) => c.id !== id) })) }
+          ? {
+              ...data,
+              pages: data.pages.map((pg) => ({ ...pg, items: pg.items.filter((c) => c.id !== id) })),
+            }
           : data,
       );
     },

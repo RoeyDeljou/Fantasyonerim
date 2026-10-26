@@ -78,7 +78,11 @@ export function ImageViewer({
     if (pointers.current.size === 2 && gesture.current) {
       const [a, b] = [...pointers.current.values()];
       if (a && b && gesture.current.dist > 0) {
-        const s = clamp((gesture.current.scale * Math.hypot(a.x - b.x, a.y - b.y)) / gesture.current.dist, MIN, MAX);
+        const s = clamp(
+          (gesture.current.scale * Math.hypot(a.x - b.x, a.y - b.y)) / gesture.current.dist,
+          MIN,
+          MAX,
+        );
         setView((v) => (s === MIN ? RESET : { ...v, scale: s }));
       }
     } else if (pointers.current.size === 1 && view.scale > 1) {
@@ -90,7 +94,8 @@ export function ImageViewer({
     if (pointers.current.size < 2) gesture.current = null;
     if (pointers.current.size === 0) setDragging(false);
   };
-  const onWheel = (e: ReactWheelEvent<HTMLDivElement>) => zoomTo(view.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
+  const onWheel = (e: ReactWheelEvent<HTMLDivElement>) =>
+    zoomTo(view.scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
 
   return (
     <dialog

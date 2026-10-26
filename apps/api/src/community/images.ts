@@ -49,7 +49,8 @@ export interface ProcessedImage {
  */
 export async function processUpload(input: Uint8Array): Promise<ProcessedImage> {
   const kind = sniffImage(input);
-  if (kind === null) throw unsupportedMedia('Unsupported image type — upload a JPEG, PNG, WebP or HEIC photo');
+  if (kind === null)
+    throw unsupportedMedia('Unsupported image type — upload a JPEG, PNG, WebP or HEIC photo');
   try {
     const { data, info } = await sharp(input, { failOn: 'error', limitInputPixels: MAX_INPUT_PIXELS })
       .rotate()

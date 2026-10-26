@@ -4,8 +4,11 @@ import type { ReactNode } from 'react';
 import { useT } from '@/i18n';
 import { AddSquareIcon, CheckIcon, ShareIcon } from './icons';
 
-/** The iPhone "Add to Home Screen" steps (Safari). Used by Profile → Install, the push prompt and Notifications. */
-export function IosInstallSteps() {
+/**
+ * The iPhone "Add to Home Screen" steps (Safari). Used by Profile → Install, the push prompt and Notifications.
+ * The closing "notifications need install" note is skipped where the caller already says exactly that.
+ */
+export function IosInstallSteps({ showNote = true }: { showNote?: boolean }) {
   const t = useT();
   return (
     <div className="flex flex-col gap-2 rounded-xl bg-surface-2 p-3">
@@ -21,7 +24,7 @@ export function IosInstallSteps() {
           {t.profile.iosStep3}
         </IosStep>
       </ol>
-      <p className="text-xs text-muted">{t.profile.iosNote}</p>
+      {showNote && <p className="text-xs text-muted">{t.profile.iosNote}</p>}
     </div>
   );
 }

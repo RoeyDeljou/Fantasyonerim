@@ -98,15 +98,7 @@ export function TeamPreview({ team, onOpen }: { team: TeamView; onOpen?: (() => 
 }
 
 /** ManagerSheet-style full view of a shared snapshot. Per-player points come from that GW's live data. */
-export function SnapshotSheet({
-  team,
-  open,
-  onClose,
-}: {
-  team: TeamView;
-  open: boolean;
-  onClose(): void;
-}) {
+export function SnapshotSheet({ team, open, onClose }: { team: TeamView; open: boolean; onClose(): void }) {
   const { t } = useI18n();
   const { index } = useFplIndex();
   return (

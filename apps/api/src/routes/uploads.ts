@@ -67,10 +67,11 @@ export function uploadRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, 
       await ctx.media.delete(storageKey).catch(() => undefined);
       throw err;
     }
-    return reply
-      .code(201)
-      .send(
-        serialize(UploadResponseSchema, { uploadId, image: { url, width: image.width, height: image.height } }),
-      );
+    return reply.code(201).send(
+      serialize(UploadResponseSchema, {
+        uploadId,
+        image: { url, width: image.width, height: image.height },
+      }),
+    );
   });
 }
