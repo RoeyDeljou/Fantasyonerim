@@ -409,11 +409,36 @@ describe('live-points engine', () => {
     expect(byId(4)?.provisionalBonus).toBe(3);
   });
 
-  it('bonus already confirmed is never double counted', () => {
+  it('FPL live bonus (already in total_points) is shown as provisional but never added twice', () => {
+    for (const status of ['live', 'finished_provisional'] as const) {
+      const { byId } = score({
+        players: standardSquad(),
+        fixtures: oneFixture(status, {
+          bps: [
+            [3, 40],
+            [5, 30],
+            [7, 20],
+          ],
+          bonus: [
+            [3, 3],
+            [5, 2],
+            [7, 1],
+          ],
+        }),
+        // FPL's total_points already include the live bonus: 2 + 3 = 5
+        live: liveFor(SQUAD_IDS, { 3: { minutes: 90, points: 5, bonus: 3, bps: 40 } }),
+        picks: rawPicks(SQUAD_IDS),
+      });
+      expect(byId(3), status).toMatchObject({ provisionalBonus: 3, basePoints: 5, bonusConfirmed: false });
+      expect(byId(9)?.provisionalBonus, status).toBe(0);
+    }
+  });
+
+  it('bonus is confirmed only once the fixture is finished', () => {
     // finished_provisional but FPL already published the bonus (it is inside total_points = 5)
     const confirmed = score({
       players: standardSquad(),
-      fixtures: oneFixture('finished_provisional', {
+      fixtures: oneFixture('finished', {
         bps: [
           [3, 40],
           [5, 30],

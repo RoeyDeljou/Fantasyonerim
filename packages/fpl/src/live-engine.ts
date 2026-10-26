@@ -7,10 +7,15 @@ import { bonusFromBps, type BpsScore } from './bonus.js';
  *
  * Rules implemented (FPL 2025/26):
  * - A player's GW points = sum over all his GW fixtures (DGW sums both; blank GW = 0, 'no_fixture'),
- *   taken from `event/{gw}/live` `stats.total_points`, plus PROVISIONAL bonus for every fixture whose
- *   bonus is not yet confirmed (see `EngineFixture.bonusConfirmed`), ranked from that fixture's BPS with
- *   FPL's tie rules (`bonusFromBps`). Once bonus is confirmed it is inside `total_points`, so it is never
- *   counted twice.
+ *   taken from `event/{gw}/live` `stats.total_points`. Bonus, per fixture:
+ *     - fixture `finished` → bonus is final and inside `total_points`;
+ *     - fixture has a non-empty `bonus` stat (FPL 2025/26 writes live bonus during and right after the
+ *       match) → that bonus is already inside `total_points`: shown as provisional, NOT added again;
+ *     - started, no `bonus` stat yet → we compute it from the fixture's BPS with FPL's tie rules
+ *       (`bonusFromBps`), show it as provisional AND add it to the points.
+ *   So `basePoints` = total_points + computedBonus, never double counted; `provisionalBonus` = all bonus
+ *   that is not final yet (FPL's live bonus + computed); `bonusConfirmed` only when every fixture is
+ *   `finished` (finished_provisional is not final).
  * - "Did not play" = every one of his GW fixtures is finished (finished or finished_provisional) and he
  *   has 0 minutes. Blank-GW players (no fixture) did not play.
  * - Auto-subs (not on Bench Boost): starters who did not play are replaced in XI order by the first
@@ -36,8 +41,11 @@ export interface EngineFixture {
   teamH: number;
   teamA: number;
   status: FixtureStatus;
-  /** True when FPL has already added this fixture's bonus to the `bonus` / `total_points` stats. */
-  bonusConfirmed: boolean;
+  /**
+   * The fixture's `bonus` stat: bonus FPL has already written into the players' `bonus` / `total_points`
+   * (live or final). Empty when FPL hasn't populated it yet.
+   */
+  bonus: readonly BpsScore[];
   /** BPS of every player in the fixture (home + away). May be empty before FPL publishes it. */
   bps: readonly BpsScore[];
 }
@@ -63,8 +71,10 @@ export interface GameweekInput {
 
 export interface GameweekContext extends GameweekInput {
   fixturesByTeam: ReadonlyMap<number, readonly EngineFixture[]>;
-  /** element → provisional bonus summed over his unconfirmed, started fixtures. */
-  provisionalBonus: ReadonlyMap<number, number>;
+  /** element → bonus WE computed from BPS (not in total_points yet) — added to the points. */
+  computedBonus: ReadonlyMap<number, number>;
+  /** element → bonus that is not final yet: FPL's live bonus (already in total_points) + computedBonus. */
+  pendingBonus: ReadonlyMap<number, number>;
 }
 
 export type PlayerFixtureStatus = 'no_fixture' | 'not_started' | 'live' | 'finished';
@@ -73,7 +83,9 @@ export interface PlayerLiveInfo {
   playerId: number;
   basePoints: number;
   minutes: number;
+  /** Bonus that is not final yet (fixture not `finished`): FPL's live bonus or our BPS-computed bonus. */
   provisionalBonus: number;
+  /** Every GW fixture is `finished` (FPL's final state). */
   bonusConfirmed: boolean;
   fixtureStatus: PlayerFixtureStatus;
   /** All GW fixtures finished/finished_provisional (vacuously true on a blank GW). */
@@ -157,9 +169,17 @@ export function createGameweekContext(input: GameweekInput): GameweekContext {
     }
   }
 
-  const provisionalBonus = new Map<number, number>();
+  const computedBonus = new Map<number, number>();
+  const pendingBonus = new Map<number, number>();
+  const add = (map: Map<number, number>, element: number, bonus: number) =>
+    map.set(element, (map.get(element) ?? 0) + bonus);
   for (const f of input.fixtures) {
-    if (f.bonusConfirmed || f.status === 'not_started') continue;
+    if (f.status === 'finished' || f.status === 'not_started') continue;
+    if (f.bonus.length > 0) {
+      // FPL already counted it in total_points — display only.
+      for (const b of f.bonus) if (b.value > 0) add(pendingBonus, b.element, b.value);
+      continue;
+    }
     let scores = f.bps;
     if (scores.length === 0) {
       // Fallback: element-level BPS for players of these two teams, only when unambiguous (no DGW).
@@ -174,11 +194,12 @@ export function createGameweekContext(input: GameweekInput): GameweekContext {
       scores = fallback;
     }
     for (const [element, bonus] of bonusFromBps(scores)) {
-      provisionalBonus.set(element, (provisionalBonus.get(element) ?? 0) + bonus);
+      add(computedBonus, element, bonus);
+      add(pendingBonus, element, bonus);
     }
   }
 
-  return { ...input, fixturesByTeam, provisionalBonus };
+  return { ...input, fixturesByTeam, computedBonus, pendingBonus };
 }
 
 /** Live info for a single player in this GW (also used for Captain Battle). */
@@ -186,7 +207,8 @@ export function playerLiveInfo(ctx: GameweekContext, playerId: number): PlayerLi
   const player = ctx.players.get(playerId);
   const fixtures = player ? (ctx.fixturesByTeam.get(player.teamId) ?? []) : [];
   const stats = ctx.live.get(playerId) ?? ZERO_STATS;
-  const provisionalBonus = ctx.provisionalBonus.get(playerId) ?? 0;
+  const computedBonus = ctx.computedBonus.get(playerId) ?? 0;
+  const provisionalBonus = ctx.pendingBonus.get(playerId) ?? 0;
   const allFixturesDone = fixtures.every((f) => isDone(f.status));
 
   let fixtureStatus: PlayerFixtureStatus;
@@ -201,10 +223,10 @@ export function playerLiveInfo(ctx: GameweekContext, playerId: number): PlayerLi
 
   return {
     playerId,
-    basePoints: stats.totalPoints + provisionalBonus,
+    basePoints: stats.totalPoints + computedBonus,
     minutes: stats.minutes,
     provisionalBonus,
-    bonusConfirmed: fixtures.length > 0 && fixtures.every((f) => f.bonusConfirmed),
+    bonusConfirmed: fixtures.length > 0 && fixtures.every((f) => f.status === 'finished'),
     fixtureStatus,
     allFixturesDone,
     didNotPlay: allFixturesDone && stats.minutes === 0,

@@ -230,13 +230,12 @@ export function engineFixturesOf(raw: readonly RawFixture[]): EngineFixture[] {
     const stat = (id: string) => f.stats.find((s) => s.identifier === id);
     const bps = stat('bps');
     const bonus = stat('bonus');
-    const bonusPublished = !!bonus && bonus.h.length + bonus.a.length > 0;
     return {
       id: f.id,
       teamH: f.team_h,
       teamA: f.team_a,
       status: fixtureStatusOf(f),
-      bonusConfirmed: f.finished || bonusPublished,
+      bonus: bonus ? [...bonus.h, ...bonus.a].map((s) => ({ element: s.element, value: s.value })) : [],
       bps: bps ? [...bps.h, ...bps.a].map((s) => ({ element: s.element, value: s.value })) : [],
     };
   });

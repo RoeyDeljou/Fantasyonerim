@@ -19,8 +19,8 @@ import { DEMO_MANAGERS } from './managers.js';
  * Story: season 2025/26, GW9 in progress.
  *   GW1–8 finished + data checked (all fixtures finished with bonus).
  *   GW9 fixtures, by kickoff: 4 × finished, 1 × finished_provisional with bonus already added,
- *   1 × finished_provisional with bonus NOT yet added (provisional bonus from BPS), 1 × live (62'),
- *   3 × not started. GW10–38 not started.
+ *   1 × finished_provisional with bonus NOT yet added (provisional bonus from BPS), 1 × live (62', live
+ *   bonus written into the stats as FPL does), 3 × not started. GW10–38 not started.
  *   League 314159 "Fantasyonerim League": 60 managers, entry ids 1000001–1000060 (page 1 = 50 rows).
  */
 
@@ -317,7 +317,9 @@ function simulateFixture(
   side(fixture.home, homeGoals, awayGoals);
   side(fixture.away, awayGoals, homeGoals);
 
-  const bonusAdded = fixture.state === 'finished' || fixture.state === 'finished_provisional_bonus';
+  // FPL 2025/26 writes live bonus into the stats during the match; one finished_provisional fixture is
+  // left without it to exercise the computed-from-BPS path.
+  const bonusAdded = fixture.state !== 'finished_provisional';
   if (bonusAdded) {
     const awards = bonusFromBps(
       lines.filter((l) => l.minutes > 0).map((l) => ({ element: l.element, value: l.bps })),

@@ -204,16 +204,39 @@ describe('createFplService — mapping to @fant/shared DTOs', () => {
     const c = ll.rows.find((r) => r.entryId === 33);
     // A's XI: 11 × 2 = 22, captain 1 extra 2, player 6 +6 (8 pts) +3 bonus, 7 +2, 8 +1 → 36
     expect(a).toMatchObject({ livePoints: 36, liveTotal: 120 + 36, officialRank: 1, captainPlayerId: 1 });
+    expect(a?.effectiveCaptainPlayerId).toBe(1);
     // B: 45 − 4 = 41 (see getEntryLive test), before GW 110
     expect(b).toMatchObject({ livePoints: 41, liveTotal: 110 + 41, officialRank: 2, captainPlayerId: 6 });
+    expect(b?.effectiveCaptainPlayerId).toBe(6);
     // C has no picks (404): livePoints 0, liveTotal = total − event_total
     expect(c).toMatchObject({ livePoints: 0, liveTotal: 85, captainPlayerId: null, activeChip: null });
+    expect(c?.effectiveCaptainPlayerId).toBeNull();
     expect(ll.rows.map((r) => [r.entryId, r.liveRank])).toEqual([
       [11, 1],
       [22, 2],
       [33, 3],
     ]);
     expect(ll.hasNext).toBe(true);
+  });
+
+  it('getLiveLeague: effectiveCaptainPlayerId is the vice when the captain did not play, null when neither did', async () => {
+    const routes = baseRoutes();
+    routes['fixtures/?event=1'] = [rawFixture({ id: 1, h: 1, a: 2, status: 'finished' })];
+    routes['event/1/live/'] = {
+      elements: SQUAD_IDS.map((id) =>
+        rawLiveElement(
+          id,
+          id === 1 || id === 6 || id === 7 ? { minutes: 0, points: 0 } : { minutes: 90, points: 2 },
+        ),
+      ),
+    };
+    // A: captain 1 (0 min) / vice 2 → vice. B: captain 6 / vice 7, both 0 min → nobody.
+    const { service } = setup(routes);
+    const ll = await service.getLiveLeague(league, gw, 1);
+    const row = (entryId: number) => ll.rows.find((r) => r.entryId === entryId);
+    expect(row(11)).toMatchObject({ captainPlayerId: 1, effectiveCaptainPlayerId: 2 });
+    expect(row(22)).toMatchObject({ captainPlayerId: 6, effectiveCaptainPlayerId: null });
+    expect(row(33)?.effectiveCaptainPlayerId).toBeNull();
   });
 
   it('getLiveLeague: overtakes re-order rows and equal live totals share a rank', async () => {

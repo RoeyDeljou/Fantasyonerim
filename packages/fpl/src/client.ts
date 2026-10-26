@@ -203,6 +203,9 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
      *
      * Rows are re-ranked WITHIN the page (liveTotal desc, then official rank); liveRank is numbered from
      * the page's first position ((page − 1) × 50 + 1) with equal liveTotals sharing a rank.
+     *
+     * `captainPlayerId` is the picked captain; `effectiveCaptainPlayerId` is whoever the engine applies
+     * the armband multiplier to (the vice when the captain didn't play, null when neither did / no picks).
      */
     async getLiveLeague(leagueId: FplLeagueId, event: Gameweek, page: number): Promise<LiveLeague> {
       const [standings, ctx] = await Promise.all([
@@ -226,6 +229,7 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
             livePoints: result.livePoints,
             liveTotal: totalBeforeEvent(picks) + result.livePoints,
             captainPlayerId: captain ? captain.element : null,
+            effectiveCaptainPlayerId: result.effectiveCaptainId,
             activeChip: toChip(picks.active_chip),
             playersYetToPlay: result.playersYetToPlay,
           };
@@ -237,6 +241,7 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
             livePoints: notFound ? 0 : row.eventTotal,
             liveTotal: notFound ? row.total - row.eventTotal : row.total,
             captainPlayerId: null,
+            effectiveCaptainPlayerId: null,
             activeChip: null,
             playersYetToPlay: 0,
           };
