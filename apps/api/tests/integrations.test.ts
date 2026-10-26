@@ -232,9 +232,7 @@ describe('integration settings', () => {
       payload: { enabled: true, settings: {}, secrets: { bearerToken: 'new-token' } },
     });
     expect(bad.statusCode).toBe(400);
-    expect(bad.json().error.message).toMatch(
-      /^secrets\.bearerToken: X rejected the credentials — check the keys/,
-    );
+    expect(bad.json().error.message).toMatch(/^secrets\.bearerToken: X rejected the bearer token\.$/);
     await other.close();
   });
 

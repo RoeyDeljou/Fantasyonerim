@@ -91,6 +91,19 @@ const shutdown = async (signal: string) => {
   await prisma.$disconnect();
   process.exit(0);
 };
+// A socket that resets after its request already settled (seen with push services behind proxies) emits an
+// error nobody can await. Such transport errors must not take the whole server down; anything else is a
+// real bug, so log it and exit (the host restarts the process).
+const TRANSIENT_SOCKET_ERRORS = new Set(['ECONNRESET', 'EPIPE', 'ETIMEDOUT', 'ECONNREFUSED', 'EHOSTUNREACH']);
+process.on('uncaughtException', (err: NodeJS.ErrnoException) => {
+  if (err.code && TRANSIENT_SOCKET_ERRORS.has(err.code)) {
+    app.log.warn({ code: err.code }, 'ignored stray socket error');
+    return;
+  }
+  app.log.fatal({ err }, 'uncaught exception — exiting');
+  process.exit(1);
+});
+
 process.once('SIGINT', () => void shutdown('SIGINT'));
 process.once('SIGTERM', () => void shutdown('SIGTERM'));
 

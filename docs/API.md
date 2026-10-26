@@ -59,3 +59,25 @@ Schemas: `packages/shared/src/news.ts`.
 | POST    | `/v1/admin/push`                               | 🛡                             | `AdminPushBody`                     | `AdminPushResult`                                                               |
 | POST    | `/internal/jobs/tick`                          | `x-cron-secret: $CRON_SECRET` | –                                   | `{ ran: string[] }` — runs every due job; 401 on a bad secret                   |
 | GET     | `/media/*`                                     | 🌐                            | –                                   | re-hosted media bytes (local MediaStore only; S3/R2 serves its own public URL)  |
+
+## Phase 3 — Community
+
+Schemas: `packages/shared/src/community.ts`. Banned users get 403 on every write.
+
+| Method      | Path                                  | Auth                         | Body / query                                  | Response                                                                                                        |
+| ----------- | ------------------------------------- | ---------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| GET         | `/v1/community/posts`                 | 🌐 (👤 fills likedByMe/mine) | `CommunityPageQuery`                          | `CommunityPage` — newest first, removed posts excluded                                                          |
+| GET         | `/v1/community/posts/:id`             | 🌐                           | –                                             | `CommunityPost` · 404                                                                                           |
+| POST        | `/v1/community/posts`                 | 👤                           | `CreatePostBody`                              | `CommunityPost` (201) · 400 · 429 (10 posts/hour)                                                               |
+| DELETE      | `/v1/community/posts/:id`             | 👤 own / 🛡 any               | –                                             | 204 (soft delete)                                                                                               |
+| PUT/DELETE  | `/v1/community/posts/:id/like`        | 👤                           | –                                             | `LikeResult` (idempotent)                                                                                       |
+| GET         | `/v1/community/posts/:id/comments`    | 🌐                           | `?cursor=`                                    | `CommentPage` — oldest first                                                                                    |
+| POST        | `/v1/community/posts/:id/comments`    | 👤                           | `CreateCommentBody`                           | `Comment` (201) · 429 (60/hour) — pushes the post author (prefs.community), once per comment, never to yourself |
+| DELETE      | `/v1/community/comments/:id`          | 👤 own / 🛡 any               | –                                             | 204                                                                                                             |
+| POST        | `/v1/community/posts/:id/report`      | 👤                           | `ReportBody`                                  | 204 (idempotent per user/target)                                                                                |
+| POST        | `/v1/community/comments/:id/report`   | 👤                           | `ReportBody`                                  | 204                                                                                                             |
+| POST        | `/v1/uploads`                         | 👤                           | multipart `file` (jpeg/png/webp/heic ≤ 10 MB) | `UploadResponse` (201) — re-encoded to webp/jpeg ≤ 2048 px, EXIF stripped · 413 / 415                           |
+| GET         | `/v1/admin/reports`                   | 🛡                            | `?status=open`                                | `ReportList`                                                                                                    |
+| POST        | `/v1/admin/reports/:targetId/resolve` | 🛡                            | `ResolveReportBody`                           | 204                                                                                                             |
+| GET         | `/v1/admin/users`                     | 🛡                            | `?query=`                                     | `AdminUserList`                                                                                                 |
+| POST/DELETE | `/v1/admin/users/:id/ban`             | 🛡                            | `BanBody` (POST)                              | 204 — admins can't be banned                                                                                    |

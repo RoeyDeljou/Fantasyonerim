@@ -19,7 +19,6 @@ import {
   HeadphonesIcon,
   MegaphoneIcon,
   MicIcon,
-  PlayIcon,
   SpotifyIcon,
   XBrandIcon,
   ExternalIcon,
@@ -175,13 +174,6 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
         />
       ) : (
         <img src="/brand/logo-320.png" alt="" className="size-full object-cover" />
-      )}
-      {canListen && (
-        <span className="absolute inset-0 flex items-center justify-center" aria-hidden="true">
-          <span className="flex size-9 items-center justify-center rounded-full bg-media-scrim text-on-media">
-            <PlayIcon size={16} />
-          </span>
-        </span>
       )}
     </div>
   );

@@ -96,8 +96,12 @@ describe('podcast job', () => {
       cursor: 'etag-1',
     });
     expect(await app.jobs.run('podcast', { force: true })).toBe('ok');
+    const before = await prisma.newsItem.findMany({ orderBy: { dedupeKey: 'asc' } });
     expect(await app.jobs.run('podcast', { force: true })).toBe('ok');
     expect(await prisma.newsItem.count()).toBe(2);
+    // An identical re-run is a true no-op: jsonb key order must not make every row look changed.
+    const after = await prisma.newsItem.findMany({ orderBy: { dedupeKey: 'asc' } });
+    expect(after.map((r) => r.updatedAt.getTime())).toEqual(before.map((r) => r.updatedAt.getTime()));
     expect(fakes.podcast.cursors).toEqual([null, 'etag-1']);
 
     fakes.podcast.next = result([

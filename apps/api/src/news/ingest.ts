@@ -100,7 +100,18 @@ function mergeLinks(existing: NewsLinks, incoming: NewsLinks): NewsLinks {
   };
 }
 
-const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+/** Key-order-insensitive JSON equality (Postgres jsonb doesn't preserve key order). */
+function stableJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableJson).join(',')}]`;
+  if (v !== null && typeof v === 'object') {
+    const entries = Object.entries(v as Record<string, unknown>)
+      .filter(([, x]) => x !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, x]) => `${JSON.stringify(k)}:${stableJson(x)}`).join(',')}}`;
+  }
+  return JSON.stringify(v ?? null);
+}
+const sameJson = (a: unknown, b: unknown) => stableJson(a) === stableJson(b);
 const sameDate = (a: Date | null, b: Date | null) => (a?.getTime() ?? null) === (b?.getTime() ?? null);
 
 function errorText(err: unknown): string {

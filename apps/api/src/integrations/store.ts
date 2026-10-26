@@ -116,9 +116,12 @@ export function describeIntegrationError(id: IntegrationId, err: unknown): strin
   const platform = INTEGRATIONS[id].platform;
   const message = err instanceof Error ? err.message : String(err);
   if (err instanceof IntegrationAuthError || isNamed(err, 'IntegrationAuthError')) {
+    // @fant/integrations auth errors are already admin-readable ("X rejected the credentials … re-enter the
+    // keys"); only add the generic advice when the platform gave us nothing useful.
+    if (message.trim().length > 0) return message;
     return id === 'instagram'
-      ? `Instagram rejected the connection — reconnect Instagram. (${message})`
-      : `${platform} rejected the credentials — check the keys. (${message})`;
+      ? 'Instagram rejected the connection — reconnect Instagram.'
+      : `${platform} rejected the credentials — check the keys.`;
   }
   if (err instanceof IntegrationRateLimitError || isNamed(err, 'IntegrationRateLimitError')) {
     const after =

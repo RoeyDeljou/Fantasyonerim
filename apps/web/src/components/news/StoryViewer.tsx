@@ -261,10 +261,10 @@ export function StoryViewer({
         </div>
 
         {/* tap zones aren't reachable without a pointer: keyboard / screen-reader equivalents */}
-        <button type="button" className="sr-only focus:not-sr-only" onClick={prev}>
+        <button type="button" className="sr-only focus-visible:not-sr-only" onClick={prev}>
           {t.story.prev}
         </button>
-        <button type="button" className="sr-only focus:not-sr-only" onClick={next}>
+        <button type="button" className="sr-only focus-visible:not-sr-only" onClick={next}>
           {t.story.next}
         </button>
 
@@ -303,6 +303,8 @@ export function StoryViewer({
               <button
                 type="button"
                 onClick={onClose}
+                // Initial focus for showModal(): otherwise the first (visually hidden) prev button gets it.
+                autoFocus
                 aria-label={t.story.close}
                 className="pointer-events-auto flex size-11 items-center justify-center rounded-full"
               >

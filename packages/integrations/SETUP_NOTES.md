@@ -31,7 +31,7 @@ Needed only so each episode card can open the episode directly in Spotify.
      (`https://open.spotify.com/show/<id>`).
    - secrets `clientId`, `clientSecret`.
 
-If Spotify is not configured, episodes still appear (with Apple + in-app audio), just without the Spotify button.
+If Spotify is not configured, episodes still appear (with the Apple button), just without the Spotify button.
 
 ## 4. Instagram (posts + stories) — Meta app, no App Review needed
 

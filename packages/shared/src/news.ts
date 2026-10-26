@@ -31,7 +31,7 @@ export const NewsLinksSchema = z.object({
   apple: z.string().url().nullable(),
   instagram: z.string().url().nullable(),
   x: z.string().url().nullable(),
-  /** Direct audio enclosure from the podcast RSS, for the in-app player. */
+  /** Direct audio enclosure from the podcast RSS. Stored only — never played in the app (client decision). */
   audio: z.string().url().nullable(),
   /** Generic link (admin updates), rendered as an "open link" button. */
   web: z.string().url().nullable().optional(),
