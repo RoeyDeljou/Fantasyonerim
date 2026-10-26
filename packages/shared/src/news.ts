@@ -192,3 +192,12 @@ export const AdminNewsBodySchema = z.object({
   links: NewsLinksSchema.partial().optional(),
 });
 export type AdminNewsBody = z.infer<typeof AdminNewsBodySchema>;
+
+/** GET /v1/admin/news/hidden — items an admin hid, newest hidden first; POST /v1/admin/news/:id/restore → 204. */
+export const HiddenNewsListSchema = z.object({
+  items: z.array(z.object({ item: NewsItemSchema, hiddenAt: z.string().datetime({ offset: true }) })),
+});
+export type HiddenNewsList = z.infer<typeof HiddenNewsListSchema>;
+
+/** POST /internal/jobs/tick (external cron). */
+export const JobsTickResponseSchema = z.object({ ran: z.array(z.string()) });
