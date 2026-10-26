@@ -29,6 +29,11 @@
   --color-pitch-ink: var(--pitch-ink);
   --color-bench: var(--bench);
   --color-chip-label: var(--chip-label);
+  --color-story-bg: var(--story-bg);
+  --color-story-ink: var(--story-ink);
+  --color-story-track: var(--story-track);
+  --color-media-scrim: var(--media-scrim);
+  --color-on-media: var(--on-media);
   --shadow-card: var(--shadow);
 }
 
@@ -141,4 +146,128 @@ html[dir='rtl'] .name-start {
 }
 html[dir='ltr'] .name-start {
   text-align: left;
+}
+
+/* ---------- News ---------- */
+
+/* Episode scrubber: themed range input; --p is the played fraction (set inline). Always LTR (time). */
+.scrubber {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 1.75rem;
+  background: transparent;
+  cursor: pointer;
+  direction: ltr;
+}
+.scrubber:disabled {
+  cursor: default;
+}
+.scrubber::-webkit-slider-runnable-track {
+  height: 0.3rem;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--primary) var(--p, 0%), var(--line) var(--p, 0%));
+}
+.scrubber::-moz-range-track {
+  height: 0.3rem;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--primary) var(--p, 0%), var(--line) var(--p, 0%));
+}
+.scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -0.35rem;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: var(--primary);
+  border: 2px solid var(--surface);
+  box-shadow: var(--shadow);
+}
+.scrubber::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: var(--primary);
+  border: 2px solid var(--surface);
+}
+.scrubber:disabled::-webkit-slider-thumb {
+  opacity: 0;
+}
+.scrubber:disabled::-moz-range-thumb {
+  opacity: 0;
+}
+
+/*
+ * Instagram-style story ring around the profile avatar: thick gradient ring (yellow → orange → pink → purple)
+ * with a thin gap in the page colour; "seen" = thin muted ring. The gap is the avatar's own border.
+ */
+.story-ring {
+  padding: 4px;
+  background: linear-gradient(
+    45deg,
+    var(--story-ring-1) 0%,
+    var(--story-ring-2) 28%,
+    var(--story-ring-3) 58%,
+    var(--story-ring-4) 82%,
+    var(--story-ring-5) 100%
+  );
+}
+.story-ring[data-seen='true'] {
+  padding: 1.5px;
+  background: var(--story-ring-seen);
+}
+.story-ring > .story-gap {
+  border: 4px solid var(--canvas);
+}
+.story-ring[data-seen='true'] > .story-gap {
+  border-width: 5px;
+}
+
+/* Full-screen story viewer (native <dialog> for Esc + focus trap). Always dark media chrome. */
+dialog.story {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--story-bg);
+  color: var(--story-ink);
+  overscroll-behavior: contain;
+}
+dialog.story::backdrop {
+  background: var(--story-bg);
+}
+html:has(dialog.story[open]) {
+  overflow: hidden;
+}
+.story-shade-top {
+  background: linear-gradient(to bottom, var(--story-shade), transparent);
+}
+.story-shade-bottom {
+  background: linear-gradient(to top, var(--story-shade), transparent);
+}
+
+/* Horizontal media carousels: native scroll-snap, no visible scrollbar. */
+.snap-carousel {
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.snap-carousel::-webkit-scrollbar {
+  display: none;
+}
+.snap-carousel > * {
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+
+/* Deep-linked item: a brand outline that fades after landing. */
+.news-highlight {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  scroll-margin-top: calc(4.5rem + env(safe-area-inset-top));
 }

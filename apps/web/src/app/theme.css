@@ -39,6 +39,19 @@
   --bench: #e9e2ef;
   --chip-label: rgb(255 255 255 / 0.92);
   --theme-color: #c7efd5;
+  /* Instagram story-ring palette (brand-external, Instagram's own colours) + story viewer chrome */
+  --story-ring-1: #feda75;
+  --story-ring-2: #fa7e1e;
+  --story-ring-3: #d62976;
+  --story-ring-4: #962fbf;
+  --story-ring-5: #4f5bd5;
+  --story-ring-seen: #c9bfd2;
+  --story-bg: #0d0614;
+  --story-ink: #ffffff;
+  --story-track: rgb(255 255 255 / 0.35);
+  --story-shade: rgb(0 0 0 / 0.55);
+  --media-scrim: rgb(0 0 0 / 0.45);
+  --on-media: #ffffff;
 }
 
 :root[data-theme='dark'] {
@@ -71,6 +84,13 @@
   --bench: #1b0d27;
   --chip-label: rgb(21 10 31 / 0.88);
   --theme-color: #150a1f;
+  --story-ring-seen: #5a4370;
+  --story-bg: #0d0614;
+  --story-ink: #ffffff;
+  --story-track: rgb(255 255 255 / 0.35);
+  --story-shade: rgb(0 0 0 / 0.55);
+  --media-scrim: rgb(0 0 0 / 0.45);
+  --on-media: #ffffff;
 }
 
 /* No-JS fallback: follow the system when no explicit theme was set. */
@@ -104,5 +124,6 @@
     --bench: #1b0d27;
     --chip-label: rgb(21 10 31 / 0.88);
     --theme-color: #150a1f;
+    --story-ring-seen: #5a4370;
   }
 }

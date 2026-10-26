@@ -22,7 +22,17 @@ import type {
   PlTeam,
   Player,
   UpdateMeBody,
+  AdminNewsBody,
+  AdminPushBody,
+  IntegrationId,
+  IntegrationList,
+  IntegrationStatus,
+  IntegrationUpdateBody,
+  NewsItemId,
+  NewsPage,
+  NotificationPrefs,
 } from '@fant/shared';
+import type { InfiniteData } from '@tanstack/react-query';
 import { api, isApiError } from './api';
 import type { CreateAdminBody } from './api';
 
@@ -44,7 +54,18 @@ export const qk = {
   adminSettings: ['admin', 'settings'] as const,
   adminCaptainBattle: ['admin', 'captain-battle'] as const,
   admins: ['admin', 'admins'] as const,
+  news: ['news', 'feed'] as const,
+  newsHead: ['news', 'head'] as const,
+  stories: ['news', 'stories'] as const,
+  newsItem: (id: NewsItemId) => ['news', 'item', id] as const,
+  notificationPrefs: ['me', 'notification-prefs'] as const,
+  integrations: ['admin', 'integrations'] as const,
 };
+
+export const NEWS_PAGE_SIZE = 15;
+/** "New posts" check while the News tab is visible. */
+export const NEWS_HEAD_POLL_MS = 2 * 60_000;
+export const STORIES_POLL_MS = 5 * 60_000;
 
 export function makeQueryClient(): QueryClient {
   return new QueryClient({
@@ -270,5 +291,150 @@ export function useCreateAdmin() {
   return useMutation({
     mutationFn: (body: CreateAdminBody) => api.admin.createAdmin(body),
     onSuccess: () => void qc.invalidateQueries({ queryKey: qk.admins }),
+  });
+}
+
+// ---------- news ----------
+
+/** The feed: cursor-paginated, newest first. Refetches on focus; the "new posts" pill uses `useNewsHead`. */
+export function useNewsFeed() {
+  return useInfiniteQuery({
+    queryKey: qk.news,
+    queryFn: ({ pageParam, signal }) => api.news(pageParam, NEWS_PAGE_SIZE, { signal }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: NewsPage) => last.nextCursor ?? undefined,
+    staleTime: 60_000,
+  });
+}
+
+/** Light poll of the first page (paused while hidden) — compared with the feed to offer "new posts". */
+export function useNewsHead(enabled: boolean) {
+  return useQuery({
+    queryKey: qk.newsHead,
+    queryFn: ({ signal }) => api.news(undefined, 5, { signal }),
+    enabled,
+    refetchInterval: NEWS_HEAD_POLL_MS,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  });
+}
+
+export function useStories() {
+  return useQuery({
+    queryKey: qk.stories,
+    queryFn: ({ signal }) => api.stories({ signal }),
+    refetchInterval: STORIES_POLL_MS,
+    refetchIntervalInBackground: false,
+    staleTime: 60_000,
+  });
+}
+
+export function useNewsItem(id: NewsItemId | null) {
+  return useQuery({
+    queryKey: id ? qk.newsItem(id) : ['news', 'item', 'none'],
+    queryFn: id ? ({ signal }) => api.newsItem(id, { signal }) : skipToken,
+    staleTime: 5 * 60_000,
+  });
+}
+
+/** Admin: hide an item. Removed from every cached page right away. */
+export function useHideNews() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: NewsItemId) => api.admin.hideNews(id),
+    onSuccess: (_v, id) => {
+      qc.setQueryData<InfiniteData<NewsPage, string | undefined>>(qk.news, (data) =>
+        data
+          ? { ...data, pages: data.pages.map((p) => ({ ...p, items: p.items.filter((i) => i.id !== id) })) }
+          : data,
+      );
+      qc.removeQueries({ queryKey: qk.newsItem(id) });
+      void qc.invalidateQueries({ queryKey: ['news'] });
+    },
+  });
+}
+
+export function usePostNews() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AdminNewsBody) => api.admin.postNews(body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['news'] }),
+  });
+}
+
+export function useAdminPush() {
+  return useMutation({ mutationFn: (body: AdminPushBody) => api.admin.push(body) });
+}
+
+// ---------- notification prefs ----------
+
+export function useNotificationPrefs(enabled: boolean) {
+  return useQuery({
+    queryKey: qk.notificationPrefs,
+    queryFn: ({ signal }) => api.notificationPrefs({ signal }),
+    enabled,
+    staleTime: 5 * 60_000,
+  });
+}
+
+/** Optimistic: the toggle flips immediately and rolls back on failure. */
+export function useSaveNotificationPrefs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: NotificationPrefs) => api.saveNotificationPrefs(body),
+    onMutate: async (body) => {
+      await qc.cancelQueries({ queryKey: qk.notificationPrefs });
+      const previous = qc.getQueryData<NotificationPrefs>(qk.notificationPrefs);
+      qc.setQueryData(qk.notificationPrefs, body);
+      return { previous };
+    },
+    onError: (_e, _body, ctx) => {
+      if (ctx?.previous) qc.setQueryData(qk.notificationPrefs, ctx.previous);
+    },
+    onSuccess: (prefs) => qc.setQueryData(qk.notificationPrefs, prefs),
+  });
+}
+
+// ---------- admin: integrations ----------
+
+export function useIntegrations(enabled: boolean) {
+  return useQuery({
+    queryKey: qk.integrations,
+    queryFn: ({ signal }) => api.admin.integrations({ signal }),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+function replaceIntegration(list: IntegrationList | undefined, next: IntegrationStatus) {
+  if (!list) return list;
+  return { integrations: list.integrations.map((i) => (i.id === next.id ? next : i)) };
+}
+
+export function useUpdateIntegration(id: IntegrationId) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: IntegrationUpdateBody) => api.admin.updateIntegration(id, body),
+    onSuccess: (s) => qc.setQueryData<IntegrationList>(qk.integrations, (l) => replaceIntegration(l, s)),
+  });
+}
+
+export function useSyncIntegration(id: IntegrationId) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.admin.syncIntegration(id),
+    onSuccess: (s) => {
+      qc.setQueryData<IntegrationList>(qk.integrations, (l) => replaceIntegration(l, s));
+      void qc.invalidateQueries({ queryKey: ['news'] });
+    },
+  });
+}
+
+export function useDisconnectInstagram() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.admin.disconnectInstagram(),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.integrations }),
   });
 }

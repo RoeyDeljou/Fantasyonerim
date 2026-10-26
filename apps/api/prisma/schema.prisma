@@ -42,8 +42,12 @@ model User {
   updatedAt        DateTime  @updatedAt
   bannedAt         DateTime?
 
-  sessions        Session[]
-  adminCredential AdminCredential?
+  sessions          Session[]
+  adminCredential   AdminCredential?
+  pushSubscriptions PushSubscription[]
+  nativePushDevices NativePushDevice[]
+  notificationPrefs NotificationPrefs?
+  notificationLogs  NotificationLog[]
 }
 
 model Session {
@@ -113,4 +117,150 @@ model CaptainBattleEntry {
   battle CaptainBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
 
   @@unique([battleId, order])
+}
+
+// ---------- Phase 2: News, integrations, push, jobs ----------
+
+enum IntegrationId {
+  podcast_rss
+  spotify
+  apple
+  instagram
+  x
+}
+
+/// One row per News item. `dedupeKey` (e.g. "podcast:<guid>", "instagram:<media id>") makes every poll
+/// idempotent. Hidden items stay in the table so a re-poll never re-creates them.
+model NewsItem {
+  id          String    @id @default(cuid())
+  dedupeKey   String    @unique
+  /// NewsSource: podcast | instagram_post | instagram_story | x_post | admin_update
+  source      String
+  title       String?
+  text        String?
+  /// NewsLinks JSON (spotify, apple, instagram, x, audio).
+  links       Json
+  /// PodcastMeta JSON for episodes, null otherwise.
+  podcast     Json?
+  publishedAt DateTime
+  /// Stories only (publishedAt + 24 h).
+  expiresAt   DateTime?
+  hiddenAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  media NewsMedia[]
+
+  @@index([hiddenAt, source, publishedAt(sort: Desc)])
+  @@index([publishedAt(sort: Desc), id(sort: Desc)])
+}
+
+model NewsMedia {
+  id         String  @id @default(cuid())
+  itemId     String
+  order      Int
+  /// "image" | "video"
+  kind       String
+  /// Public URL served to clients (re-hosted for Instagram).
+  url        String
+  posterUrl  String?
+  width      Int?
+  height     Int?
+  /// Where it came from (platform CDN URL; may expire).
+  sourceUrl  String
+  /// MediaStore key of `url` when re-hosted (deleted by the cleanup job for old stories).
+  storageKey String?
+  /// MediaStore key of `posterUrl` when re-hosted.
+  posterKey  String?
+
+  item NewsItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, order])
+}
+
+model IntegrationConfig {
+  id                  IntegrationId @id
+  enabled             Boolean       @default(false)
+  /// Non-secret settings (string values), echoed to the admin console.
+  settings            Json          @default("{}")
+  /// AES-256-GCM (secrets.ts) of a JSON object of secret settings. Never logged, never returned.
+  secretsEnc          String?
+  /// Opaque source cursor (RSS validators, X since_id).
+  cursor              String?
+  accountLabel        String?
+  lastRunAt           DateTime?
+  lastSuccessAt       DateTime?
+  lastError           String?
+  itemsImported       Int           @default(0)
+  tokenExpiresAt      DateTime?
+  dataAccessExpiresAt DateTime?
+  /// false until the first successful import: the backfill is silent (no push).
+  initialSyncDone     Boolean       @default(false)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+}
+
+model PushSubscription {
+  id            String    @id @default(cuid())
+  endpoint      String    @unique
+  p256dh        String
+  auth          String
+  userId        String
+  createdAt     DateTime  @default(now())
+  lastSuccessAt DateTime?
+  failureCount  Int       @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// FCM / APNs tokens from the future Capacitor apps. Stored only — no sender yet.
+model NativePushDevice {
+  id        String   @id @default(cuid())
+  /// "fcm" | "apns"
+  platform  String
+  token     String   @unique
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model NotificationPrefs {
+  userId    String   @id
+  news      Boolean  @default(true)
+  fpl       Boolean  @default(true)
+  live      Boolean  @default(true)
+  community Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// "Sent at most once per user per item": a row is claimed before a notification is sent.
+model NotificationLog {
+  id        String   @id @default(cuid())
+  userId    String
+  /// e.g. "news:<itemId>", "deadline:<gw>:<offset>", "gw_summary:<gw>"
+  key       String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+}
+
+/// Lease per background job so two instances / ticks never run the same job concurrently.
+model JobLease {
+  name        String    @id
+  lockedUntil DateTime  @default("1970-01-01T00:00:00Z")
+  lastRunAt   DateTime?
+  lastOkAt    DateTime?
+  lastError   String?
+  /// Small job-private state (e.g. when podcast links were last re-resolved).
+  state       Json?
 }

@@ -7,6 +7,7 @@ import { he } from './he';
 import type { Messages } from './he';
 import { en } from './en';
 import { PREF_KEYS, isLocale, readPref, writePref } from '@/lib/prefs';
+import { relativeParts } from '@/lib/newsFormat';
 
 export type { Messages };
 
@@ -29,6 +30,11 @@ export interface Formatters {
   time(iso: string): string;
   dayTime(iso: string): string;
   percent(n: number): string;
+  /** "לפני 5 דקות" / "5 minutes ago"; a date once older than a week. */
+  relative(iso: string, now?: number): string;
+  /** "26 באוק׳" (adds the year when it isn't this year). */
+  date(iso: string): string;
+  dateTime(iso: string): string;
 }
 
 function makeFormatters(locale: Locale): Formatters {
@@ -45,6 +51,25 @@ function makeFormatters(locale: Locale): Formatters {
     minute: '2-digit',
     timeZone: DISPLAY_TIME_ZONE,
   });
+  const rel = new Intl.RelativeTimeFormat(tag, { numeric: 'auto', style: 'long' });
+  const dayMonth = new Intl.DateTimeFormat(tag, { day: 'numeric', month: 'short', timeZone: DISPLAY_TIME_ZONE });
+  const dayMonthYear = new Intl.DateTimeFormat(tag, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: DISPLAY_TIME_ZONE,
+  });
+  const dateTime = new Intl.DateTimeFormat(tag, {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: DISPLAY_TIME_ZONE,
+  });
+  const date = (iso: string) => {
+    const d = new Date(iso);
+    return (d.getFullYear() === new Date().getFullYear() ? dayMonth : dayMonthYear).format(d);
+  };
   return {
     // Negatives get a real minus sign inside a directional isolate (LRI…PDI), so "−1" never turns into "1-"
     // when the string lands in Hebrew text (also inside fmt() templates).
@@ -59,6 +84,13 @@ function makeFormatters(locale: Locale): Formatters {
     time: (iso) => time.format(new Date(iso)),
     dayTime: (iso) => dayTime.format(new Date(iso)),
     percent: (n) => `${new Intl.NumberFormat(tag, { maximumFractionDigits: 1 }).format(n)}%`,
+    relative: (iso, now = Date.now()) => {
+      const p = relativeParts(iso, now);
+      if (p === 'now') return rel.format(0, 'second');
+      return p ? rel.format(p.value, p.unit) : date(iso);
+    },
+    date,
+    dateTime: (iso) => dateTime.format(new Date(iso)),
   };
 }
 

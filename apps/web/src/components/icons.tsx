@@ -283,3 +283,135 @@ export const GripIcon = (p: IconProps) => (
     <path d="M9 6v.01M15 6v.01M9 12v.01M15 12v.01M9 18v.01M15 18v.01" strokeWidth={2.6} />
   </Svg>
 );
+
+export const PlayIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M7.5 4.8v14.4a.8.8 0 0 0 1.2.7l11.3-7.2a.8.8 0 0 0 0-1.4L8.7 4.1a.8.8 0 0 0-1.2.7Z" fill="currentColor" />
+  </Svg>
+);
+
+export const PauseIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="6" y="4.5" width="4" height="15" rx="1.2" fill="currentColor" stroke="none" />
+    <rect x="14" y="4.5" width="4" height="15" rx="1.2" fill="currentColor" stroke="none" />
+  </Svg>
+);
+
+/** "Back N seconds" — a counter-clockwise arrow. Direction is about time, so it is never mirrored. */
+export const RewindIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" />
+    <path d="M4.5 4.5v4h4" />
+  </Svg>
+);
+
+export const ForwardIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" />
+    <path d="M19.5 4.5v4h-4" />
+  </Svg>
+);
+
+export const VolumeIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 9.5h3l4.5-4v13l-4.5-4H4z" />
+    <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
+  </Svg>
+);
+
+export const MuteIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 9.5h3l4.5-4v13l-4.5-4H4z" />
+    <path d="m16 9.5 5 5M21 9.5l-5 5" />
+  </Svg>
+);
+
+export const MoreIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 12v.01M12 12v.01M18 12v.01" strokeWidth={2.8} />
+  </Svg>
+);
+
+export const EyeOffIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 3l18 18" />
+    <path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c5 0 8.5 4.5 9 6-.3.8-1.2 2.2-2.6 3.5M6.6 7.6C4.6 8.9 3.3 10.8 3 12c.5 1.5 4 6 9 6 1.6 0 3-.4 4.2-1.1" />
+    <path d="M9.9 10a3 3 0 0 0 4.1 4.1" />
+  </Svg>
+);
+
+export const ExternalIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M13.5 4.5h6v6M19.5 4.5 11 13" />
+    <path d="M18 14v4.5a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1H10" />
+  </Svg>
+);
+
+export const BellIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15Z" />
+    <path d="M10 20.5a2.2 2.2 0 0 0 4 0" />
+  </Svg>
+);
+
+export const BellOffIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 3l18 18" />
+    <path d="M8.2 6.3A6 6 0 0 1 18 11v4M6 11v5.5l-1.5 2h11.5" />
+    <path d="M10 20.5a2.2 2.2 0 0 0 4 0" />
+  </Svg>
+);
+
+export const MegaphoneIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 10v4a1 1 0 0 0 1 1h2l9 4.5V4.5L7 9H5a1 1 0 0 0-1 1Z" />
+    <path d="M8 15l1.2 4.5M19.5 10v4" />
+  </Svg>
+);
+
+export const RssIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M5 11a8 8 0 0 1 8 8M5 5a14 14 0 0 1 14 14" />
+    <circle cx="6" cy="18" r="1.3" fill="currentColor" />
+  </Svg>
+);
+
+export const PlugIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9 3.5v4M15 3.5v4M6.5 7.5h11V11a5.5 5.5 0 0 1-11 0Z" />
+    <path d="M12 16.5v4" />
+  </Svg>
+);
+
+export const SendIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 12 20 4.5 15.5 20l-3.2-6.3Z" />
+    <path d="m12.3 13.7 7.7-9.2" />
+  </Svg>
+);
+
+/** Brand marks (filled, monochrome currentColor — tinted by our theme, never their brand hex). */
+export const XBrandIcon = (p: IconProps) => (
+  <Svg {...p} strokeWidth={0}>
+    <path
+      fill="currentColor"
+      d="M17.75 3h2.94l-6.43 7.35L21.8 21h-5.92l-4.64-6.07L5.93 21H3l6.88-7.86L2.6 3h6.07l4.19 5.54ZM16.72 19.13h1.63L7.82 4.78H6.07Z"
+    />
+  </Svg>
+);
+
+export const SpotifyIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M7.5 9.6c3-.9 6.4-.6 9 .9M8 12.7c2.4-.7 5-.4 7.2.8M8.6 15.6c1.9-.5 3.8-.3 5.4.6" />
+  </Svg>
+);
+
+export const ApplePodcastsIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M7.2 16.6a7 7 0 1 1 9.6 0" />
+    <path d="M9.4 13.8a3.5 3.5 0 1 1 5.2 0" />
+    <circle cx="12" cy="11" r="1.2" fill="currentColor" />
+    <path d="M11.2 14.5h1.6l-.3 5.5h-1z" fill="currentColor" />
+  </Svg>
+);

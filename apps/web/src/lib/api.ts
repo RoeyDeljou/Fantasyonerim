@@ -15,6 +15,15 @@ import {
   MeSchema,
   PublicConfigSchema,
   RecoveryCodeResponseSchema,
+  AdminPushResultSchema,
+  IntegrationListSchema,
+  IntegrationStatusSchema,
+  NewsItemSchema,
+  NewsPageSchema,
+  NotificationPrefsSchema,
+  OAuthStartSchema,
+  StoriesSchema,
+  VapidKeySchema,
 } from '@fant/shared';
 import type { CreateAdminBodySchema } from '@fant/shared';
 import type {
@@ -38,6 +47,19 @@ import type {
   RecoverBody,
   RegisterBody,
   UpdateMeBody,
+  AdminNewsBody,
+  AdminPushBody,
+  AdminPushResult,
+  IntegrationId,
+  IntegrationList,
+  IntegrationStatus,
+  IntegrationUpdateBody,
+  NewsItem,
+  NewsItemId,
+  NewsPage,
+  NotificationPrefs,
+  Stories,
+  WebPushSubscriptionBody,
 } from '@fant/shared';
 import { tokenStore } from './tokenStore';
 
@@ -217,7 +239,40 @@ export const api = {
   captainBattle: (o: Signal = {}): Promise<CaptainBattle> =>
     request('GET', '/v1/captain-battle', CaptainBattleSchema, o),
 
+  news: (cursor: string | undefined, limit: number, o: Signal = {}): Promise<NewsPage> =>
+    request('GET', '/v1/news', NewsPageSchema, { ...o, query: { cursor, limit } }),
+  stories: (o: Signal = {}): Promise<Stories> => request('GET', '/v1/news/stories', StoriesSchema, o),
+  newsItem: (id: NewsItemId, o: Signal = {}): Promise<NewsItem> =>
+    request('GET', `/v1/news/${encodeURIComponent(id)}`, NewsItemSchema, o),
+
+  vapidPublicKey: (o: Signal = {}): Promise<string> =>
+    request('GET', '/v1/push/vapid-public-key', VapidKeySchema, o).then((r) => r.publicKey),
+  savePushSubscription: (body: WebPushSubscriptionBody): Promise<void> =>
+    request('POST', '/v1/push/subscriptions', noContent, { body }),
+  deletePushSubscription: (endpoint: string): Promise<void> =>
+    request('DELETE', '/v1/push/subscriptions', noContent, { body: { endpoint } }),
+  notificationPrefs: (o: Signal = {}): Promise<NotificationPrefs> =>
+    request('GET', '/v1/me/notification-prefs', NotificationPrefsSchema, o),
+  saveNotificationPrefs: (body: NotificationPrefs): Promise<NotificationPrefs> =>
+    request('PUT', '/v1/me/notification-prefs', NotificationPrefsSchema, { body }),
+
   admin: {
+    integrations: (o: Signal = {}): Promise<IntegrationList> =>
+      request('GET', '/v1/admin/integrations', IntegrationListSchema, o),
+    updateIntegration: (id: IntegrationId, body: IntegrationUpdateBody): Promise<IntegrationStatus> =>
+      request('PUT', `/v1/admin/integrations/${id}`, IntegrationStatusSchema, { body }),
+    syncIntegration: (id: IntegrationId): Promise<IntegrationStatus> =>
+      request('POST', `/v1/admin/integrations/${id}/sync`, IntegrationStatusSchema),
+    instagramConnectUrl: (): Promise<string> =>
+      request('GET', '/v1/admin/integrations/instagram/connect-url', OAuthStartSchema).then((r) => r.url),
+    disconnectInstagram: (): Promise<void> =>
+      request('DELETE', '/v1/admin/integrations/instagram', noContent),
+    postNews: (body: AdminNewsBody): Promise<NewsItem> =>
+      request('POST', '/v1/admin/news', NewsItemSchema, { body }),
+    hideNews: (id: NewsItemId): Promise<void> =>
+      request('DELETE', `/v1/admin/news/${encodeURIComponent(id)}`, noContent),
+    push: (body: AdminPushBody): Promise<AdminPushResult> =>
+      request('POST', '/v1/admin/push', AdminPushResultSchema, { body }),
     settings: (o: Signal = {}): Promise<AdminSettings> =>
       request('GET', '/v1/admin/settings', AdminSettingsSchema, o),
     saveSettings: (body: AdminSettings): Promise<AdminSettings> =>
