@@ -1,5 +1,6 @@
 'use client';
 
+import { firstGrapheme } from '@/lib/text';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
@@ -197,7 +198,7 @@ export function OnboardingScreen() {
           <StepHeader title={t.onboarding.previewTitle} onBack={() => setStep('form')} />
           <Card className="flex flex-col items-center gap-2 py-8 text-center">
             <span className="flex size-16 items-center justify-center rounded-full bg-accent text-2xl font-extrabold text-on-accent">
-              {preview.teamName.slice(0, 1).toUpperCase()}
+              {firstGrapheme(preview.teamName).toLocaleUpperCase()}
             </span>
             <p dir="auto" className="name-start max-w-full truncate text-2xl font-extrabold text-ink">
               {preview.teamName}

@@ -197,7 +197,7 @@ function LeagueCard({ server }: { server: AdminSettings }) {
           {league ? (
             <>
               {fmt(t.admin.leagueCurrent, { name: '' })}
-              <bdi dir="auto" className="name-start font-semibold text-ink">
+              <bdi dir={league.name ? 'auto' : 'ltr'} className="font-semibold text-ink">
                 {league.name ?? `#${league.id}`}
               </bdi>
             </>

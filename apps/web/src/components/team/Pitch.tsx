@@ -168,9 +168,9 @@ function PlayerToken<P extends Pick | LivePick>({
             )}
           />
         )}
-        {live && live.provisionalBonus > 0 && (
+        {live && live.bonus > 0 && (
           <span
-            title={fmt(live.bonusConfirmed ? t.live.bonus : t.live.provBonus, { n: live.provisionalBonus })}
+            title={fmt(live.bonusConfirmed ? t.live.bonus : t.live.provBonus, { n: live.bonus })}
             className={cx(
               'absolute -bottom-1 -end-2 rounded-full px-1 text-[10px] leading-4 font-extrabold ring-2 ring-surface',
               live.bonusConfirmed
@@ -178,7 +178,7 @@ function PlayerToken<P extends Pick | LivePick>({
                 : 'border border-dashed border-warning bg-warning-soft text-warning',
             )}
           >
-            <bdi dir="ltr">+{live.provisionalBonus}</bdi>
+            <bdi dir="ltr">+{live.bonus}</bdi>
           </span>
         )}
         {live?.autoSubIn && (

@@ -402,7 +402,9 @@ function CaptainBattleView({ index, interval }: { index: FplIndex; interval: num
   const deadline = index.bootstrap.events.find((e) => e.id === event)?.deadlineTime;
   const beforeDeadline = deadline ? Date.parse(deadline) > Date.now() : false;
 
-  let rank = 0;
+  // Standard competition ranking: equal captain points share a rank (16, 16 → 1, 1; next is 3).
+  const known = rows.filter((r) => r.playerId !== null);
+  const rankOf = (r: CaptainBattleRow) => 1 + known.filter((o) => o.captainPoints > r.captainPoints).length;
   return (
     <div className="flex flex-col gap-3">
       <header>
@@ -417,7 +419,7 @@ function CaptainBattleView({ index, interval }: { index: FplIndex; interval: num
           <CaptainRow
             key={r.key}
             row={r}
-            rank={r.playerId === null ? null : ++rank}
+            rank={r.playerId === null ? null : rankOf(r)}
             index={index}
             fixtures={fixtures.data}
             beforeDeadline={beforeDeadline}
@@ -523,7 +525,7 @@ function CaptainRow({
               <span>· {fmt(t.live.minutesPlayed, { n: f.num(live.minutes) })}</span>
             )}
             <span>· {fmt(t.liveAction.base, { n: f.num(live.basePoints) })}</span>
-            <BonusBadge n={live.provisionalBonus} confirmed={live.fixtureStatus === 'finished'} />
+            <BonusBadge n={live.bonus} confirmed={live.bonusConfirmed} />
           </span>
         )}
       </div>

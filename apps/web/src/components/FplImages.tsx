@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { initials } from '@/lib/text';
 import { cx } from './ui';
 
 /** FPL / PL image CDNs (public, CORS-free <img> loads). The browser never calls the FPL *API*. */
@@ -11,13 +12,6 @@ export const fplImage = {
   photo: (photoCode: string) =>
     `https://resources.premierleague.com/premierleague/photos/players/110x140/p${photoCode.replace(/\.(png|jpg)$/i, '')}.png`,
 };
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/);
-  const first = parts[0]?.[0] ?? '';
-  const second = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : (parts[0]?.[1] ?? '');
-  return (first + second).toUpperCase();
-}
 
 /** <img> that degrades to a coloured initials circle when the CDN fails or is blocked. */
 export function ImageWithFallback({
@@ -44,7 +38,7 @@ export function ImageWithFallback({
           fallbackClassName ?? className,
         )}
       >
-        {fallbackText ?? initials(name)}
+        {fallbackText ?? initials(name, { pairFromOneWord: true })}
       </span>
     );
   }

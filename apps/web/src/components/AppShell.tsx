@@ -8,6 +8,7 @@ import { useT } from '@/i18n';
 import { ROUTES, useSession } from '@/lib/session';
 import { useMe } from '@/lib/queries';
 import { CommunityIcon, LiveIcon, NewsIcon, ShirtIcon, TableIcon } from './icons';
+import { initials } from '@/lib/text';
 import { Skeleton, cx } from './ui';
 
 type TabKey = 'news' | 'community' | 'myTeam' | 'table' | 'live';
@@ -21,11 +22,7 @@ const TABS: ReadonlyArray<{ key: TabKey; href: string; Icon: ComponentType<SVGPr
 ];
 
 function initialsOf(name: string | undefined): string {
-  if (!name) return '';
-  const parts = name.trim().split(/\s+/);
-  return (
-    (parts[0]?.[0] ?? '') + (parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '')
-  ).toUpperCase();
+  return name ? initials(name) : '';
 }
 
 export function Logo({ size = 36 }: { size?: number }) {

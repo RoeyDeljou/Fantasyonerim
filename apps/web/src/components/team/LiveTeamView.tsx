@@ -212,7 +212,7 @@ function LivePlayerRow({
             {(pick.fixtureStatus === 'live' || pick.fixtureStatus === 'finished') && (
               <span>· {fmt(t.live.minutesPlayed, { n: f.num(pick.minutes) })}</span>
             )}
-            <BonusBadge n={pick.provisionalBonus} confirmed={pick.bonusConfirmed} />
+            <BonusBadge n={pick.bonus} confirmed={pick.bonusConfirmed} />
           </span>
         </span>
         <span className="flex shrink-0 flex-col items-end">

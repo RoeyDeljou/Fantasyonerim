@@ -1,5 +1,6 @@
 'use client';
 
+import { firstGrapheme } from '@/lib/text';
 import Link from 'next/link';
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
@@ -197,7 +198,7 @@ function NameEditor({ current }: { current: string }) {
     return (
       <div className="flex items-center gap-3">
         <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-accent text-lg font-extrabold text-on-accent">
-          {current.slice(0, 1).toUpperCase()}
+          {firstGrapheme(current).toLocaleUpperCase()}
         </span>
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="text-xs text-muted">{t.profile.name}</span>

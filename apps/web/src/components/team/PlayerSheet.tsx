@@ -128,9 +128,9 @@ export function PlayerSheet({
                 )}
                 {live.redCards > 0 && <Stat label={t.player.red} value={<Num value={live.redCards} />} />}
               </dl>
-              {live.provisionalBonus > 0 && (
+              {live.bonus > 0 && (
                 <p className="mt-2">
-                  <BonusBadge n={live.provisionalBonus} confirmed={live.bonusConfirmed} />
+                  <BonusBadge n={live.bonus} confirmed={live.bonusConfirmed} />
                 </p>
               )}
             </section>

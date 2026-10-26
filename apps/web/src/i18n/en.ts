@@ -254,7 +254,7 @@ export const en: Messages = {
     base: 'Base {n}',
     mine: 'My captain',
     kindCommunity: 'Community',
-    kindCustom: 'Fantasyonerim',
+    kindCustom: 'Standard',
   },
   profile: {
     title: 'Profile',
