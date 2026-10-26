@@ -15,6 +15,11 @@ enum Role {
   ADMIN
 }
 
+enum CaptainBattleEntrySource {
+  PLAYER
+  ENTRY
+}
+
 enum CaptainBattleEntryKind {
   COMMUNITY
   CUSTOM
@@ -94,12 +99,16 @@ model CaptainBattle {
 }
 
 model CaptainBattleEntry {
-  id       String                 @id @default(cuid())
+  id       String                   @id @default(cuid())
   battleId String
   order    Int
   label    String
-  playerId Int
   kind     CaptainBattleEntryKind
+  /// PLAYER: hand-picked `playerId`. ENTRY: linked FPL team `entryId` (captain read from its picks).
+  /// DB CHECK "CaptainBattleEntry_source_target_check" enforces exactly one of them per source.
+  source   CaptainBattleEntrySource @default(PLAYER)
+  playerId Int?
+  entryId  Int?
 
   battle CaptainBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
 
