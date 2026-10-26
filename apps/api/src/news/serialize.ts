@@ -10,7 +10,14 @@ import { serialize } from '../validate.js';
 
 export type NewsItemWithMedia = NewsItemRow & { media: NewsMedia[] };
 
-export const EMPTY_LINKS: NewsLinks = { spotify: null, apple: null, instagram: null, x: null, audio: null };
+export const EMPTY_LINKS: NewsLinks = {
+  spotify: null,
+  apple: null,
+  instagram: null,
+  x: null,
+  audio: null,
+  web: null,
+};
 
 export function readLinks(json: unknown): NewsLinks {
   const parsed = NewsLinksSchema.partial().safeParse(json);
@@ -22,6 +29,7 @@ export function readLinks(json: unknown): NewsLinks {
     instagram: l.instagram ?? null,
     x: l.x ?? null,
     audio: l.audio ?? null,
+    web: l.web ?? null,
   };
 }
 

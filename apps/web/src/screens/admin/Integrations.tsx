@@ -406,7 +406,7 @@ function SettingsForm({ status: s }: { status: IntegrationStatus }) {
           </legend>
           {s.id === 'spotify' && <p className="-mt-2 text-xs text-muted">{it.spotifyKeysHelp}</p>}
           {secrets.map((sec) =>
-            s.hasSecret && !replacing[sec.key] ? (
+            s.secretKeys.includes(sec.key) && !replacing[sec.key] ? (
               <div key={sec.key} className="flex min-h-12 items-center justify-between gap-2">
                 <span className="text-sm font-semibold text-ink">{it[sec.label]}</span>
                 <span className="flex items-center gap-1 text-sm">
@@ -437,7 +437,7 @@ function SettingsForm({ status: s }: { status: IntegrationStatus }) {
                   value={secretValues[sec.key] ?? ''}
                   onChange={(e) => setSecretValues({ ...secretValues, [sec.key]: e.target.value })}
                 />
-                {s.hasSecret && (
+                {s.secretKeys.includes(sec.key) && (
                   <Button
                     variant="ghost"
                     className="mb-6"
@@ -672,15 +672,14 @@ function ManualPostCard() {
     e.preventDefault();
     const l = link.trim();
     let links: Record<string, string> | undefined;
-    let body = text;
+    const body = text;
     if (l) {
       const u = httpsUrl(l);
       if (!u) {
         setError(it.invalidUrl);
         return;
       }
-      // Route the link to the matching slot so the card shows the right button; NewsLinks has no generic
-      // slot, so any other link is appended to the text (the card linkifies it).
+      // Route the link to the matching slot so the card shows the right button; anything else is a generic link.
       const host = new URL(u).hostname;
       const slot = /(^|\.)spotify\.com$|spoti\.fi$/.test(host)
         ? 'spotify'
@@ -691,8 +690,7 @@ function ManualPostCard() {
             : /(^|\.)(x|twitter)\.com$/.test(host)
               ? 'x'
               : null;
-      if (slot) links = { [slot]: u };
-      else body = `${text.trim()}\n\n${u}`;
+      links = { [slot ?? 'web']: u };
     }
     const parsed = AdminNewsBodySchema.safeParse({
       title: title.trim() || null,

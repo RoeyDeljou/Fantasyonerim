@@ -96,6 +96,7 @@ function mergeLinks(existing: NewsLinks, incoming: NewsLinks): NewsLinks {
     instagram: incoming.instagram ?? existing.instagram,
     x: incoming.x ?? existing.x,
     audio: incoming.audio ?? existing.audio,
+    web: incoming.web ?? existing.web ?? null,
   };
 }
 

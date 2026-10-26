@@ -247,7 +247,7 @@ describe('admin news + manual push', () => {
       payload: {
         title: 'שידור חי הערב',
         text: 'ב-21:00 ביוטיוב',
-        links: { x: 'https://x.com/fantasyonerim' },
+        links: { x: 'https://x.com/fantasyonerim', web: 'https://linktr.ee/Fantasyonerim' },
       },
     });
     expect(res.statusCode).toBe(201);
@@ -255,7 +255,7 @@ describe('admin news + manual push', () => {
     expect(item).toMatchObject({
       source: 'admin_update',
       title: 'שידור חי הערב',
-      links: { x: 'https://x.com/fantasyonerim', apple: null },
+      links: { x: 'https://x.com/fantasyonerim', web: 'https://linktr.ee/Fantasyonerim', apple: null },
     });
     expect(push.sent.map((s) => s.endpoint).sort()).toEqual(['https://push.test/en', 'https://push.test/on']);
     expect(push.sent.every((s) => s.payload.url === `/news/?item=${item.id}`)).toBe(true);

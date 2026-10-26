@@ -146,6 +146,7 @@ describe('integration settings', () => {
     expect(status).toMatchObject({
       configured: true,
       hasSecret: true,
+      secretKeys: ['clientId', 'clientSecret'],
       settings: { showId: '4sYY0tpz7M8gflimZAglHi' },
     });
     const listed = await app.inject({ method: 'GET', url: '/v1/admin/integrations', headers: bearer(admin) });
@@ -158,7 +159,7 @@ describe('integration settings', () => {
     const kept = await put('spotify', { enabled: true, settings: {}, secrets: { clientId: '' } });
     expect(kept.json().configured).toBe(true);
     const cleared = await put('spotify', { enabled: true, settings: {}, secrets: { clientSecret: null } });
-    expect(cleared.json()).toMatchObject({ configured: false, hasSecret: true });
+    expect(cleared.json()).toMatchObject({ configured: false, hasSecret: true, secretKeys: ['clientId'] });
   });
 
   it('rejects invalid settings with field-specific messages', async () => {

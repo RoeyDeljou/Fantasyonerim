@@ -22,6 +22,7 @@ import {
   PlayIcon,
   SpotifyIcon,
   XBrandIcon,
+  ExternalIcon,
 } from '@/components/icons';
 import { Badge, Button, IconButton, InlineError, Spinner, cx, errorMessage } from '@/components/ui';
 import { MediaCarousel, MediaGrid } from './Media';
@@ -370,6 +371,8 @@ function AdminUpdateCard({ item, isAdmin, highlighted }: CardProps) {
   if (item.links.instagram)
     links.push({ href: item.links.instagram, label: t.socials.instagram, icon: <CameraIcon size={18} /> });
   if (item.links.x) links.push({ href: item.links.x, label: t.socials.x, icon: <XBrandIcon size={16} /> });
+  if (item.links.web)
+    links.push({ href: item.links.web, label: t.socials.web, icon: <ExternalIcon size={16} /> });
   return (
     <CardFrame item={item} highlighted={highlighted} className="border-primary/40 bg-primary-soft">
       <CardHeader item={item} isAdmin={isAdmin} />

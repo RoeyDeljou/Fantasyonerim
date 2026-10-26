@@ -120,6 +120,7 @@ export const he = {
     instagram: 'Instagram',
     x: 'X',
     whatsapp: 'WhatsApp',
+    web: 'קישור',
   },
   myTeam: {
     chipHalf1: 'סבב 1 · מחזורים 1–19',

@@ -33,6 +33,8 @@ export const NewsLinksSchema = z.object({
   x: z.string().url().nullable(),
   /** Direct audio enclosure from the podcast RSS, for the in-app player. */
   audio: z.string().url().nullable(),
+  /** Generic link (admin updates), rendered as an "open link" button. */
+  web: z.string().url().nullable().optional(),
 });
 export type NewsLinks = z.infer<typeof NewsLinksSchema>;
 
@@ -148,6 +150,8 @@ export const IntegrationStatusSchema = z.object({
   /** Non-secret settings, echoed back for the form. Secrets are never returned (only `hasSecret`). */
   settings: z.record(z.string(), z.string().nullable()),
   hasSecret: z.boolean(),
+  /** Which secret keys are stored (names only, never values), e.g. ["clientId", "clientSecret"]. */
+  secretKeys: z.array(z.string()),
   lastRunAt: z.string().datetime({ offset: true }).nullable(),
   lastSuccessAt: z.string().datetime({ offset: true }).nullable(),
   lastError: z.string().nullable(),

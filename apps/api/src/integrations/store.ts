@@ -95,6 +95,7 @@ export function toIntegrationStatus(loaded: LoadedIntegration): IntegrationStatu
       accountLabel: row.accountLabel,
       settings: Object.fromEntries(shownKeys.map((k) => [k, settings[k] ?? null])),
       hasSecret: Object.keys(secrets).length > 0,
+      secretKeys: Object.keys(secrets).sort(),
       lastRunAt: iso(row.lastRunAt),
       lastSuccessAt: iso(row.lastSuccessAt),
       lastError: row.lastError,

@@ -117,6 +117,7 @@ export const en: Messages = {
     instagram: 'Instagram',
     x: 'X',
     whatsapp: 'WhatsApp',
+    web: 'Open link',
   },
   myTeam: {
     chipHalf1: 'Set 1 · GW1–19',
