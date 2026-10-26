@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useState } from 'react';
 import type { CommunityPost } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
-import { useBanned } from '@/lib/banned';
 import { useDeletePost, useLikePost, useMe } from '@/lib/queries';
 import { ChatIcon, HeartIcon } from '@/components/icons';
 import { ExpandableText, LinkifiedText, MediaImage } from '@/components/news/parts';
@@ -115,8 +114,6 @@ export function PostCard({
 function PostActions({ post, inThread }: { post: CommunityPost; inThread: boolean }) {
   const { t } = useI18n();
   const c = t.community;
-  const me = useMe();
-  const banned = useBanned(me.data?.id);
   const like = useLikePost();
   const [pop, setPop] = useState(0);
 
@@ -147,7 +144,6 @@ function PostActions({ post, inThread }: { post: CommunityPost; inThread: boolea
       <button
         type="button"
         onClick={toggle}
-        disabled={banned}
         aria-pressed={post.likedByMe}
         aria-label={`${post.likedByMe ? c.unlike : c.like} · ${fmt(c.likeCount, { n: post.likeCount })}`}
         data-testid="like-button"

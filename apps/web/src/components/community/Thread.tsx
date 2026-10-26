@@ -59,7 +59,7 @@ export function Thread({ postId, onBack }: { postId: PostId; onBack(): void }) {
         <>
           <PostCard post={post.data} inThread onDeleted={onBack} />
           <Comments postId={postId} />
-          <CommentBar postId={postId} disabled={banned} />
+          <CommentBar postId={postId} />
         </>
       )}
     </div>
@@ -179,7 +179,7 @@ function useKeyboardInset(): number {
   return inset;
 }
 
-function CommentBar({ postId, disabled }: { postId: PostId; disabled: boolean }) {
+function CommentBar({ postId }: { postId: PostId }) {
   const { t } = useI18n();
   const c = t.community;
   const create = useCreateComment(postId);
@@ -252,8 +252,7 @@ function CommentBar({ postId, disabled }: { postId: PostId; disabled: boolean })
             dir="auto"
             rows={1}
             value={text}
-            disabled={disabled}
-            placeholder={disabled ? c.banned : c.commentPlaceholder}
+            placeholder={c.commentPlaceholder}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -270,7 +269,7 @@ function CommentBar({ postId, disabled }: { postId: PostId; disabled: boolean })
           <button
             type="submit"
             aria-label={c.send}
-            disabled={disabled || !valid || create.isPending}
+            disabled={!valid || create.isPending}
             className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-opacity disabled:opacity-40"
             data-testid="comment-send"
           >

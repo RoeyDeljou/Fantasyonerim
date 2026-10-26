@@ -12,6 +12,10 @@
 // Env overrides: E2E_DATABASE_URL, E2E_API_PORT, E2E_WEB_PORT, E2E_SKIP_BUILD=1, E2E_SKIP_DB_RESET=1, E2E_HEADED=1.
 import { spawn, spawnSync } from 'node:child_process';
 import { createECDH, randomBytes } from 'node:crypto';
+import { deflateSync } from 'node:zlib';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { Buffer } from 'node:buffer';
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -134,6 +138,50 @@ async function waitFor(url, ms) {
 }
 
 const VAPID = vapidKeys();
+// Uploaded community photos land here (LocalDiskMediaStore, served by the e2e API under /media/*).
+const MEDIA_DIR = mkdtempSync(path.join(tmpdir(), 'fant-e2e-media-'));
+
+/** A small valid RGB PNG (gradient), generated in-process so the suite needs no fixture files. */
+function makePng(width, height) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc32 = (buf) => {
+    let c = 0xffffffff;
+    for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB
+  const raw = Buffer.alloc((width * 3 + 1) * height);
+  for (let y = 0; y < height; y++) {
+    const row = y * (width * 3 + 1);
+    for (let x = 0; x < width; x++) {
+      raw[row + 1 + x * 3] = 61 + Math.round((x / width) * 138); // purple → mint
+      raw[row + 2 + x * 3] = 24 + Math.round((y / height) * 215);
+      raw[row + 3 + x * 3] = 91 + Math.round((x / width) * 122);
+    }
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
 
 function startApi() {
   log(`starting apps/api (demo) on ${API}`);
@@ -156,6 +204,9 @@ function startApi() {
       VAPID_PUBLIC_KEY: VAPID.publicKey,
       VAPID_PRIVATE_KEY: VAPID.privateKey,
       VAPID_SUBJECT: 'mailto:e2e@example.com',
+      API_PUBLIC_URL: API,
+      MEDIA_STORE: 'local',
+      MEDIA_DIR,
       LOG_LEVEL: 'warn',
     },
   });
@@ -502,6 +553,246 @@ async function journeys(browser) {
     await noHorizontalScroll(page, 'captain battle');
   });
 
+  // ---------- Phase 3: Community ----------
+  const POST_TEXT = 'פוסט בדיקה e2e — את מי לקפטן? https://example.com/e2e';
+  const feedCard = (p, text) => p.locator('[data-testid=post-card]', { hasText: text });
+  const openComposer = async (p) => {
+    await p.getByTestId('composer-open').click();
+    await p.locator('dialog[open] [data-testid=composer]').waitFor();
+  };
+
+  await step('Community: empty state, then a text post appears on top with its link', async () => {
+    await page.goto(`${WEB}/community/`);
+    await page.getByText('עוד אין פוסטים — תהיו הראשונים!').waitFor();
+    await page.getByTestId('composer-open').getByText('מה דעתך על המחזור?').waitFor();
+    await openComposer(page);
+    const submit = page.getByTestId('composer-submit');
+    assert(await submit.isDisabled(), 'post button must be disabled while empty');
+    await page.getByLabel('הטקסט של הפוסט').fill(POST_TEXT);
+    await page.getByText(`${POST_TEXT.length}/1000`).waitFor();
+    await submit.click();
+    await page.locator('dialog[open]').waitFor({ state: 'detached' });
+    const card = feedCard(page, 'פוסט בדיקה e2e');
+    await card.waitFor();
+    assert(
+      (await card.locator('a[href="https://example.com/e2e"]').count()) === 1,
+      'URL in the post must be linkified',
+    );
+    await card.getByTestId('author-name').getByText('E2E Tester').waitFor();
+    await noHorizontalScroll(page, 'community feed');
+  });
+
+  await step(
+    'Community: a post with an uploaded photo (progress → preview → full-screen viewer)',
+    async () => {
+      await openComposer(page);
+      await page.getByTestId('composer-file').setInputFiles({
+        name: 'e2e.png',
+        mimeType: 'image/png',
+        buffer: makePng(320, 200),
+      });
+      const preview = page.locator('[data-testid=composer-photo] img');
+      await page.waitForFunction(
+        (api) =>
+          document.querySelector('[data-testid=composer-photo] img')?.getAttribute('src')?.startsWith(api),
+        API,
+      );
+      assert((await preview.count()) === 1, 'uploaded image preview');
+      await page.getByLabel('הטקסט של הפוסט').fill('צילום מסך של ההעברות e2e');
+      await page.getByTestId('composer-submit').click();
+      const card = feedCard(page, 'צילום מסך של ההעברות e2e');
+      await card.getByTestId('post-image').waitFor();
+      await card.getByTestId('post-image').click();
+      await page.locator('dialog.story[open] [data-testid=image-viewer] img').waitFor();
+      await page.keyboard.press('Escape');
+      await page.locator('dialog.story[open]').waitFor({ state: 'detached' });
+    },
+  );
+
+  await step(
+    'Community: share my team (current started GW by default) → compact pitch → full sheet',
+    async () => {
+      await openComposer(page);
+      await page.getByRole('switch', { name: /שיתוף הקבוצה שלי/ }).click();
+      const gw = page.getByTestId('composer-gw');
+      await gw.waitFor();
+      assert((await gw.inputValue()) === '9', `default GW ${await gw.inputValue()}`);
+      await page
+        .getByText('FPL מציגה קבוצות רק אחרי הדדליין — לקבוצה של המחזור הבא צרפו צילום מסך')
+        .waitFor();
+      await page.locator('dialog[open] [data-testid=team-preview]').waitFor();
+      await page.getByTestId('composer-submit').click();
+      await page.locator('dialog[open]').waitFor({ state: 'detached' });
+      const card = page.locator('[data-testid=post-card]').first();
+      const preview = card.getByTestId('team-preview');
+      await preview.waitFor();
+      await preview.getByText('טריפל קפטן').waitFor();
+      await preview.getByText('מחזור 9').waitFor();
+      await preview.click();
+      await page.locator('dialog[open] [data-testid=snapshot-sheet]').waitFor();
+      await page.keyboard.press('Escape');
+      await noHorizontalScroll(page, 'community team post');
+    },
+  );
+
+  await step('Community: like / unlike (optimistic, persisted)', async () => {
+    const like = feedCard(page, 'פוסט בדיקה e2e').getByTestId('like-button');
+    assert((await like.getAttribute('aria-pressed')) === 'false', 'not liked yet');
+    const put = page.waitForResponse((r) => r.url().endsWith('/like') && r.request().method() === 'PUT');
+    await like.click();
+    assert((await like.getAttribute('aria-pressed')) === 'true', 'optimistic like');
+    assert((await put).ok(), 'PUT like failed');
+    await page.reload();
+    const again = feedCard(page, 'פוסט בדיקה e2e').getByTestId('like-button');
+    await again.waitFor();
+    assert((await again.getAttribute('aria-pressed')) === 'true', 'like did not persist');
+    assert((await again.innerText()).includes('1'), 'like count 1');
+    const del = page.waitForResponse((r) => r.url().endsWith('/like') && r.request().method() === 'DELETE');
+    await again.click();
+    assert((await del).ok(), 'DELETE like failed');
+    assert((await again.getAttribute('aria-pressed')) === 'false', 'unliked');
+  });
+
+  let threadUrl = '';
+  await step('Community thread: comment, then delete own comment', async () => {
+    await feedCard(page, 'פוסט בדיקה e2e').getByTestId('comments-link').click();
+    await page.waitForURL('**/community/?post=*');
+    threadUrl = page.url();
+    await page.getByText('עוד אין תגובות — מה דעתכם?').waitFor();
+    await page.getByTestId('comment-input').fill('תגובה ראשונה e2e');
+    await page.getByTestId('comment-send').click();
+    const comment = page.locator('[data-testid=comment]', { hasText: 'תגובה ראשונה e2e' });
+    await comment.waitFor();
+    await page.getByTestId('comment-input').fill('תגובה שנשארת e2e');
+    await page.getByTestId('comment-send').click();
+    await page.locator('[data-testid=comment]', { hasText: 'תגובה שנשארת e2e' }).waitFor();
+    await comment.getByTestId('content-menu').click();
+    await page.locator('dialog[open]').getByRole('button', { name: 'מחיקה' }).click();
+    await page.getByRole('button', { name: 'כן, למחוק' }).click();
+    await comment.waitFor({ state: 'detached' });
+    await page.reload();
+    await page.locator('[data-testid=comment]', { hasText: 'תגובה שנשארת e2e' }).waitFor();
+    assert(
+      (await page.locator('[data-testid=comment]', { hasText: 'תגובה ראשונה e2e' }).count()) === 0,
+      'deleted comment came back',
+    );
+    await noHorizontalScroll(page, 'community thread');
+  });
+
+  await step('Profile → My posts lists the posts and opens a thread', async () => {
+    await page.goto(`${WEB}/profile/`);
+    await page.getByRole('heading', { name: 'הפוסטים שלי' }).waitFor();
+    const rows = page.getByTestId('my-post');
+    await rows.first().waitFor();
+    assert((await rows.count()) === 3, `my posts: ${await rows.count()}`);
+    await rows.filter({ hasText: 'פוסט בדיקה e2e' }).click();
+    await page.waitForURL('**/community/?post=*');
+    await page.getByTestId('thread').waitFor();
+  });
+
+  const fan2Ctx = await newContext(browser);
+  const fan2 = await fan2Ctx.newPage();
+  watch(fan2, 'fan2');
+  await step('a second fan reports the first fan’s post (reason + note)', async () => {
+    await fan2.goto(`${WEB}/onboarding/`);
+    await fan2.getByRole('button', { name: 'בואו נתחיל' }).click();
+    await fan2.getByLabel('איך לקרוא לכם?').fill('E2E Second');
+    await fan2.getByLabel('Team ID של FPL').fill(DEMO.vice);
+    await fan2.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
+    await fan2.getByRole('button', { name: 'כן, זו הקבוצה שלי' }).click();
+    await fan2.getByRole('button', { name: 'שמרתי, יאללה' }).click();
+    await fan2.waitForURL('**/news/');
+    await fan2.goto(threadUrl);
+    await fan2.locator('[data-testid=comment]', { hasText: 'תגובה שנשארת e2e' }).waitFor();
+    const card = fan2.locator('[data-testid=thread] [data-testid=post-card]');
+    await card.getByTestId('content-menu').click();
+    const sheet = fan2.locator('dialog[open]');
+    assert((await sheet.getByRole('button', { name: 'מחיקה' }).count()) === 0, 'no delete on others’ posts');
+    await sheet.getByRole('button', { name: 'דיווח' }).click();
+    await sheet.getByLabel('ספאם או פרסומת').check();
+    await sheet.getByLabel(/פרטים נוספים/).fill('נראה כמו ספאם');
+    await sheet.getByRole('button', { name: 'שליחת הדיווח' }).click();
+    await fan2.getByText('תודה! הדיווח הועבר לצוות.').waitFor();
+  });
+
+  const modCtx = await newContext(browser);
+  const mod = await modCtx.newPage();
+  watch(mod, 'moderator');
+  await step('admin removes the reported post from the reports queue', async () => {
+    await mod.goto(`${WEB}/admin/login/`);
+    await mod.getByLabel('שם משתמש').fill(ADMIN.username);
+    await mod.getByLabel('סיסמה').fill(ADMIN.password);
+    await mod.getByRole('button', { name: 'כניסה' }).click();
+    await mod.waitForURL('**/admin/');
+    await mod.getByRole('tablist', { name: 'אזורי ניהול' }).getByRole('tab', { name: 'קהילה' }).click();
+    await mod.waitForURL('**/admin/?view=community');
+    const group = mod.locator('[data-testid=reports] li', { hasText: 'פוסט בדיקה e2e' });
+    await group.waitFor();
+    await group.getByText('ספאם או פרסומת').waitFor();
+    await group.getByText('נראה כמו ספאם').waitFor();
+    await group.getByRole('button', { name: 'הסרה' }).click();
+    await mod.getByTestId('resolve-confirm').click();
+    await group.waitFor({ state: 'detached' });
+    await mod.getByText('אין דיווחים פתוחים').waitFor();
+    await noHorizontalScroll(mod, 'admin community');
+    await page.goto(`${WEB}/community/`);
+    await feedCard(page, 'צילום מסך של ההעברות e2e').waitFor();
+    assert((await feedCard(page, 'פוסט בדיקה e2e').count()) === 0, 'removed post still in the feed');
+  });
+
+  await step('admin bans the second fan → their composer is blocked with the notice', async () => {
+    await mod.getByTestId('users-search').fill('E2E Second');
+    const row = mod.locator('[data-testid=user-row]', { hasText: 'E2E Second' });
+    await row.waitFor();
+    await row.getByRole('button', { name: 'השעיה', exact: true }).click();
+    const sheet = mod.locator('dialog[open]');
+    await sheet.getByTestId('ban-confirm').click();
+    await sheet.getByText('צריך לכתוב סיבה').waitFor(); // reason is required
+    await sheet.getByLabel('סיבת ההשעיה').fill('בדיקת e2e');
+    await sheet.getByTestId('ban-confirm').click();
+    await row.getByText('מושעה').waitFor();
+
+    await fan2.goto(`${WEB}/community/`);
+    await openComposer(fan2);
+    await fan2.getByLabel('הטקסט של הפוסט').fill('אני מושעה?');
+    await fan2.getByTestId('composer-submit').click();
+    await fan2.locator('dialog[open]').getByText('החשבון שלך מושעה מפרסום כרגע').first().waitFor();
+    await fan2.keyboard.press('Escape');
+    await fan2.getByTestId('banned-notice').waitFor();
+    await fan2.reload();
+    await fan2.getByTestId('banned-notice').waitFor(); // remembered across reloads
+    assert((await feedCard(fan2, 'אני מושעה?').count()) === 0, 'banned post was published');
+  });
+
+  await step('admin lifts the ban → the second fan can post again and the notice goes away', async () => {
+    const row = mod.locator('[data-testid=user-row]', { hasText: 'E2E Second' });
+    await row.getByRole('button', { name: 'ביטול השעיה' }).click();
+    await mod.getByTestId('ban-confirm').click();
+    await row.getByRole('button', { name: 'השעיה', exact: true }).waitFor();
+    await openComposer(fan2);
+    await fan2.getByLabel('הטקסט של הפוסט').fill('חזרתי לפרסם e2e');
+    await fan2.getByTestId('composer-submit').click();
+    await feedCard(fan2, 'חזרתי לפרסם e2e').waitFor();
+    await fan2.getByTestId('banned-notice').waitFor({ state: 'detached' });
+  });
+
+  await step('admin hides a News item, then restores it from Admin → Community', async () => {
+    await mod.goto(`${WEB}/news/`);
+    const card = mod.locator('#news-' + EP.apple.id);
+    await card.getByRole('button', { name: 'הסתרה מהפיד' }).click();
+    await mod.getByRole('button', { name: 'כן, להסתיר' }).click();
+    await card.waitFor({ state: 'detached' });
+    await mod.goto(`${WEB}/admin/?view=community`);
+    const hidden = mod.locator('[data-testid=hidden-item]', { hasText: 'פרק 61' });
+    await hidden.waitFor();
+    await hidden.getByRole('button', { name: 'שחזור' }).click();
+    await hidden.waitFor({ state: 'detached' });
+    await mod.goto(`${WEB}/news/`);
+    await mod.locator('#news-' + EP.apple.id).waitFor();
+  });
+  await modCtx.close();
+  await fan2Ctx.close();
+
   await step('sign out, then recover the account with the recovery code', async () => {
     await page.goto(`${WEB}/profile/`);
     await page.getByRole('button', { name: 'התנתקות' }).click();
@@ -554,6 +845,7 @@ try {
 } finally {
   await browser?.close();
   web?.close();
+  rmSync(MEDIA_DIR, { recursive: true, force: true });
   if (api?.pid) {
     try {
       process.kill(-api.pid, 'SIGTERM');

@@ -7,7 +7,7 @@ import type { Gameweek, Me, UploadedImage } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import type { Messages } from '@/i18n';
 import { api, isApiError } from '@/lib/api';
-import { isBannedError } from '@/lib/banned';
+import { isBannedError, useBanned } from '@/lib/banned';
 import { useBootstrap, useCreatePost, useEntry, usePicks } from '@/lib/queries';
 import { BottomSheet } from '@/components/BottomSheet';
 import { CloseIcon, ImageIcon, InfoIcon, SendIcon } from '@/components/icons';
@@ -21,7 +21,7 @@ import {
   cx,
   errorMessage,
 } from '@/components/ui';
-import { AuthorAvatar, useNotify } from './parts';
+import { AuthorAvatar, BannedNotice, useNotify } from './parts';
 import { TeamPreview } from './TeamSnapshot';
 import type { TeamView } from './TeamSnapshot';
 
@@ -90,6 +90,7 @@ function ComposerForm({ me, onDone }: { me: Me; onDone(): void }) {
   const [gwChoice, setGwChoice] = useState<Gameweek | null>(null);
   const gw = gwChoice ?? started.current;
   const canShareTeam = me.entryId !== null;
+  const banned = useBanned(me.id);
 
   // Revoke object URLs and cancel an in-flight upload when the sheet closes.
   const previewUrl = upload.status === 'uploading' || upload.status === 'done' ? upload.preview : null;
@@ -170,7 +171,9 @@ function ComposerForm({ me, onDone }: { me: Me; onDone(): void }) {
     ? isApiError(create.error, 'rate_limited')
       ? c.rateLimitedPost
       : isBannedError(create.error)
-        ? c.banned
+        ? banned
+          ? null // the notice above already says it
+          : c.banned
         : errorMessage(t, create.error)
     : null;
 
@@ -183,6 +186,7 @@ function ComposerForm({ me, onDone }: { me: Me; onDone(): void }) {
         submit();
       }}
     >
+      {banned && <BannedNotice />}
       <div className="flex items-start gap-2.5">
         <AuthorAvatar
           author={{ id: me.id, name: me.name, entryId: me.entryId, teamName: me.teamName, role: me.role }}
