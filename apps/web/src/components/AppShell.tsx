@@ -73,7 +73,7 @@ function ProfileButton() {
           active ? 'bg-primary text-on-primary' : 'bg-accent text-on-accent',
         )}
       >
-        {initialsOf(me.data?.name) || '·'}
+        <bdi dir="auto">{initialsOf(me.data?.name) || '·'}</bdi>
       </span>
     </Link>
   );
