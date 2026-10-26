@@ -4,11 +4,15 @@ import { fileURLToPath } from 'node:url';
 import { AuthResponseSchema, type AuthResponse } from '@fant/shared';
 import { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
+import { vi } from 'vitest';
 import { buildApp } from '../src/app.js';
 import type { Clock, RateLimitConfig } from '../src/context.js';
 import { createAdmin } from '../src/routes/admin.js';
 import { devSecretsKey } from '../src/secrets.js';
 import { FakeFplService } from './fakeFpl.js';
+
+// Integration tests hash with argon2 and hit a real Postgres; give them headroom on a busy machine.
+vi.setConfig({ testTimeout: 20_000, hookTimeout: 60_000 });
 
 export const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ?? 'postgresql://fant:fant@localhost:5432/fantasyonerim_test';
