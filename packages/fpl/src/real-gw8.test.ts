@@ -37,6 +37,8 @@ describe('real GW8 data: bonus semantics', () => {
     for (const [id, row] of live) {
       expect(row.basePoints, `element ${id}`).toBe(realTotal.get(id));
       expect(row.provisionalBonus).toBe(0);
+      expect(row.bonus, `element ${id}`).toBe(realBonus.get(id));
+      expect(row.bonusConfirmed).toBe(true);
       expect(row.fixtureStatus).toBe('finished');
     }
     expect([...realBonus.values()].filter((b) => b > 0).length).toBeGreaterThanOrEqual(7);
@@ -49,6 +51,8 @@ describe('real GW8 data: bonus semantics', () => {
     for (const [id, row] of live) {
       expect(row.basePoints, `element ${id}`).toBe(realTotal.get(id));
       expect(row.provisionalBonus, `element ${id}`).toBe(realBonus.get(id));
+      expect(row.bonus, `element ${id}`).toBe(realBonus.get(id));
+      expect(row.bonusConfirmed).toBe(false);
     }
   });
 
@@ -66,6 +70,8 @@ describe('real GW8 data: bonus semantics', () => {
     for (const [id, row] of live) {
       expect(row.provisionalBonus, `element ${id}`).toBe(realBonus.get(id));
       expect(row.basePoints, `element ${id}`).toBe(realTotal.get(id));
+      expect(row.bonus, `element ${id}`).toBe(realBonus.get(id));
+      expect(row.bonusConfirmed).toBe(false);
     }
   });
 });

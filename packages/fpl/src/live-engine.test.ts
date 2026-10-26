@@ -391,7 +391,13 @@ describe('live-points engine', () => {
       picks: rawPicks(SQUAD_IDS, { captain: 3, vice: 5 }),
     });
     // tie for 1st: 3 and 5 get 3, 7 gets 1
-    expect(byId(3)).toMatchObject({ provisionalBonus: 3, basePoints: 5, points: 10, bonusConfirmed: false });
+    expect(byId(3)).toMatchObject({
+      provisionalBonus: 3,
+      bonus: 3,
+      basePoints: 5,
+      points: 10,
+      bonusConfirmed: false,
+    });
     expect(byId(5)?.provisionalBonus).toBe(3);
     expect(byId(7)?.provisionalBonus).toBe(1);
     expect(byId(9)?.provisionalBonus).toBe(0);
@@ -429,7 +435,12 @@ describe('live-points engine', () => {
         live: liveFor(SQUAD_IDS, { 3: { minutes: 90, points: 5, bonus: 3, bps: 40 } }),
         picks: rawPicks(SQUAD_IDS),
       });
-      expect(byId(3), status).toMatchObject({ provisionalBonus: 3, basePoints: 5, bonusConfirmed: false });
+      expect(byId(3), status).toMatchObject({
+        provisionalBonus: 3,
+        bonus: 3,
+        basePoints: 5,
+        bonusConfirmed: false,
+      });
       expect(byId(9)?.provisionalBonus, status).toBe(0);
     }
   });
@@ -453,7 +464,12 @@ describe('live-points engine', () => {
       live: liveFor(SQUAD_IDS, { 3: { minutes: 90, points: 5, bonus: 3, bps: 40 } }),
       picks: rawPicks(SQUAD_IDS),
     });
-    expect(confirmed.byId(3)).toMatchObject({ provisionalBonus: 0, basePoints: 5, bonusConfirmed: true });
+    expect(confirmed.byId(3)).toMatchObject({
+      provisionalBonus: 0,
+      bonus: 3,
+      basePoints: 5,
+      bonusConfirmed: true,
+    });
 
     // `finished` = confirmed even if the fixture stats were trimmed
     const finished = score({

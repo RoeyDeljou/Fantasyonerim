@@ -125,6 +125,8 @@ export function captainBattleRoutes(app: FastifyInstance, ctx: AppContext, auth:
                 basePoints: 0,
                 minutes: 0,
                 provisionalBonus: 0,
+                bonus: 0,
+                bonusConfirmed: false,
                 fixtureStatus: 'no_fixture',
               });
         return {

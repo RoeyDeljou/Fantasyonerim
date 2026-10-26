@@ -102,6 +102,8 @@ export function makePlayerLive(playerId: number, basePoints: number): PlayerLive
     basePoints,
     minutes: 90,
     provisionalBonus: 0,
+    bonus: 0,
+    bonusConfirmed: false,
     fixtureStatus: 'live',
   });
 }

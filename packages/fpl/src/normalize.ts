@@ -248,6 +248,7 @@ export function engineLiveOf(raw: RawLive): Map<number, EngineLiveStats> {
       {
         minutes: e.stats.minutes,
         totalPoints: e.stats.total_points,
+        bonus: e.stats.bonus,
         goals: e.stats.goals_scored,
         assists: e.stats.assists,
         cleanSheets: e.stats.clean_sheets,
@@ -308,6 +309,7 @@ export function mapEntryLive(
       effectiveMultiplier: p.effectiveMultiplier,
       minutes: p.minutes,
       provisionalBonus: p.provisionalBonus,
+      bonus: p.bonus,
       bonusConfirmed: p.bonusConfirmed,
       fixtureStatus: p.fixtureStatus,
       autoSubIn: p.autoSubIn,
@@ -332,6 +334,8 @@ export function mapPlayerLive(info: PlayerLiveInfo): PlayerLive {
     basePoints: info.basePoints,
     minutes: info.minutes,
     provisionalBonus: info.provisionalBonus,
+    bonus: info.bonus,
+    bonusConfirmed: info.bonusConfirmed,
     fixtureStatus: info.fixtureStatus,
   });
 }

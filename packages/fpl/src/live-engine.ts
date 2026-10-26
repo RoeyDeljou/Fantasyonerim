@@ -52,8 +52,10 @@ export interface EngineFixture {
 
 export interface EngineLiveStats {
   minutes: number;
-  /** Includes bonus once confirmed. */
+  /** Includes any bonus FPL has written in (live or final). */
   totalPoints: number;
+  /** FPL's `bonus` stat (live or final), already inside totalPoints. */
+  bonus: number;
   goals: number;
   assists: number;
   cleanSheets: number;
@@ -85,6 +87,8 @@ export interface PlayerLiveInfo {
   minutes: number;
   /** Bonus that is not final yet (fixture not `finished`): FPL's live bonus or our BPS-computed bonus. */
   provisionalBonus: number;
+  /** All bonus this GW, final or not: FPL's bonus stat + our BPS-computed bonus. */
+  bonus: number;
   /** Every GW fixture is `finished` (FPL's final state). */
   bonusConfirmed: boolean;
   fixtureStatus: PlayerFixtureStatus;
@@ -119,6 +123,7 @@ export interface EngineLivePick extends EnginePick {
   effectiveMultiplier: number;
   minutes: number;
   provisionalBonus: number;
+  bonus: number;
   bonusConfirmed: boolean;
   fixtureStatus: PlayerFixtureStatus;
   autoSubIn: boolean;
@@ -147,6 +152,7 @@ export interface LivePointsResult {
 const ZERO_STATS: EngineLiveStats = {
   minutes: 0,
   totalPoints: 0,
+  bonus: 0,
   goals: 0,
   assists: 0,
   cleanSheets: 0,
@@ -226,6 +232,7 @@ export function playerLiveInfo(ctx: GameweekContext, playerId: number): PlayerLi
     basePoints: stats.totalPoints + computedBonus,
     minutes: stats.minutes,
     provisionalBonus,
+    bonus: stats.bonus + computedBonus,
     bonusConfirmed: fixtures.length > 0 && fixtures.every((f) => f.status === 'finished'),
     fixtureStatus,
     allFixturesDone,
@@ -310,6 +317,7 @@ export function computeLivePoints(ctx: GameweekContext, entry: EntryInput): Live
       effectiveMultiplier,
       minutes: i.minutes,
       provisionalBonus: i.provisionalBonus,
+      bonus: i.bonus,
       bonusConfirmed: i.bonusConfirmed,
       fixtureStatus: i.fixtureStatus,
       autoSubIn: subbedIn.has(p.playerId),

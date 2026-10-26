@@ -115,6 +115,10 @@ describe('demo dataset (smoke)', () => {
 
     const all = await Promise.all(data.entryIds.map((e) => service.getEntryLive(id(e), gw9)));
     expect(all.some((l) => l.picks.some((p) => p.provisionalBonus > 0))).toBe(true);
+    const picks = all.flatMap((l) => l.picks);
+    // final bonus stays visible after the fixture finishes; bonus always ≥ the provisional part
+    expect(picks.some((p) => p.bonusConfirmed && p.bonus > 0 && p.provisionalBonus === 0)).toBe(true);
+    expect(picks.every((p) => p.bonus >= p.provisionalBonus)).toBe(true);
     expect(all.some((l) => l.playersYetToPlay > 0)).toBe(true);
   });
 
@@ -163,5 +167,6 @@ describe('demo dataset (smoke)', () => {
       gw9,
     );
     for (const r of rows) PlayerLiveSchema.parse(r);
+    expect(rows.every((r) => r.bonus >= r.provisionalBonus)).toBe(true);
   });
 });
