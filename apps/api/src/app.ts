@@ -1,4 +1,5 @@
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import type { ApiError, ApiErrorCode } from '@fant/shared';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
@@ -21,7 +22,12 @@ import { JobRunner } from './jobs/runner.js';
 import type { Job } from './jobs/types.js';
 import { LocalDiskMediaStore, type MediaStore } from './media/store.js';
 import type { PushProvider } from './push/provider.js';
+import { MAX_UPLOAD_BYTES } from './community/images.js';
+import { userRateLimitKey } from './community/guard.js';
+import { adminCommunityRoutes } from './routes/adminCommunity.js';
 import { adminNewsRoutes } from './routes/adminNews.js';
+import { communityRoutes } from './routes/community.js';
+import { uploadRoutes } from './routes/uploads.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { internalRoutes } from './routes/internal.js';
 import { newsRoutes } from './routes/news.js';
@@ -59,7 +65,12 @@ const DEFAULT_RATE_LIMIT: RateLimitConfig = {
   authMax: 10,
   writeMax: 30,
   timeWindowMs: 60_000,
+  postsPerHour: 10,
+  commentsPerHour: 60,
+  uploadsPerHour: 30,
 };
+
+const HOUR_MS = 60 * 60 * 1000;
 
 const STATUS_CODES: Record<number, ApiErrorCode> = {
   400: 'bad_request',
@@ -67,6 +78,8 @@ const STATUS_CODES: Record<number, ApiErrorCode> = {
   403: 'forbidden',
   404: 'not_found',
   409: 'conflict',
+  413: 'bad_request',
+  415: 'bad_request',
   429: 'rate_limited',
 };
 
@@ -164,9 +177,22 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       new ApiHttpError(429, 'rate_limited', `Too many requests — try again in ${context.after}`),
   });
 
+  // Only POST /v1/uploads reads multipart; the per-request limits there are the real ones.
+  await app.register(multipart, {
+    limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 5, parts: 6 },
+  });
+
   const auth = createAuth(ctx);
   const strictLimit = { max: limits.authMax, timeWindow: limits.timeWindowMs };
   const writeLimit = { max: limits.writeMax, timeWindow: limits.timeWindowMs };
+  // Community writes are limited per account (not per IP: a whole stadium can share one IP).
+  const perUser = userRateLimitKey(auth);
+  const communityLimits = {
+    posts: { max: limits.postsPerHour, timeWindow: HOUR_MS, keyGenerator: perUser },
+    comments: { max: limits.commentsPerHour, timeWindow: HOUR_MS, keyGenerator: perUser },
+    writes: { ...writeLimit, keyGenerator: perUser },
+  };
+  const uploadLimit = { max: limits.uploadsPerHour, timeWindow: HOUR_MS, keyGenerator: perUser };
   const jobs = new JobRunner(ctx, deps.jobs ?? JOBS, app.log);
   app.decorate('jobs', jobs);
 
@@ -181,6 +207,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   pushRoutes(app, ctx, auth, writeLimit);
   integrationRoutes(app, ctx, auth, jobs);
   adminNewsRoutes(app, ctx, auth);
+  communityRoutes(app, ctx, auth, communityLimits);
+  uploadRoutes(app, ctx, auth, uploadLimit);
+  adminCommunityRoutes(app, ctx, auth);
   internalRoutes(app, ctx, jobs);
 
   return app;

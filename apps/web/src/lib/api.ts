@@ -24,6 +24,15 @@ import {
   OAuthStartSchema,
   StoriesSchema,
   VapidKeySchema,
+  AdminUserListSchema,
+  CommentPageSchema,
+  CommentSchema,
+  CommunityPageSchema,
+  CommunityPostSchema,
+  HiddenNewsListSchema,
+  LikeResultSchema,
+  ReportListSchema,
+  UploadResponseSchema,
 } from '@fant/shared';
 import type { CreateAdminBodySchema } from '@fant/shared';
 import type {
@@ -60,11 +69,27 @@ import type {
   NotificationPrefs,
   Stories,
   WebPushSubscriptionBody,
+  AdminUser,
+  Comment,
+  CommentId,
+  CommentPage,
+  CommunityPage,
+  CommunityPost,
+  CreateCommentBody,
+  CreatePostBody,
+  HiddenNewsList,
+  PostId,
+  ReportBody,
+  ReportGroup,
+  UploadResponse,
+  UserId,
 } from '@fant/shared';
 import { tokenStore } from './tokenStore';
 
 /** `@fant/shared` exports these schemas but not their inferred types. */
 export type AdminAccount = ReturnType<typeof AdminAccountSchema.parse>;
+export type LikeResult = ReturnType<typeof LikeResultSchema.parse>;
+export type ResolveAction = 'remove' | 'dismiss';
 export type CreateAdminBody = ReturnType<typeof CreateAdminBodySchema.parse>;
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
@@ -285,5 +310,113 @@ export const api = {
       request('GET', '/v1/admin/admins', listOf(AdminAccountSchema), o),
     createAdmin: (body: CreateAdminBody): Promise<AdminAccount> =>
       request('POST', '/v1/admin/admins', AdminAccountSchema, { body }),
+
+    reports: (o: Signal = {}): Promise<ReportGroup[]> =>
+      request('GET', '/v1/admin/reports', ReportListSchema, { ...o, query: { status: 'open' } }).then(
+        (r) => r.items,
+      ),
+    resolveReport: (targetId: string, action: ResolveAction): Promise<void> =>
+      request('POST', `/v1/admin/reports/${encodeURIComponent(targetId)}/resolve`, noContent, {
+        body: { action },
+      }),
+    users: (query: string, o: Signal = {}): Promise<AdminUser[]> =>
+      request('GET', '/v1/admin/users', AdminUserListSchema, {
+        ...o,
+        query: { query: query || undefined },
+      }).then((r) => r.items),
+    ban: (id: UserId, reason: string): Promise<void> =>
+      request('POST', `/v1/admin/users/${encodeURIComponent(id)}/ban`, noContent, { body: { reason } }),
+    unban: (id: UserId): Promise<void> =>
+      request('DELETE', `/v1/admin/users/${encodeURIComponent(id)}/ban`, noContent),
+    hiddenNews: (o: Signal = {}): Promise<HiddenNewsList> =>
+      request('GET', '/v1/admin/news/hidden', HiddenNewsListSchema, o),
+    restoreNews: (id: NewsItemId): Promise<void> =>
+      request('POST', `/v1/admin/news/${encodeURIComponent(id)}/restore`, noContent),
   },
+
+  community: {
+    posts: (
+      q: { cursor?: string | undefined; limit: number; authorId?: UserId | undefined },
+      o: Signal = {},
+    ): Promise<CommunityPage> =>
+      request('GET', '/v1/community/posts', CommunityPageSchema, {
+        ...o,
+        query: { cursor: q.cursor, limit: q.limit, authorId: q.authorId },
+      }),
+    post: (id: PostId, o: Signal = {}): Promise<CommunityPost> =>
+      request('GET', `/v1/community/posts/${encodeURIComponent(id)}`, CommunityPostSchema, o),
+    create: (body: CreatePostBody): Promise<CommunityPost> =>
+      request('POST', '/v1/community/posts', CommunityPostSchema, { body }),
+    remove: (id: PostId): Promise<void> =>
+      request('DELETE', `/v1/community/posts/${encodeURIComponent(id)}`, noContent),
+    like: (id: PostId, liked: boolean): Promise<LikeResult> =>
+      request(liked ? 'PUT' : 'DELETE', `/v1/community/posts/${encodeURIComponent(id)}/like`, LikeResultSchema),
+    comments: (id: PostId, cursor: string | undefined, o: Signal = {}): Promise<CommentPage> =>
+      request('GET', `/v1/community/posts/${encodeURIComponent(id)}/comments`, CommentPageSchema, {
+        ...o,
+        query: { cursor },
+      }),
+    comment: (id: PostId, body: CreateCommentBody): Promise<Comment> =>
+      request('POST', `/v1/community/posts/${encodeURIComponent(id)}/comments`, CommentSchema, { body }),
+    removeComment: (id: CommentId): Promise<void> =>
+      request('DELETE', `/v1/community/comments/${encodeURIComponent(id)}`, noContent),
+    reportPost: (id: PostId, body: ReportBody): Promise<void> =>
+      request('POST', `/v1/community/posts/${encodeURIComponent(id)}/report`, noContent, { body }),
+    reportComment: (id: CommentId, body: ReportBody): Promise<void> =>
+      request('POST', `/v1/community/comments/${encodeURIComponent(id)}/report`, noContent, { body }),
+  },
+
+  /**
+   * POST /v1/uploads (multipart "file"). XMLHttpRequest rather than fetch because only XHR reports upload
+   * progress. Same error model as `request()`: rejects with ApiRequestError (413 / 415 keep their status).
+   */
+  upload: (
+    file: Blob,
+    opts: { onProgress?: (fraction: number) => void; signal?: AbortSignal } = {},
+  ): Promise<UploadResponse> =>
+    tokenStore.get().then(
+      (token) =>
+        new Promise<UploadResponse>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', `${API_BASE_URL}/v1/uploads`);
+          xhr.setRequestHeader('accept', 'application/json');
+          if (token) xhr.setRequestHeader('authorization', `Bearer ${token}`);
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) opts.onProgress?.(e.loaded / e.total);
+          };
+          xhr.onerror = () => reject(new ApiRequestError('network', 0, 'network error'));
+          xhr.onabort = () => reject(new DOMException('aborted', 'AbortError'));
+          xhr.onload = () => {
+            let json: unknown = undefined;
+            try {
+              json = xhr.responseText ? JSON.parse(xhr.responseText) : undefined;
+            } catch {
+              json = undefined;
+            }
+            if (xhr.status < 200 || xhr.status >= 300) {
+              const parsed = ApiErrorSchema.safeParse(json);
+              if (xhr.status === 401 && token) {
+                void tokenStore.clear().then(() => unauthorizedHandler?.());
+              }
+              reject(
+                parsed.success
+                  ? new ApiRequestError(parsed.data.error.code, xhr.status, parsed.data.error.message)
+                  : new ApiRequestError(statusToCode(xhr.status), xhr.status, xhr.statusText),
+              );
+              return;
+            }
+            const parsed = UploadResponseSchema.safeParse(json);
+            if (!parsed.success) {
+              console.error('API response failed contract validation', '/v1/uploads', parsed.error);
+              reject(new ApiRequestError('invalid_response', xhr.status, 'invalid response'));
+              return;
+            }
+            resolve(parsed.data);
+          };
+          opts.signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+          const form = new FormData();
+          form.append('file', file, file instanceof File ? file.name : 'image');
+          xhr.send(form);
+        }),
+    ),
 };

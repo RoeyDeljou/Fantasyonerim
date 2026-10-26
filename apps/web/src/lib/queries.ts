@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import {
   QueryClient,
+  keepPreviousData,
   skipToken,
   useInfiniteQuery,
   useMutation,
@@ -31,10 +32,23 @@ import type {
   NewsItemId,
   NewsPage,
   NotificationPrefs,
+  Comment,
+  CommentId,
+  CommentPage,
+  CommunityPage,
+  CommunityPost,
+  CreatePostBody,
+  HiddenNewsList,
+  PostId,
+  ReportBody,
+  ReportGroup,
+  UserId,
+  AdminUser,
 } from '@fant/shared';
-import type { InfiniteData } from '@tanstack/react-query';
+import type { InfiniteData, QueryClient as QC } from '@tanstack/react-query';
 import { api, isApiError } from './api';
-import type { CreateAdminBody } from './api';
+import type { CreateAdminBody, ResolveAction } from './api';
+import { isBannedError, setBanned } from './banned';
 
 export const LIVE_POLL_MS = 30_000;
 export const IDLE_POLL_MS = 5 * 60_000;
@@ -60,7 +74,20 @@ export const qk = {
   newsItem: (id: NewsItemId) => ['news', 'item', id] as const,
   notificationPrefs: ['me', 'notification-prefs'] as const,
   integrations: ['admin', 'integrations'] as const,
+  community: ['community'] as const,
+  communityFeeds: ['community', 'feed'] as const,
+  communityFeed: (authorId: UserId | null) => ['community', 'feed', authorId ?? 'all'] as const,
+  communityHead: ['community', 'head'] as const,
+  post: (id: PostId) => ['community', 'post', id] as const,
+  comments: (id: PostId) => ['community', 'comments', id] as const,
+  adminReports: ['admin', 'reports'] as const,
+  adminUsers: (query: string) => ['admin', 'users', query] as const,
+  hiddenNews: ['admin', 'news', 'hidden'] as const,
 };
+
+export const COMMUNITY_PAGE_SIZE = 20;
+/** "New posts" check while the Community tab is visible. */
+export const COMMUNITY_HEAD_POLL_MS = 60_000;
 
 export const NEWS_PAGE_SIZE = 15;
 /** "New posts" check while the News tab is visible. */
@@ -351,6 +378,7 @@ export function useHideNews() {
       );
       qc.removeQueries({ queryKey: qk.newsItem(id) });
       void qc.invalidateQueries({ queryKey: ['news'] });
+      void qc.invalidateQueries({ queryKey: qk.hiddenNews });
     },
   });
 }
@@ -436,5 +464,304 @@ export function useDisconnectInstagram() {
   return useMutation({
     mutationFn: () => api.admin.disconnectInstagram(),
     onSuccess: () => void qc.invalidateQueries({ queryKey: qk.integrations }),
+  });
+}
+
+// ---------- community ----------
+
+type FeedData = InfiniteData<CommunityPage, string | undefined>;
+type CommentsData = InfiniteData<CommentPage, string | undefined>;
+
+/** Newest first, cursor-paginated. `authorId` = one author's posts (Profile → My posts). */
+export function useCommunityFeed(authorId: UserId | null = null, enabled = true) {
+  return useInfiniteQuery({
+    queryKey: qk.communityFeed(authorId),
+    queryFn: enabled
+      ? ({ pageParam, signal }) =>
+          api.community.posts(
+            { cursor: pageParam, limit: COMMUNITY_PAGE_SIZE, authorId: authorId ?? undefined },
+            { signal },
+          )
+      : skipToken,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: CommunityPage) => last.nextCursor ?? undefined,
+    staleTime: 30_000,
+  });
+}
+
+/** Light poll of the newest posts (paused while hidden) — compared with the feed to offer "new posts". */
+export function useCommunityHead(enabled: boolean) {
+  return useQuery({
+    queryKey: qk.communityHead,
+    queryFn: ({ signal }) => api.community.posts({ limit: 5 }, { signal }),
+    enabled,
+    refetchInterval: COMMUNITY_HEAD_POLL_MS,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  });
+}
+
+export function usePost(id: PostId | null) {
+  return useQuery({
+    queryKey: id ? qk.post(id) : ['community', 'post', 'none'],
+    queryFn: id ? ({ signal }) => api.community.post(id, { signal }) : skipToken,
+    staleTime: 30_000,
+  });
+}
+
+/** Oldest first (conversation order); the next page holds newer comments. */
+export function useComments(postId: PostId | null) {
+  return useInfiniteQuery({
+    queryKey: postId ? qk.comments(postId) : ['community', 'comments', 'none'],
+    queryFn: postId
+      ? ({ pageParam, signal }) => api.community.comments(postId, pageParam, { signal })
+      : skipToken,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: CommentPage) => last.nextCursor ?? undefined,
+    staleTime: 30_000,
+  });
+}
+
+/** Applies `fn` to the post wherever it is cached (every feed page + the single-post query). */
+function patchPost(qc: QC, id: PostId, fn: (p: CommunityPost) => CommunityPost | null) {
+  qc.setQueriesData<FeedData>({ queryKey: qk.communityFeeds }, (data) =>
+    data
+      ? {
+          ...data,
+          pages: data.pages.map((pg) => ({
+            ...pg,
+            items: pg.items.flatMap((p) => {
+              if (p.id !== id) return [p];
+              const next = fn(p);
+              return next ? [next] : [];
+            }),
+          })),
+        }
+      : data,
+  );
+  const single = qc.getQueryData<CommunityPost>(qk.post(id));
+  if (single) {
+    const next = fn(single);
+    if (next) qc.setQueryData(qk.post(id), next);
+  }
+}
+
+function findPost(qc: QC, id: PostId): CommunityPost | undefined {
+  const single = qc.getQueryData<CommunityPost>(qk.post(id));
+  if (single) return single;
+  for (const [, data] of qc.getQueriesData<FeedData>({ queryKey: qk.communityFeeds })) {
+    const hit = data?.pages.flatMap((p) => p.items).find((p) => p.id === id);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+/** Remembers / forgets "banned" from the outcome of a Community write (see lib/banned.ts). */
+function trackBan(qc: QC, error: unknown) {
+  const me = qc.getQueryData<Me>(qk.me);
+  if (!me || me.role === 'admin') return;
+  if (error === null) setBanned(me.id, false);
+  else if (isBannedError(error)) setBanned(me.id, true);
+}
+
+export function useCreatePost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreatePostBody) => api.community.create(body),
+    onError: (e) => trackBan(qc, e),
+    onSuccess: (post) => {
+      trackBan(qc, null);
+      qc.setQueryData(qk.post(post.id), post);
+      // Put it on top of the main feed right away, then reconcile.
+      qc.setQueryData<FeedData>(qk.communityFeed(null), (data) =>
+        data
+          ? {
+              ...data,
+              pages: data.pages.map((pg, i) =>
+                i === 0 ? { ...pg, items: [post, ...pg.items.filter((p) => p.id !== post.id)] } : pg,
+              ),
+            }
+          : data,
+      );
+      void qc.invalidateQueries({ queryKey: qk.communityFeed(post.author.id) });
+      void qc.invalidateQueries({ queryKey: qk.communityHead });
+    },
+  });
+}
+
+export function useDeletePost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: PostId) => api.community.remove(id),
+    onSuccess: (_v, id) => {
+      patchPost(qc, id, () => null);
+      qc.removeQueries({ queryKey: qk.post(id) });
+      qc.removeQueries({ queryKey: qk.comments(id) });
+      void qc.invalidateQueries({ queryKey: qk.communityHead });
+    },
+  });
+}
+
+/** Optimistic like / unlike; rolls back on failure, then takes the server's counts. */
+export function useLikePost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, liked }: { id: PostId; liked: boolean }) => api.community.like(id, liked),
+    onMutate: ({ id, liked }) => {
+      const previous = findPost(qc, id);
+      patchPost(qc, id, (p) =>
+        p.likedByMe === liked
+          ? p
+          : { ...p, likedByMe: liked, likeCount: Math.max(0, p.likeCount + (liked ? 1 : -1)) },
+      );
+      return { previous };
+    },
+    onError: (e, { id }, ctx) => {
+      trackBan(qc, e);
+      const prev = ctx?.previous;
+      if (prev) patchPost(qc, id, (p) => ({ ...p, likedByMe: prev.likedByMe, likeCount: prev.likeCount }));
+    },
+    onSuccess: (r, { id }) => {
+      trackBan(qc, null);
+      patchPost(qc, id, (p) => ({ ...p, likedByMe: r.likedByMe, likeCount: r.likeCount }));
+    },
+  });
+}
+
+export function useCreateComment(postId: PostId) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (text: string) => api.community.comment(postId, { text }),
+    onError: (e) => trackBan(qc, e),
+    onSuccess: (comment: Comment) => {
+      trackBan(qc, null);
+      patchPost(qc, postId, (p) => ({ ...p, commentCount: p.commentCount + 1 }));
+      // Oldest first: a new comment belongs on the last page — append it if that page is loaded.
+      qc.setQueryData<CommentsData>(qk.comments(postId), (data) => {
+        if (!data) return data;
+        const last = data.pages[data.pages.length - 1];
+        if (!last || last.nextCursor) return data;
+        return {
+          ...data,
+          pages: data.pages.map((pg, i) =>
+            i === data.pages.length - 1 ? { ...pg, items: [...pg.items, comment] } : pg,
+          ),
+        };
+      });
+    },
+  });
+}
+
+export function useDeleteComment(postId: PostId) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: CommentId) => api.community.removeComment(id),
+    onSuccess: (_v, id) => {
+      patchPost(qc, postId, (p) => ({ ...p, commentCount: Math.max(0, p.commentCount - 1) }));
+      qc.setQueryData<CommentsData>(qk.comments(postId), (data) =>
+        data
+          ? { ...data, pages: data.pages.map((pg) => ({ ...pg, items: pg.items.filter((c) => c.id !== id) })) }
+          : data,
+      );
+    },
+  });
+}
+
+export type ReportTarget = { kind: 'post'; id: PostId } | { kind: 'comment'; id: CommentId };
+
+export function useReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ target, body }: { target: ReportTarget; body: ReportBody }) =>
+      target.kind === 'post'
+        ? api.community.reportPost(target.id, body)
+        : api.community.reportComment(target.id, body),
+    onError: (e) => trackBan(qc, e),
+    onSuccess: () => trackBan(qc, null),
+  });
+}
+
+// ---------- admin: moderation ----------
+
+export function useAdminReports(enabled: boolean) {
+  return useQuery({
+    queryKey: qk.adminReports,
+    queryFn: ({ signal }) => api.admin.reports({ signal }),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useResolveReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ group, action }: { group: ReportGroup; action: ResolveAction }) =>
+      api.admin.resolveReport(group.targetId, action),
+    onSuccess: (_v, { group, action }) => {
+      qc.setQueryData<ReportGroup[]>(qk.adminReports, (list) =>
+        list?.filter((g) => g.targetId !== group.targetId),
+      );
+      if (action === 'remove') {
+        if (group.target.kind === 'post') {
+          patchPost(qc, group.target.post.id, () => null);
+          qc.removeQueries({ queryKey: qk.post(group.target.post.id) });
+        } else {
+          void qc.invalidateQueries({ queryKey: qk.comments(group.target.comment.postId) });
+          void qc.invalidateQueries({ queryKey: qk.post(group.target.comment.postId) });
+        }
+        void qc.invalidateQueries({ queryKey: qk.community });
+      }
+    },
+  });
+}
+
+export function useAdminUsers(query: string, enabled: boolean) {
+  return useQuery({
+    queryKey: qk.adminUsers(query),
+    queryFn: ({ signal }) => api.admin.users(query, { signal }),
+    enabled,
+    staleTime: 15_000,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useBanUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: UserId; reason: string | null }) =>
+      reason === null ? api.admin.unban(id) : api.admin.ban(id, reason),
+    onSuccess: (_v, { id, reason }) => {
+      qc.setQueriesData<AdminUser[]>({ queryKey: ['admin', 'users'] }, (list) =>
+        list?.map((u) =>
+          u.id === id
+            ? { ...u, bannedAt: reason === null ? null : new Date().toISOString(), banReason: reason }
+            : u,
+        ),
+      );
+      void qc.invalidateQueries({ queryKey: ['admin', 'users'] });
+    },
+  });
+}
+
+export function useHiddenNews(enabled: boolean) {
+  return useQuery({
+    queryKey: qk.hiddenNews,
+    queryFn: ({ signal }) => api.admin.hiddenNews({ signal }),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+export function useRestoreNews() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: NewsItemId) => api.admin.restoreNews(id),
+    onSuccess: (_v, id) => {
+      qc.setQueryData<HiddenNewsList>(qk.hiddenNews, (l) =>
+        l ? { items: l.items.filter((h) => h.item.id !== id) } : l,
+      );
+      void qc.invalidateQueries({ queryKey: ['news'] });
+    },
   });
 }

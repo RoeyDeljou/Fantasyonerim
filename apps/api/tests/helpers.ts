@@ -89,7 +89,15 @@ export async function buildTestApp(prisma: PrismaClient, options: TestAppOptions
     config: {
       corsOrigins: options.corsOrigins ?? ['http://localhost:3000'],
       secretsKey: devSecretsKey(),
-      rateLimit: { globalMax: 10_000, authMax: 10_000, writeMax: 10_000, ...options.rateLimit },
+      rateLimit: {
+        globalMax: 10_000,
+        authMax: 10_000,
+        writeMax: 10_000,
+        postsPerHour: 10_000,
+        commentsPerHour: 10_000,
+        uploadsPerHour: 10_000,
+        ...options.rateLimit,
+      },
       ...options.config,
     },
   });

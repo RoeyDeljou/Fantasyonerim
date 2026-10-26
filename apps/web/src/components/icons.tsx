@@ -418,3 +418,37 @@ export const ApplePodcastsIcon = (p: IconProps) => (
     <path d="M11.2 14.5h1.6l-.3 5.5h-1z" fill="currentColor" />
   </Svg>
 );
+
+export const HeartIcon = ({ filled = false, ...p }: IconProps & { filled?: boolean }) => (
+  <Svg {...p} fill={filled ? 'currentColor' : 'none'}>
+    <path d="M12 20s-7.5-4.6-9.2-9.3C1.6 7.3 3.9 4 7.3 4c2 0 3.5 1.1 4.7 2.8C13.2 5.1 14.7 4 16.7 4c3.4 0 5.7 3.3 4.5 6.7C19.5 15.4 12 20 12 20Z" />
+  </Svg>
+);
+
+export const ImageIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+    <circle cx="9" cy="9.5" r="1.6" />
+    <path d="m4 17 4.6-4.6a1.5 1.5 0 0 1 2.1 0L15 16.7M13.5 15l1.9-1.9a1.5 1.5 0 0 1 2.1 0L20.5 16" />
+  </Svg>
+);
+
+export const FlagIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M5 21V4.5M5 4.5h11.5l-2 4 2 4H5" />
+  </Svg>
+);
+
+export const BanIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="m6 6 12 12" />
+  </Svg>
+);
+
+export const UndoIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </Svg>
+);

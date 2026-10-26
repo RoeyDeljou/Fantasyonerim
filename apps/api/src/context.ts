@@ -17,9 +17,15 @@ export interface RateLimitConfig {
   globalMax: number;
   /** Requests per window per IP for register / recover / admin-login. */
   authMax: number;
-  /** Requests per window per IP for other writes (push subscriptions/devices). */
+  /** Requests per window for other writes (push subscriptions/devices, likes, reports; per user when signed in). */
   writeMax: number;
   timeWindowMs: number;
+  /** Community posts per user per hour. */
+  postsPerHour: number;
+  /** Community comments per user per hour. */
+  commentsPerHour: number;
+  /** Image uploads per user per hour. */
+  uploadsPerHour: number;
 }
 
 export interface MetaAppConfig {

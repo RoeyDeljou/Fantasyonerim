@@ -19,6 +19,8 @@ export interface PitchProps<P extends Pick | LivePick> {
   onSelect?: ((pick: P) => void) | undefined;
   /** Live data for plain picks (My Team view) — drives the bonus / auto-sub badges. */
   liveByPlayer?: Map<FplPlayerId, LivePick> | undefined;
+  /** Small read-only variant (Community post previews): smaller shirts, tighter rows. */
+  compact?: boolean | undefined;
 }
 
 /** Stylized pitch (CSS stripes + SVG markings in theme colours) with the XI in formation rows and the bench. */
@@ -28,6 +30,7 @@ export function Pitch<P extends Pick | LivePick>({
   renderLabel,
   onSelect,
   liveByPlayer,
+  compact = false,
 }: PitchProps<P>) {
   const t = useT();
   const sorted = [...picks].sort((a, b) => a.slot - b.slot);
@@ -50,19 +53,22 @@ export function Pitch<P extends Pick | LivePick>({
       onBench={onBench}
       onSelect={onSelect}
       liveByPlayer={liveByPlayer}
+      compact={compact}
     />
   );
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-line shadow-card">
+    <div
+      className={cx('overflow-hidden border border-line', compact ? 'rounded-xl' : 'rounded-2xl shadow-card')}
+    >
       <div
-        className="relative px-1 pt-3 pb-4"
+        className={cx('relative px-1', compact ? 'pt-2 pb-2.5' : 'pt-3 pb-4')}
         style={{
           background: 'repeating-linear-gradient(180deg, var(--pitch-a) 0 12.5%, var(--pitch-b) 12.5% 25%)',
         }}
       >
         <PitchMarkings />
-        <div className="relative flex flex-col gap-3">
+        <div className={cx('relative flex flex-col', compact ? 'gap-1.5' : 'gap-3')}>
           {rows.map((row, i) => (
             <div key={i} className="flex justify-evenly">
               {row.map((p) => token(p, false))}
@@ -71,16 +77,23 @@ export function Pitch<P extends Pick | LivePick>({
         </div>
       </div>
       {bench.length > 0 && (
-        <div className="bg-bench px-1 pt-2 pb-3">
-          <p className="mb-1 text-center text-xs font-bold tracking-wide text-muted uppercase">
+        <div className={cx('bg-bench px-1', compact ? 'pt-1 pb-2' : 'pt-2 pb-3')}>
+          <p
+            className={cx(
+              'text-center font-bold tracking-wide text-muted uppercase',
+              compact ? 'text-[10px]' : 'mb-1 text-xs',
+            )}
+          >
             {t.myTeam.bench}
           </p>
           <div className="flex justify-evenly">
             {bench.map((p) => (
               <div key={p.playerId} className="flex w-[22%] max-w-[4.75rem] min-w-0 flex-col items-center">
-                <span className="mb-0.5 text-[10px] font-bold text-muted tabular">
-                  {p.slot === 12 ? 'GK' : p.slot - 12}
-                </span>
+                {!compact && (
+                  <span className="mb-0.5 text-[10px] font-bold text-muted tabular">
+                    {p.slot === 12 ? 'GK' : p.slot - 12}
+                  </span>
+                )}
                 {token(p, true)}
               </div>
             ))}
@@ -121,7 +134,9 @@ function PlayerToken<P extends Pick | LivePick>({
   onBench,
   onSelect,
   liveByPlayer,
+  compact,
 }: {
+  compact: boolean;
   liveByPlayer: Map<FplPlayerId, LivePick> | undefined;
   pick: P;
   player: Player | undefined;
@@ -142,17 +157,18 @@ function PlayerToken<P extends Pick | LivePick>({
             src={fplImage.shirt(team.code, player?.position === 'GKP')}
             name={team.shortName}
             fallbackText={team.shortName}
-            className="h-11 w-10 drop-shadow"
-            fallbackClassName="size-10 text-xs"
+            className={compact ? 'h-8 w-7 drop-shadow' : 'h-11 w-10 drop-shadow'}
+            fallbackClassName={compact ? 'size-7 text-[9px]' : 'size-10 text-xs'}
           />
         ) : (
-          <span className="block h-11 w-10" />
+          <span className={cx('block', compact ? 'h-8 w-7' : 'h-11 w-10')} />
         )}
         {(pick.isCaptain || pick.isViceCaptain) && (
           <span
             aria-label={pick.isCaptain ? t.myTeam.captain : t.myTeam.vice}
             className={cx(
-              'absolute -top-1 -end-2 flex size-5 items-center justify-center rounded-full text-[10px] font-extrabold ring-2 ring-surface',
+              'absolute -top-1 -end-2 flex items-center justify-center rounded-full font-extrabold ring-2 ring-surface',
+              compact ? 'size-4 text-[8px]' : 'size-5 text-[10px]',
               pick.isCaptain ? 'bg-primary text-on-primary' : 'bg-surface text-ink',
             )}
           >
@@ -200,19 +216,24 @@ function PlayerToken<P extends Pick | LivePick>({
       </span>
       <span
         dir="auto"
-        className="mt-0.5 block w-full truncate rounded-t-md bg-chip-label px-1 text-center text-[11px] leading-5 font-semibold text-pitch-ink"
+        className={cx(
+          'mt-0.5 block w-full truncate bg-chip-label px-0.5 text-center font-semibold text-pitch-ink',
+          compact ? 'rounded-md text-[9px] leading-4' : 'rounded-t-md text-[11px] leading-5',
+        )}
       >
         {name}
       </span>
-      <span
-        dir="auto"
-        className={cx(
-          'block w-full truncate rounded-b-md px-1 text-center text-[11px] leading-5 font-bold tabular',
-          onBench ? 'bg-surface-3 text-ink' : 'bg-primary text-on-primary',
-        )}
-      >
-        {typeof label === 'number' ? <Num value={label} /> : label}
-      </span>
+      {!compact && (
+        <span
+          dir="auto"
+          className={cx(
+            'block w-full truncate rounded-b-md px-1 text-center text-[11px] leading-5 font-bold tabular',
+            onBench ? 'bg-surface-3 text-ink' : 'bg-primary text-on-primary',
+          )}
+        >
+          {typeof label === 'number' ? <Num value={label} /> : label}
+        </span>
+      )}
     </>
   );
   const cls = cx(

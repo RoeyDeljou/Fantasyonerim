@@ -41,6 +41,8 @@ model User {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   bannedAt         DateTime?
+  /// Shown to admins only. Set together with bannedAt.
+  banReason        String?
 
   sessions          Session[]
   adminCredential   AdminCredential?
@@ -48,6 +50,11 @@ model User {
   nativePushDevices NativePushDevice[]
   notificationPrefs NotificationPrefs?
   notificationLogs  NotificationLog[]
+  posts             CommunityPost[]
+  comments          Comment[]
+  likes             PostLike[]
+  uploads           Upload[]
+  reports           Report[]
 }
 
 model Session {
@@ -263,4 +270,106 @@ model JobLease {
   lastError   String?
   /// Small job-private state (e.g. when podcast links were last re-resolved).
   state       Json?
+}
+
+// ---------- Phase 3: Community ----------
+
+/// A fan post. Soft-deleted (deletedAt) by its author or an admin; deleted posts never reach clients.
+model CommunityPost {
+  id            String    @id @default(cuid())
+  authorId      String
+  text          String
+  imageUploadId String?   @unique
+  /// TeamSnapshot JSON (frozen at creation), null when no team was shared.
+  teamSnapshot  Json?
+  /// Denormalized counters, updated in the same transaction as the like/comment row.
+  likeCount     Int       @default(0)
+  commentCount  Int       @default(0)
+  createdAt     DateTime  @default(now())
+  deletedAt     DateTime?
+  /// User id of whoever deleted it (author or admin).
+  deletedBy     String?
+
+  author   User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  image    Upload?    @relation(fields: [imageUploadId], references: [id], onDelete: SetNull)
+  comments Comment[]
+  likes    PostLike[]
+
+  @@index([deletedAt, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([authorId, createdAt(sort: Desc)])
+}
+
+model Comment {
+  id        String    @id @default(cuid())
+  postId    String
+  authorId  String
+  text      String
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+  deletedBy String?
+
+  post   CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt, id])
+}
+
+model PostLike {
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([postId, userId])
+  @@index([userId])
+}
+
+/// An image uploaded for a post (re-encoded webp in the MediaStore). Unused uploads are deleted after 24 h.
+model Upload {
+  id          String    @id
+  ownerId     String
+  storageKey  String
+  url         String
+  width       Int
+  height      Int
+  contentType String
+  createdAt   DateTime  @default(now())
+  /// Set when attached to a post (an upload can be used once).
+  usedAt      DateTime?
+
+  owner User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  post  CommunityPost?
+
+  @@index([usedAt, createdAt])
+}
+
+enum ReportTargetKind {
+  post
+  comment
+}
+
+/// A user's report of a post or comment. `isOpen` is true while open and NULL once resolved: the unique
+/// index then allows one OPEN report per reporter + target (NULLs are distinct in Postgres) while keeping
+/// the history of resolved ones.
+model Report {
+  id         String           @id @default(cuid())
+  targetKind ReportTargetKind
+  targetId   String
+  reporterId String
+  /// ReportReason: spam | abuse | hate | sexual | other
+  reason     String
+  note       String?
+  createdAt  DateTime         @default(now())
+  resolvedAt DateTime?
+  /// "removed" | "dismissed" | "deleted" (target deleted by its author / with its post)
+  resolution String?
+  resolvedBy String?
+  isOpen     Boolean?         @default(true)
+
+  reporter User @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([targetKind, targetId, reporterId, isOpen])
+  @@index([isOpen, targetKind, targetId])
 }

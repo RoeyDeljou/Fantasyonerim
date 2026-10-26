@@ -1,13 +1,11 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { JobsTickResponseSchema } from '@fant/shared';
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { ApiHttpError, notFound, unauthorized } from '../errors.js';
 import type { JobRunner } from '../jobs/runner.js';
 import { contentTypeForKey, isSafeKey } from '../media/store.js';
 import { serialize } from '../validate.js';
-
-const TickResponseSchema = z.object({ ran: z.array(z.string()) });
 
 /** Constant-time comparison (hashing first so lengths never leak). */
 export function secretEquals(given: string, expected: string): boolean {
@@ -24,7 +22,7 @@ export function internalRoutes(app: FastifyInstance, ctx: AppContext, jobs: JobR
     const header = request.headers['x-cron-secret'];
     const given = typeof header === 'string' ? header : '';
     if (given === '' || !secretEquals(given, expected)) throw unauthorized('Bad cron secret');
-    return serialize(TickResponseSchema, { ran: await jobs.runDue() });
+    return serialize(JobsTickResponseSchema, { ran: await jobs.runDue() });
   });
 
   // Local MediaStore only (dev). S3/R2 serves its own public URLs.

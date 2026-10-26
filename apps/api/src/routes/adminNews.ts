@@ -3,6 +3,7 @@ import {
   AdminNewsBodySchema,
   AdminPushBodySchema,
   AdminPushResultSchema,
+  HiddenNewsListSchema,
   NewsItemIdSchema,
   NewsItemSchema,
 } from '@fant/shared';
@@ -17,6 +18,7 @@ import { notify } from '../push/notify.js';
 import { parseInput, serialize } from '../validate.js';
 
 const ParamsSchema = z.object({ id: NewsItemIdSchema });
+export const HIDDEN_NEWS_LIMIT = 200;
 
 /** Manual fallback news + manual push. Every route re-checks the ADMIN role first. */
 export function adminNewsRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth): void {
@@ -58,6 +60,33 @@ export function adminNewsRoutes(app: FastifyInstance, ctx: AppContext, auth: Aut
       if (result.count === 0 && (await prisma.newsItem.count({ where: { id } })) === 0) {
         throw notFound('This news item does not exist');
       }
+      return reply.code(204).send();
+    });
+
+    // Hidden items, newest-hidden first. Expired stories (hidden by the cleanup job) can't come back.
+    admin.get('/v1/admin/news/hidden', async () => {
+      const now = ctx.clock.now();
+      const rows = await prisma.newsItem.findMany({
+        where: {
+          hiddenAt: { not: null },
+          NOT: { source: 'instagram_story', expiresAt: { lte: now } },
+        },
+        orderBy: [{ hiddenAt: 'desc' }, { id: 'desc' }],
+        take: HIDDEN_NEWS_LIMIT,
+        include: { media: { orderBy: { order: 'asc' } } },
+      });
+      return serialize(HiddenNewsListSchema, {
+        items: rows.flatMap((row) =>
+          row.hiddenAt === null ? [] : [{ item: toNewsItem(row), hiddenAt: row.hiddenAt.toISOString() }],
+        ),
+      });
+    });
+
+    // Un-hide (idempotent). Not re-pushed: it was announced when it first arrived.
+    admin.post('/v1/admin/news/:id/restore', async (request, reply) => {
+      const { id } = parseInput(ParamsSchema, request.params);
+      const result = await prisma.newsItem.updateMany({ where: { id }, data: { hiddenAt: null } });
+      if (result.count === 0) throw notFound('This news item does not exist');
       return reply.code(204).send();
     });
 

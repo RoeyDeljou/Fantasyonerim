@@ -1,6 +1,8 @@
 import { mapWithConcurrency, nextDeadline } from '@fant/fpl';
 import { FplEntryIdSchema } from '@fant/shared';
+import type { AppContext } from '../context.js';
 import { PUSH_ICON } from '../news/pushNews.js';
+import { UNUSED_UPLOAD_TTL_MS } from '../routes/uploads.js';
 import { deadlineCopy, gameweekSummaryCopy } from '../push/copy.js';
 import { notify } from '../push/notify.js';
 import { getSettings } from '../settings.js';
@@ -141,6 +143,32 @@ export const cleanupJob: Job = {
         ctx.log.warn({ err, mediaId: m.id }, 'cleanup: media delete failed (will retry)');
       }
     }
-    return { summary: `${hidden.count} stories hidden, ${deleted} media files deleted` };
+    const uploads = await deleteUnusedUploads(app, now);
+    return {
+      summary: `${hidden.count} stories hidden, ${deleted} media files deleted, ${uploads} unused uploads deleted`,
+    };
   },
 };
+
+export const UPLOAD_CLEANUP_BATCH = 500;
+
+/**
+ * Uploads never attached to a post within UNUSED_UPLOAD_TTL_MS. The row is deleted first (only while still
+ * unused, so a post created meanwhile keeps its image), then the file.
+ */
+async function deleteUnusedUploads(app: AppContext, now: Date): Promise<number> {
+  const stale = await app.prisma.upload.findMany({
+    where: { usedAt: null, createdAt: { lt: new Date(now.getTime() - UNUSED_UPLOAD_TTL_MS) } },
+    take: UPLOAD_CLEANUP_BATCH,
+    select: { id: true, storageKey: true },
+  });
+  let count = 0;
+  for (const upload of stale) {
+    const claimed = await app.prisma.upload.deleteMany({ where: { id: upload.id, usedAt: null } });
+    if (claimed.count === 0) continue;
+    // A failed file delete leaves an orphaned object but never an unusable row.
+    await app.media.delete(upload.storageKey).catch(() => undefined);
+    count += 1;
+  }
+  return count;
+}
