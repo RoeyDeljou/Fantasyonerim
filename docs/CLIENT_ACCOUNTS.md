@@ -24,3 +24,10 @@ Default rows, in this order:
 
 Admins can add more rows and name them freely (either linked to a Team ID or a hand-picked player).
 Dor's and Itay's Team IDs: _pending — the client will provide them with the admin accounts._
+
+## Podcast listening (client decision, 2026-10-26)
+
+**No in-app audio player.** The client monitors listening stats in their Spotify for Creators and Apple Podcasts
+Connect business accounts, so "Listen" always hands off to Spotify or Apple Podcasts (the user picks; optional
+remembered choice). The RSS audio enclosure is stored but never played in the app. If the client later wants those
+stats inside the app, add them via the platforms' analytics APIs — out of scope for now.
