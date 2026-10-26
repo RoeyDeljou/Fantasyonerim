@@ -41,7 +41,9 @@ export const deadlineRemindersJob: Job = {
       });
       sent.push(`${offset}m → ${result.recipients}`);
     }
-    return { summary: sent.length === 0 ? `GW${next.event}: nothing due` : `GW${next.event}: ${sent.join(', ')}` };
+    return {
+      summary: sent.length === 0 ? `GW${next.event}: nothing due` : `GW${next.event}: ${sent.join(', ')}`,
+    };
   },
 };
 
@@ -83,7 +85,7 @@ export const gameweekSummaryJob: Job = {
       to: [...scores.keys()],
       pref: 'fpl',
       dedupeKeys: [key],
-      options: { ttlSec: 12 * HOUR / 1000, urgency: 'normal' },
+      options: { ttlSec: (12 * HOUR) / 1000, urgency: 'normal' },
       build: ({ userId, locale }) => {
         const score = scores.get(userId);
         if (score === undefined) return null;
@@ -118,7 +120,10 @@ export const cleanupJob: Job = {
     });
     const old = await app.prisma.newsMedia.findMany({
       where: {
-        item: { source: 'instagram_story', publishedAt: { lt: new Date(now.getTime() - STORY_MEDIA_RETENTION_MS) } },
+        item: {
+          source: 'instagram_story',
+          publishedAt: { lt: new Date(now.getTime() - STORY_MEDIA_RETENTION_MS) },
+        },
         OR: [{ storageKey: { not: null } }, { posterKey: { not: null } }],
       },
     });
@@ -127,7 +132,10 @@ export const cleanupJob: Job = {
       try {
         if (m.storageKey !== null) await app.media.delete(m.storageKey);
         if (m.posterKey !== null) await app.media.delete(m.posterKey);
-        await app.prisma.newsMedia.update({ where: { id: m.id }, data: { storageKey: null, posterKey: null } });
+        await app.prisma.newsMedia.update({
+          where: { id: m.id },
+          data: { storageKey: null, posterKey: null },
+        });
         deleted += 1;
       } catch (err) {
         ctx.log.warn({ err, mediaId: m.id }, 'cleanup: media delete failed (will retry)');

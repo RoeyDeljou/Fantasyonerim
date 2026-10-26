@@ -1,4 +1,10 @@
-import { NewsItemIdSchema, NewsItemSchema, NewsPageQuerySchema, NewsPageSchema, StoriesSchema } from '@fant/shared';
+import {
+  NewsItemIdSchema,
+  NewsItemSchema,
+  NewsPageQuerySchema,
+  NewsPageSchema,
+  StoriesSchema,
+} from '@fant/shared';
 import type { Prisma } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -46,7 +52,8 @@ export function newsRoutes(app: FastifyInstance, ctx: AppContext): void {
     const last = page[page.length - 1];
     return serialize(NewsPageSchema, {
       items: page.map(toNewsItem),
-      nextCursor: rows.length > query.limit && last !== undefined ? encodeNewsCursor(last.publishedAt, last.id) : null,
+      nextCursor:
+        rows.length > query.limit && last !== undefined ? encodeNewsCursor(last.publishedAt, last.id) : null,
     });
   });
 

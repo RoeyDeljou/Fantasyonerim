@@ -117,7 +117,13 @@ export function episode(n: number, publishedAt: Date, overrides: Partial<NewsIte
     title: `פרק ${n} - כותרת`,
     text: `Episode ${n} description`,
     media: [
-      { kind: 'image', sourceUrl: 'https://cdn.anchor.test/art.jpg', posterSourceUrl: null, width: null, height: null },
+      {
+        kind: 'image',
+        sourceUrl: 'https://cdn.anchor.test/art.jpg',
+        posterSourceUrl: null,
+        width: null,
+        height: null,
+      },
     ],
     links: { ...EMPTY_LINKS, audio: `https://anchor.test/ep${n}.mp3` },
     podcast: { episodeNumber: n, seasonNumber: 1, durationSec: 3600 },

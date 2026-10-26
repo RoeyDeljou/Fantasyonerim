@@ -52,14 +52,18 @@ const app = await buildApp({
   fpl,
   logger,
   media: createMediaStore(),
-  push: vapid === null ? null : new WebPushProvider(vapid, (statusCode, message) => pushLog(statusCode, message)),
+  push:
+    vapid === null ? null : new WebPushProvider(vapid, (statusCode, message) => pushLog(statusCode, message)),
   config: {
     corsOrigins: parseOrigins(env.CORS_ORIGINS),
     secretsKey: env.SECRETS_KEY ? parseSecretsKey(env.SECRETS_KEY) : devSecretsKey(),
     trustProxy: env.TRUST_PROXY,
     cronSecret: env.CRON_SECRET ?? null,
     vapidPublicKey: vapid?.publicKey ?? null,
-    meta: env.META_APP_ID && env.META_APP_SECRET ? { appId: env.META_APP_ID, appSecret: env.META_APP_SECRET } : null,
+    meta:
+      env.META_APP_ID && env.META_APP_SECRET
+        ? { appId: env.META_APP_ID, appSecret: env.META_APP_SECRET }
+        : null,
     apiPublicUrl,
     webAppUrl: env.WEB_APP_URL ?? null,
   },

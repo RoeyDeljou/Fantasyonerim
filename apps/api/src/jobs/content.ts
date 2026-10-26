@@ -1,6 +1,10 @@
 import type { ContentSource, SourceResult } from '@fant/integrations';
 import type { IntegrationId } from '@fant/shared';
-import { describeIntegrationError, recordIntegrationRun, type LoadedIntegration } from '../integrations/store.js';
+import {
+  describeIntegrationError,
+  recordIntegrationRun,
+  type LoadedIntegration,
+} from '../integrations/store.js';
 import { ingestDrafts, type IngestResult } from '../news/ingest.js';
 import { pushNewNewsItems } from '../news/pushNews.js';
 import type { JobRunContext } from './types.js';
@@ -15,7 +19,11 @@ export interface ContentRunResult {
 }
 
 /** Warnings, skipped items and failed saves condensed into one admin-readable line. */
-export function summarizeProblems(fetched: SourceResult, ingest: IngestResult, extra: readonly string[] = []) {
+export function summarizeProblems(
+  fetched: SourceResult,
+  ingest: IngestResult,
+  extra: readonly string[] = [],
+) {
   const parts: string[] = [...extra];
   if (ingest.failed.length > 0) {
     const first = ingest.failed[0];

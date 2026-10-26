@@ -57,7 +57,16 @@ async function rehostMedia(deps: IngestDeps, draft: NewsItemDraft): Promise<Medi
       posterKey = `${base}/${n}-poster.${poster.ext}`;
       posterUrl = await deps.media.put(posterKey, poster.bytes, poster.contentType);
     }
-    rows.push({ ...dims(m), order: n, kind: m.kind, url, posterUrl, sourceUrl: m.sourceUrl, storageKey, posterKey });
+    rows.push({
+      ...dims(m),
+      order: n,
+      kind: m.kind,
+      url,
+      posterUrl,
+      sourceUrl: m.sourceUrl,
+      storageKey,
+      posterKey,
+    });
   }
   return rows;
 }

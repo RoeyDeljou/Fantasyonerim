@@ -5,7 +5,8 @@ import {
   IntegrationUnavailableError,
 } from '@fant/integrations';
 import { IntegrationStatusSchema, type IntegrationId, type IntegrationStatus } from '@fant/shared';
-import { Prisma, type IntegrationConfig, type PrismaClient } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
+import { type IntegrationConfig, type PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { decryptSecret, encryptSecret } from '../secrets.js';
 import { serialize } from '../validate.js';

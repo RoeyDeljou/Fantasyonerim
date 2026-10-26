@@ -58,7 +58,7 @@ export class LocalDiskMediaStore implements MediaStore {
     return path;
   }
 
-  async put(key: string, bytes: Uint8Array): Promise<string> {
+  async put(key: string, bytes: Uint8Array, _contentType?: string): Promise<string> {
     const path = this.pathOf(key);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, bytes);

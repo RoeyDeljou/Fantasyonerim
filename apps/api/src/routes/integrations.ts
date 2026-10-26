@@ -7,7 +7,7 @@ import {
   OAuthStartSchema,
   type IntegrationId,
 } from '@fant/shared';
-import { Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { Auth } from '../auth/session.js';
@@ -171,8 +171,10 @@ export function integrationRoutes(app: FastifyInstance, ctx: AppContext, auth: A
             settings['username'] = user.username;
             data.accountLabel = `@${user.username}`;
           } catch (err) {
-            if (isAuthError(err)) throw badRequest(`secrets.bearerToken: ${describeIntegrationError('x', err)}`);
-            if (isConfigError(err)) throw badRequest(`settings.username: ${describeIntegrationError('x', err)}`);
+            if (isAuthError(err))
+              throw badRequest(`secrets.bearerToken: ${describeIntegrationError('x', err)}`);
+            if (isConfigError(err))
+              throw badRequest(`settings.username: ${describeIntegrationError('x', err)}`);
             // X unreachable: save anyway, the x job resolves the account on its next run.
             data.lastError = `Couldn't verify the X account yet — will retry. (${describeIntegrationError('x', err)})`;
           }
@@ -207,7 +209,10 @@ export function integrationRoutes(app: FastifyInstance, ctx: AppContext, auth: A
       throw new ApiHttpError(503, 'upstream_unavailable', 'WEB_APP_URL is not configured on the server');
     }
     const back = (reply: FastifyReply, params: Record<string, string>) =>
-      reply.redirect(`${webAppUrl.replace(/\/+$/, '')}/admin/?${new URLSearchParams(params).toString()}`, 302);
+      reply.redirect(
+        `${webAppUrl.replace(/\/+$/, '')}/admin/?${new URLSearchParams(params).toString()}`,
+        302,
+      );
     const fail = (reason: string) => back(reply, { instagram: 'error', reason });
 
     const query = CallbackQuerySchema.safeParse(request.query);
@@ -259,6 +264,11 @@ export function integrationRoutes(app: FastifyInstance, ctx: AppContext, auth: A
       },
     });
     for (const job of SYNC_JOBS.instagram) await jobs.reset(job, { forgetState: true });
-    return back(reply, warning === null ? { instagram: 'connected' } : { instagram: 'connected', warning: 'unexpected_account' });
+    return back(
+      reply,
+      warning === null
+        ? { instagram: 'connected' }
+        : { instagram: 'connected', warning: 'unexpected_account' },
+    );
   });
 }

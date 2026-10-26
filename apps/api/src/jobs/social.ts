@@ -57,7 +57,10 @@ export const xJob: Job = {
         const user = await app.integrations.resolveXUser({ bearerToken, username }, app.integrationCtx);
         await app.prisma.integrationConfig.update({
           where: { id: 'x' },
-          data: { settings: { ...x.settings, username: user.username, userId: user.id }, accountLabel: `@${user.username}` },
+          data: {
+            settings: { ...x.settings, username: user.username, userId: user.id },
+            accountLabel: `@${user.username}`,
+          },
         });
         x = await loadIntegration(app.prisma, app.config.secretsKey, 'x');
       } catch (err) {

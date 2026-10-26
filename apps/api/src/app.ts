@@ -54,7 +54,12 @@ export interface AppDeps {
   jobs?: readonly Job[];
 }
 
-const DEFAULT_RATE_LIMIT: RateLimitConfig = { globalMax: 600, authMax: 10, writeMax: 30, timeWindowMs: 60_000 };
+const DEFAULT_RATE_LIMIT: RateLimitConfig = {
+  globalMax: 600,
+  authMax: 10,
+  writeMax: 30,
+  timeWindowMs: 60_000,
+};
 
 const STATUS_CODES: Record<number, ApiErrorCode> = {
   400: 'bad_request',
@@ -89,7 +94,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     integrationCtx: { fetch: fetchImpl, now: () => clock.now().getTime() },
     fetch: fetchImpl,
     push: deps.push ?? null,
-    media: deps.media ?? new LocalDiskMediaStore('./.media', deps.config.apiPublicUrl ?? 'http://localhost:4000'),
+    media:
+      deps.media ?? new LocalDiskMediaStore('./.media', deps.config.apiPublicUrl ?? 'http://localhost:4000'),
   };
   const limits: RateLimitConfig = { ...DEFAULT_RATE_LIMIT, ...deps.config.rateLimit };
 

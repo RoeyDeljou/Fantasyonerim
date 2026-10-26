@@ -24,7 +24,9 @@ export async function pushNewNewsItems(
   items: readonly NewsItemWithMedia[],
 ): Promise<NotifyResult> {
   const now = deps.clock.now().getTime();
-  const fresh = items.filter((i) => now - i.publishedAt.getTime() <= NEWS_PUSH_MAX_AGE_MS && i.hiddenAt === null);
+  const fresh = items.filter(
+    (i) => now - i.publishedAt.getTime() <= NEWS_PUSH_MAX_AGE_MS && i.hiddenAt === null,
+  );
   const bySource = new Map<NewsSource, NewsItemWithMedia[]>();
   for (const item of fresh) {
     const source = NewsSourceSchema.safeParse(item.source);

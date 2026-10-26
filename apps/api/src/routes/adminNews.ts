@@ -68,7 +68,14 @@ export function adminNewsRoutes(app: FastifyInstance, ctx: AppContext, auth: Aut
         to: 'all',
         pref: null,
         options: { ttlSec: 24 * 3600, urgency: 'high' },
-        build: () => ({ title: body.title, body: body.body, url: body.url, tag: null, icon: PUSH_ICON, image: null }),
+        build: () => ({
+          title: body.title,
+          body: body.body,
+          url: body.url,
+          tag: null,
+          icon: PUSH_ICON,
+          image: null,
+        }),
       });
       return serialize(AdminPushResultSchema, result);
     });

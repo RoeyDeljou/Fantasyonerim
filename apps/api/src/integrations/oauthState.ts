@@ -24,7 +24,8 @@ export function createOAuthState(secretsKey: Buffer, userId: string, nowMs: numb
   return `${body}.${sign(secretsKey, body)}`;
 }
 
-export type OAuthStateResult = { ok: true; userId: string } | { ok: false; reason: 'invalid_state' | 'expired_state' };
+export type OAuthStateResult =
+  { ok: true; userId: string } | { ok: false; reason: 'invalid_state' | 'expired_state' };
 
 export function verifyOAuthState(secretsKey: Buffer, state: string, nowMs: number): OAuthStateResult {
   const parts = state.split('.');

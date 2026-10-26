@@ -43,13 +43,20 @@ function track(id: TrackedResolver['id'], inner: PodcastLinkResolver): TrackedRe
   return tracked;
 }
 
-function buildResolvers(app: AppContext, apple: LoadedIntegration, spotify: LoadedIntegration): TrackedResolver[] {
+function buildResolvers(
+  app: AppContext,
+  apple: LoadedIntegration,
+  spotify: LoadedIntegration,
+): TrackedResolver[] {
   const out: TrackedResolver[] = [];
   if (apple.active) {
     out.push(
       track(
         'apple',
-        app.integrations.createAppleLinkResolver({ podcastId: apple.settings['podcastId'] ?? '' }, app.integrationCtx),
+        app.integrations.createAppleLinkResolver(
+          { podcastId: apple.settings['podcastId'] ?? '' },
+          app.integrationCtx,
+        ),
       ),
     );
   }
@@ -80,7 +87,10 @@ async function recordResolvers(app: AppContext, resolvers: readonly TrackedResol
       SELECT count(*)::bigint AS n FROM "NewsItem"
       WHERE "source" = 'podcast' AND ("links" ->> ${linkKey}) IS NOT NULL`);
     const now = app.clock.now();
-    await recordIntegrationRun(app.prisma, r.id, now, { ok: r.outcome.error === null, error: r.outcome.error });
+    await recordIntegrationRun(app.prisma, r.id, now, {
+      ok: r.outcome.error === null,
+      error: r.outcome.error,
+    });
     await app.prisma.integrationConfig.updateMany({
       where: { id: r.id },
       data: { itemsImported: Number(rows[0]?.n ?? 0) },
@@ -134,7 +144,11 @@ async function applyLinks(
     const f = found.get(item.dedupeKey);
     if (f === undefined) continue;
     const current = readLinks(item.links);
-    const next = { ...current, spotify: current.spotify ?? f.spotify ?? null, apple: current.apple ?? f.apple ?? null };
+    const next = {
+      ...current,
+      spotify: current.spotify ?? f.spotify ?? null,
+      apple: current.apple ?? f.apple ?? null,
+    };
     if (next.spotify === current.spotify && next.apple === current.apple) continue;
     await app.prisma.newsItem.update({ where: { id: item.id }, data: { links: next } });
     changed += 1;

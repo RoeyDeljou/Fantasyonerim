@@ -1,5 +1,5 @@
 import { parseApplePodcastId, parseSpotifyShowId, parseXUsername } from '@fant/integrations';
-import type { IntegrationId } from '@fant/shared';
+import { IntegrationIdSchema, type IntegrationId } from '@fant/shared';
 
 /**
  * The single config map for every content integration: the client's accounts (docs/CLIENT_ACCOUNTS.md) as
@@ -9,7 +9,9 @@ import type { IntegrationId } from '@fant/shared';
 /** The Instagram account the OAuth connect flow must prefer (NOT pod_fantasyonerim). */
 export const EXPECTED_INSTAGRAM_USERNAME = 'fantasyonerimfpl';
 
-export type SettingNormalizer = (value: string) => { ok: true; value: string } | { ok: false; message: string };
+export type SettingNormalizer = (
+  value: string,
+) => { ok: true; value: string } | { ok: false; message: string };
 
 export interface IntegrationDefinition {
   id: IntegrationId;
@@ -27,7 +29,10 @@ export interface IntegrationDefinition {
   /** X API is pay-per-use. */
   paidFeature: boolean;
   /** All required settings/credentials are present. */
-  isConfigured(settings: Readonly<Record<string, string>>, secrets: Readonly<Record<string, string>>): boolean;
+  isConfigured(
+    settings: Readonly<Record<string, string>>,
+    secrets: Readonly<Record<string, string>>,
+  ): boolean;
 }
 
 const httpUrl: SettingNormalizer = (value) => {
@@ -85,7 +90,10 @@ export const INTEGRATIONS: Readonly<Record<IntegrationId, IntegrationDefinition>
     defaultEnabled: true,
     defaultSettings: { showId: '4sYY0tpz7M8gflimZAglHi' },
     editable: {
-      showId: fromParser(parseSpotifyShowId, 'must be a Spotify show URL (open.spotify.com/show/…) or show id'),
+      showId: fromParser(
+        parseSpotifyShowId,
+        'must be a Spotify show URL (open.spotify.com/show/…) or show id',
+      ),
     },
     readOnly: [],
     secretKeys: ['clientId', 'clientSecret'],
@@ -118,4 +126,5 @@ export const INTEGRATIONS: Readonly<Record<IntegrationId, IntegrationDefinition>
   },
 };
 
-export const INTEGRATION_IDS = Object.keys(INTEGRATIONS) as IntegrationId[];
+/** Contract order (the admin console lists them in this order). */
+export const INTEGRATION_IDS: readonly IntegrationId[] = IntegrationIdSchema.options;
