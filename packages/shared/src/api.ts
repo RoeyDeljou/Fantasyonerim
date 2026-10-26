@@ -100,16 +100,24 @@ export const RecoveryCodeResponseSchema = z.object({ recoveryCode: z.string() })
 export type RecoveryCodeResponse = z.infer<typeof RecoveryCodeResponseSchema>;
 
 // ---------- app config (public) ----------
+/** Only https links are accepted for anything we render as a link (blocks javascript:, http:, data:). */
+export const HttpsUrlSchema = z
+  .string()
+  .trim()
+  .url()
+  .max(500)
+  .refine((v) => v.startsWith('https://'), 'must be an https:// link');
+
 /** GET /v1/config — public, unauthenticated; what the client needs to render tabs. */
 export const PublicConfigSchema = z.object({
   league: z.object({ id: FplLeagueIdSchema, name: z.string().nullable() }).nullable(),
   captainBattleEvent: GameweekSchema.nullable(),
   socials: z.object({
-    spotifyUrl: z.string().url().nullable(),
-    appleUrl: z.string().url().nullable(),
-    instagramUrl: z.string().url().nullable(),
-    xUrl: z.string().url().nullable(),
-    whatsappUrl: z.string().url().nullable(),
+    spotifyUrl: HttpsUrlSchema.nullable(),
+    appleUrl: HttpsUrlSchema.nullable(),
+    instagramUrl: HttpsUrlSchema.nullable(),
+    xUrl: HttpsUrlSchema.nullable(),
+    whatsappUrl: HttpsUrlSchema.nullable(),
   }),
 });
 export type PublicConfig = z.infer<typeof PublicConfigSchema>;
@@ -117,12 +125,21 @@ export type PublicConfig = z.infer<typeof PublicConfigSchema>;
 // ---------- captain battle ----------
 export const CaptainBattleEntryKindSchema = z.enum(['community', 'custom']);
 
-export const CaptainBattleEntryInputSchema = z.object({
-  /** e.g. "Community captain", "Dor's captain". */
+const CaptainBattleEntryBase = {
+  /** e.g. "הקפטן של דור", "קפטן הקהילה". Free text chosen by the admin. */
   label: z.string().trim().min(1).max(40),
-  playerId: FplPlayerIdSchema,
+  /** 'community' rows get the community highlight; everything else is 'custom'. */
   kind: CaptainBattleEntryKindSchema,
-});
+};
+
+/**
+ * A captain battle row is either a player the admin picks by hand ("קפטן הקהילה"), or linked to an FPL team
+ * ("הקפטן של דור" → Dor's Team ID) whose captain for the GW is read from that team's picks automatically.
+ */
+export const CaptainBattleEntryInputSchema = z.discriminatedUnion('source', [
+  z.object({ ...CaptainBattleEntryBase, source: z.literal('player'), playerId: FplPlayerIdSchema }),
+  z.object({ ...CaptainBattleEntryBase, source: z.literal('entry'), entryId: FplEntryIdSchema }),
+]);
 export type CaptainBattleEntryInput = z.infer<typeof CaptainBattleEntryInputSchema>;
 
 /** PUT /v1/admin/captain-battle */
@@ -137,11 +154,19 @@ export const CaptainBattleRowSchema = z.object({
   key: z.string(),
   label: z.string(),
   kind: z.enum(['community', 'custom', 'mine']),
-  playerId: FplPlayerIdSchema,
-  /** Captain points = basePoints × 2 (× 3 when the viewer's own row is a triple captain). */
+  source: z.enum(['player', 'entry', 'mine']),
+  /** Set for entry-linked rows and the "mine" row. */
+  entryId: FplEntryIdSchema.nullable(),
+  /**
+   * Null while unknown: an entry-linked row before the GW deadline (FPL hides picks until then) or when that
+   * team's picks couldn't be loaded. Such rows sort last and show "revealed at the deadline".
+   */
+  playerId: FplPlayerIdSchema.nullable(),
+  /** basePoints × multiplier; 0 while playerId is null. */
   captainPoints: z.number().int(),
+  /** 2 normally, 3 for a linked team / viewer on Triple Captain; 2 for hand-picked players. */
   multiplier: z.number().int().min(1).max(3),
-  live: PlayerLiveSchema,
+  live: PlayerLiveSchema.nullable(),
 });
 export type CaptainBattleRow = z.infer<typeof CaptainBattleRowSchema>;
 

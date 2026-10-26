@@ -205,7 +205,10 @@ export const LiveLeagueRowSchema = z.object({
   managerName: z.string(),
   livePoints: z.number().int(),
   liveTotal: z.number().int(),
+  /** The captain the manager picked. */
   captainPlayerId: FplPlayerIdSchema.nullable(),
+  /** Who actually gets the armband points: the vice when the captain didn't play, else the captain. */
+  effectiveCaptainPlayerId: FplPlayerIdSchema.nullable(),
   activeChip: ChipSchema.nullable(),
   playersYetToPlay: z.number().int(),
 });

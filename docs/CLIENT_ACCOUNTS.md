@@ -13,3 +13,14 @@ The accounts the app mirrors into News. Integrations must target exactly these.
 
 When the admin connects Instagram via OAuth, the connect flow must pick the IG account whose username is
 `fantasyonerimfpl` if several are offered, and warn if the connected username differs.
+
+## Captain Battle (client decision, 2026-10-26)
+
+Default rows, in this order:
+
+1. **הקפטן של דור** — linked to Dor's FPL Team ID (captain read from his picks each GW).
+2. **הקפטן של איתי** — linked to Itay's FPL Team ID.
+3. **קפטן הקהילה** — player chosen manually by an admin each GW (kind `community`).
+
+Admins can add more rows and name them freely (either linked to a Team ID or a hand-picked player).
+Dor's and Itay's Team IDs: _pending — the client will provide them with the admin accounts._
