@@ -145,6 +145,8 @@ export const LivePickSchema = PickSchema.extend({
   effectiveMultiplier: z.number().int().min(0).max(3),
   minutes: z.number().int(),
   provisionalBonus: z.number().int(),
+  /** All bonus points this GW, final or not (provisional + confirmed). Show this in the bonus badge. */
+  bonus: z.number().int(),
   bonusConfirmed: z.boolean(),
   /** Aggregate status of this player's fixture(s) this GW. 'no_fixture' = blank GW. */
   fixtureStatus: z.enum(['no_fixture', 'not_started', 'live', 'finished']),
@@ -230,6 +232,10 @@ export const PlayerLiveSchema = z.object({
   basePoints: z.number().int(),
   minutes: z.number().int(),
   provisionalBonus: z.number().int(),
+  /** All bonus points this GW, final or not. */
+  bonus: z.number().int(),
+  /** True only when every fixture of the player this GW is `finished` (FPL's final state). */
+  bonusConfirmed: z.boolean(),
   fixtureStatus: z.enum(['no_fixture', 'not_started', 'live', 'finished']),
 });
 export type PlayerLive = z.infer<typeof PlayerLiveSchema>;
