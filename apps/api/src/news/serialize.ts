@@ -14,7 +14,15 @@ export const EMPTY_LINKS: NewsLinks = { spotify: null, apple: null, instagram: n
 
 export function readLinks(json: unknown): NewsLinks {
   const parsed = NewsLinksSchema.partial().safeParse(json);
-  return parsed.success ? { ...EMPTY_LINKS, ...parsed.data } : { ...EMPTY_LINKS };
+  if (!parsed.success) return { ...EMPTY_LINKS };
+  const l = parsed.data;
+  return {
+    spotify: l.spotify ?? null,
+    apple: l.apple ?? null,
+    instagram: l.instagram ?? null,
+    x: l.x ?? null,
+    audio: l.audio ?? null,
+  };
 }
 
 export function toNewsItem(row: NewsItemWithMedia): NewsItem {

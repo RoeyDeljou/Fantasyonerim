@@ -400,6 +400,9 @@ export const he = {
     storyOf: 'סטורי {i} מתוך {n}',
     openStories: 'צפייה בסטוריז',
     cover: 'עטיפת הפרק',
+    newStory: 'סטורי חדש · {time}',
+    storySeen: 'סטורי · {time}',
+    handle: 'הפודקאסט הישראלי לפנטזי פרמייר ליג',
   },
   audio: {
     play: 'ניגון הפרק',

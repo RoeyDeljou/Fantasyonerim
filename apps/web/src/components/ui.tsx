@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
 import { useI18n, useT } from '@/i18n';
 import type { Messages } from '@/i18n';
@@ -388,5 +388,91 @@ export function Ltr({ children, className }: { children: ReactNode; className?: 
     <bdi dir="ltr" className={className}>
       {children}
     </bdi>
+  );
+}
+
+// ---------- switch ----------
+
+/** Accessible on/off switch row (whole row is the 44 px+ touch target). */
+export function Switch({
+  label,
+  description,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  description?: string | undefined;
+  checked: boolean;
+  disabled?: boolean | undefined;
+  onChange(next: boolean): void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className="flex min-h-12 w-full items-center gap-3 rounded-xl py-1 text-start disabled:opacity-50"
+    >
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="text-[15px] font-medium text-ink">{label}</span>
+        {description && <span className="text-xs text-muted">{description}</span>}
+      </span>
+      <span
+        aria-hidden="true"
+        className={cx(
+          'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full p-0.5 transition-colors',
+          checked ? 'bg-primary' : 'bg-line',
+        )}
+      >
+        <span
+          className={cx(
+            'size-6 rounded-full bg-surface shadow-card transition-transform',
+            checked && 'translate-x-5 rtl:-translate-x-5',
+          )}
+        />
+      </span>
+    </button>
+  );
+}
+
+// ---------- toast ----------
+
+/** A transient status message pinned above the tab bar. Parent controls visibility. */
+export function Toast({
+  message,
+  tone = 'neutral',
+  onDone,
+  ms = 4000,
+}: {
+  message: string | null;
+  tone?: 'neutral' | 'success' | 'error';
+  onDone(): void;
+  ms?: number;
+}) {
+  useEffect(() => {
+    if (!message) return;
+    const id = window.setTimeout(onDone, ms);
+    return () => window.clearTimeout(id);
+  }, [message, ms, onDone]);
+  if (!message) return null;
+  return (
+    <div
+      role={tone === 'error' ? 'alert' : 'status'}
+      className="pointer-events-none fixed inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-50 flex justify-center px-4"
+    >
+      <p
+        className={cx(
+          'pointer-events-auto max-w-md rounded-2xl px-4 py-3 text-sm font-semibold shadow-card',
+          tone === 'success' && 'bg-success-soft text-success',
+          tone === 'error' && 'bg-live-soft text-live',
+          tone === 'neutral' && 'bg-ink text-canvas',
+        )}
+      >
+        {message}
+      </p>
+    </div>
   );
 }

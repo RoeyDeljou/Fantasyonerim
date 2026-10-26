@@ -4,14 +4,13 @@ import { useSyncExternalStore } from 'react';
 import { readPref, writePref } from './prefs';
 
 /**
- * Small device-local UI state for News (seen stories, push-prompt dismissal, audio positions). All of it is
+ * Small device-local UI state for News (seen stories, push-prompt dismissal, preferred podcast app). All of it is
  * cosmetic — losing it never breaks anything — so storage errors are swallowed by readPref/writePref.
  */
 const KEYS = {
   seenStories: 'fant.news.seenStories',
   pushPromptDismissedAt: 'fant.news.pushPromptDismissedAt',
-  audioPositions: 'fant.news.audioPositions',
-  playbackRate: 'fant.news.playbackRate',
+  listenApp: 'fant.news.listenApp',
 } as const;
 
 function readJson(key: string): unknown {
@@ -70,40 +69,29 @@ export function snoozePushPrompt(now: number): void {
   writePref(KEYS.pushPromptDismissedAt, String(now));
 }
 
-// ---------- audio ----------
+// ---------- podcast app choice ----------
 
-const MAX_POSITIONS = 100;
+/** "Where to listen": ask every time, or always open the chosen platform (changeable in Profile). */
+export type ListenPref = 'ask' | 'spotify' | 'apple';
+const listenListeners = new Set<() => void>();
 
-function positions(): Record<string, number> {
-  const v = readJson(KEYS.audioPositions);
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
-  const out: Record<string, number> = {};
-  for (const [k, n] of Object.entries(v)) if (typeof n === 'number' && Number.isFinite(n)) out[k] = n;
-  return out;
+function readListen(): ListenPref {
+  const v = readPref(KEYS.listenApp);
+  return v === 'spotify' || v === 'apple' ? v : 'ask';
 }
 
-export function readAudioPosition(id: string): number {
-  return positions()[id] ?? 0;
+export function setListenPref(p: ListenPref): void {
+  writePref(KEYS.listenApp, p);
+  listenListeners.forEach((l) => l());
 }
 
-/** `sec` ≤ 0 forgets the position (finished / restarted episodes start from the top). */
-export function writeAudioPosition(id: string, sec: number): void {
-  const all = positions();
-  delete all[id];
-  if (sec > 0) all[id] = Math.floor(sec);
-  const keys = Object.keys(all);
-  for (const k of keys.slice(0, Math.max(0, keys.length - MAX_POSITIONS))) delete all[k];
-  writePref(KEYS.audioPositions, JSON.stringify(all));
-}
-
-export const PLAYBACK_RATES = [1, 1.25, 1.5, 2] as const;
-export type PlaybackRate = (typeof PLAYBACK_RATES)[number];
-
-export function readPlaybackRate(): PlaybackRate {
-  const n = Number(readPref(KEYS.playbackRate));
-  return PLAYBACK_RATES.find((r) => r === n) ?? 1;
-}
-
-export function writePlaybackRate(rate: PlaybackRate): void {
-  writePref(KEYS.playbackRate, String(rate));
+export function useListenPref(): ListenPref {
+  return useSyncExternalStore(
+    (cb) => {
+      listenListeners.add(cb);
+      return () => listenListeners.delete(cb);
+    },
+    readListen,
+    () => 'ask',
+  );
 }

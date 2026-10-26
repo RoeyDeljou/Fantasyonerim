@@ -150,53 +150,6 @@ html[dir='ltr'] .name-start {
 
 /* ---------- News ---------- */
 
-/* Episode scrubber: themed range input; --p is the played fraction (set inline). Always LTR (time). */
-.scrubber {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 1.75rem;
-  background: transparent;
-  cursor: pointer;
-  direction: ltr;
-}
-.scrubber:disabled {
-  cursor: default;
-}
-.scrubber::-webkit-slider-runnable-track {
-  height: 0.3rem;
-  border-radius: 999px;
-  background: linear-gradient(to right, var(--primary) var(--p, 0%), var(--line) var(--p, 0%));
-}
-.scrubber::-moz-range-track {
-  height: 0.3rem;
-  border-radius: 999px;
-  background: linear-gradient(to right, var(--primary) var(--p, 0%), var(--line) var(--p, 0%));
-}
-.scrubber::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  margin-top: -0.35rem;
-  width: 1rem;
-  height: 1rem;
-  border-radius: 999px;
-  background: var(--primary);
-  border: 2px solid var(--surface);
-  box-shadow: var(--shadow);
-}
-.scrubber::-moz-range-thumb {
-  width: 1rem;
-  height: 1rem;
-  border-radius: 999px;
-  background: var(--primary);
-  border: 2px solid var(--surface);
-}
-.scrubber:disabled::-webkit-slider-thumb {
-  opacity: 0;
-}
-.scrubber:disabled::-moz-range-thumb {
-  opacity: 0;
-}
-
 /*
  * Instagram-style story ring around the profile avatar: thick gradient ring (yellow → orange → pink → purple)
  * with a thin gap in the page colour; "seen" = thin muted ring. The gap is the avatar's own border.

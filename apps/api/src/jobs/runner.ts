@@ -96,11 +96,14 @@ export class JobRunner {
     return ran;
   }
 
-  /** Makes a job due on the next tick (e.g. right after Instagram is connected) and forgets its state. */
-  async reset(name: JobName): Promise<void> {
+  /**
+   * Makes a job due on the next tick. `forgetState` also drops its private state (e.g. "first sync
+   * done"), used when Instagram is (re)connected so the new account backfills silently.
+   */
+  async reset(name: JobName, options: { forgetState?: boolean } = {}): Promise<void> {
     await this.ctx.prisma.jobLease.updateMany({
       where: { name },
-      data: { lastRunAt: null, state: Prisma.DbNull },
+      data: { lastRunAt: null, ...(options.forgetState === true ? { state: Prisma.DbNull } : {}) },
     });
   }
 }

@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { NewsMedia } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
-import { pauseAudio } from '@/lib/audioPlayer';
 import { ChevronEndIcon, ChevronStartIcon, PlayIcon } from '@/components/icons';
 import { cx } from '@/components/ui';
 import { MediaImage } from './parts';
@@ -35,7 +34,6 @@ export function VideoTile({ media, className }: { media: NewsMedia; className?: 
         controls
         playsInline
         preload="auto"
-        onPlay={pauseAudio}
         className={cx('bg-story-bg object-contain', className)}
       />
     );

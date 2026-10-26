@@ -6,7 +6,10 @@ import { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { vi } from 'vitest';
 import { buildApp } from '../src/app.js';
-import type { Clock, RateLimitConfig } from '../src/context.js';
+import type { AppConfig, Clock, RateLimitConfig } from '../src/context.js';
+import type { IntegrationFactories } from '../src/integrations/factories.js';
+import type { MediaStore } from '../src/media/store.js';
+import type { PushProvider } from '../src/push/provider.js';
 import { createAdmin } from '../src/routes/admin.js';
 import { devSecretsKey } from '../src/secrets.js';
 import { FakeFplService } from './fakeFpl.js';
@@ -65,6 +68,11 @@ export interface TestAppOptions {
   clock?: TestClock;
   rateLimit?: Partial<RateLimitConfig>;
   corsOrigins?: string[];
+  integrations?: Partial<IntegrationFactories>;
+  push?: PushProvider | null;
+  media?: MediaStore;
+  fetch?: typeof fetch;
+  config?: Partial<AppConfig>;
 }
 
 export async function buildTestApp(prisma: PrismaClient, options: TestAppOptions = {}) {
@@ -74,10 +82,15 @@ export async function buildTestApp(prisma: PrismaClient, options: TestAppOptions
     prisma,
     fpl,
     clock,
+    ...(options.integrations ? { integrations: options.integrations } : {}),
+    ...(options.push !== undefined ? { push: options.push } : {}),
+    ...(options.media ? { media: options.media } : {}),
+    ...(options.fetch ? { fetch: options.fetch } : {}),
     config: {
       corsOrigins: options.corsOrigins ?? ['http://localhost:3000'],
       secretsKey: devSecretsKey(),
-      rateLimit: { globalMax: 10_000, authMax: 10_000, ...options.rateLimit },
+      rateLimit: { globalMax: 10_000, authMax: 10_000, writeMax: 10_000, ...options.rateLimit },
+      ...options.config,
     },
   });
   await app.ready();

@@ -13,14 +13,14 @@ import { useTheme } from '@/lib/theme';
 import type { ThemePref } from '@/lib/prefs';
 import { promptInstall, useInstallState } from '@/lib/pwa';
 import { AppShell } from '@/components/AppShell';
+import { IosInstallSteps } from '@/components/InstallGuide';
+import { NotificationsCard } from '@/components/NotificationsCard';
 import {
-  AddSquareIcon,
   CheckIcon,
   ChevronEndIcon,
   DownloadIcon,
   KeyIcon,
   LogOutIcon,
-  ShareIcon,
   ShieldIcon,
 } from '@/components/icons';
 import {
@@ -127,6 +127,7 @@ function ProfileInner() {
         </div>
       </Card>
 
+      <NotificationsCard />
       <RecoveryCard />
       <InstallCard />
 
@@ -309,36 +310,8 @@ function InstallCard() {
           {t.profile.installButton}
         </Button>
       )}
-      {state === 'ios' && (
-        <div className="flex flex-col gap-2 rounded-xl bg-surface-2 p-3">
-          <p className="text-sm font-bold text-ink">{t.profile.iosStepsTitle}</p>
-          <ol className="flex flex-col gap-2 text-sm text-ink">
-            <IosStep n={1} icon={<ShareIcon size={18} />}>
-              {t.profile.iosStep1}
-            </IosStep>
-            <IosStep n={2} icon={<AddSquareIcon size={18} />}>
-              {t.profile.iosStep2}
-            </IosStep>
-            <IosStep n={3} icon={<CheckIcon size={18} />}>
-              {t.profile.iosStep3}
-            </IosStep>
-          </ol>
-          <p className="text-xs text-muted">{t.profile.iosNote}</p>
-        </div>
-      )}
+      {state === 'ios' && <IosInstallSteps />}
       {state === 'manual' && <p className="text-sm text-muted">{t.profile.otherBrowser}</p>}
     </Card>
-  );
-}
-
-function IosStep({ n, icon, children }: { n: number; icon: ReactNode; children: ReactNode }) {
-  return (
-    <li className="flex items-center gap-3">
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-on-primary">
-        {n}
-      </span>
-      <span className="flex-1">{children}</span>
-      <span className="text-primary">{icon}</span>
-    </li>
   );
 }

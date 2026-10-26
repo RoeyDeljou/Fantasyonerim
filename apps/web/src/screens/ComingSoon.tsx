@@ -83,19 +83,6 @@ function ComingSoon({ title, body, icon }: { title: string; body: string; icon: 
   );
 }
 
-export function NewsScreen() {
-  const t = useT();
-  return (
-    <AppShell title={t.tabs.news}>
-      <ComingSoon
-        title={t.comingSoon.newsTitle}
-        body={t.comingSoon.newsBody}
-        icon={<MicIcon width={48} height={48} />}
-      />
-    </AppShell>
-  );
-}
-
 export function CommunityScreen() {
   const t = useT();
   return (

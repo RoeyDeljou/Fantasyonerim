@@ -155,7 +155,7 @@ export function ExternalButton({
   icon: ReactNode;
   children: ReactNode;
   tone?: 'soft' | 'outline';
-  className?: string;
+  className?: string | undefined;
 }) {
   return (
     <a

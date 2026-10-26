@@ -1,4 +1,4 @@
-import { NewsScreen } from '@/screens/ComingSoon';
+import { NewsScreen } from '@/screens/News';
 
 export default function Page() {
   return <NewsScreen />;

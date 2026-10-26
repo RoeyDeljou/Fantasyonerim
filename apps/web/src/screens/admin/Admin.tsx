@@ -1,6 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useQueryParam } from '@/lib/useQueryParam';
+import { IntegrationsView } from './Integrations';
 import type { FormEvent, ReactNode } from 'react';
 import {
   AdminSettingsSchema,
@@ -57,6 +60,7 @@ import {
   Skeleton,
   Spinner,
   TextField,
+  Toast,
   cx,
   errorMessage,
 } from '@/components/ui';
@@ -67,14 +71,72 @@ export function AdminScreen() {
   return (
     <AdminFrame title={t.admin.title}>
       <AdminGuard>
-        <div className="flex flex-col gap-4">
-          <h1 className="text-2xl font-extrabold text-ink">{t.admin.title}</h1>
+        <Suspense fallback={<Skeleton className="h-64" />}>
+          <AdminViews />
+        </Suspense>
+      </AdminGuard>
+    </AdminFrame>
+  );
+}
+
+type AdminView = 'settings' | 'integrations';
+
+/**
+ * `/admin/?view=integrations` — and the Instagram OAuth callback lands on `/admin/?instagram=connected` or
+ * `?instagram=error&reason=…`, which opens Integrations with a notice and then cleans the URL.
+ */
+function AdminViews() {
+  const { t } = useI18n();
+  const [viewParam, setView] = useQueryParam('view');
+  const params = useSearchParams();
+  const router = useRouter();
+  const ig = params.get('instagram');
+  const reason = params.get('reason');
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const clearNotice = useCallback(() => setNotice(null), []);
+
+  useEffect(() => {
+    if (ig !== 'connected' && ig !== 'error') return;
+    setNotice(
+      ig === 'connected'
+        ? { ok: true, text: t.integrations.igConnected }
+        : {
+            ok: false,
+            text: reason ? fmt(t.integrations.igErrorReason, { reason }) : t.integrations.igError,
+          },
+    );
+    router.replace('/admin/?view=integrations', { scroll: false });
+  }, [ig, reason, router, t]);
+
+  const view: AdminView = viewParam === 'integrations' || ig ? 'integrations' : 'settings';
+  return (
+    <div className="flex flex-col gap-4">
+      <h1 className="text-2xl font-extrabold text-ink">{t.admin.title}</h1>
+      <Toast
+        message={notice?.text ?? null}
+        tone={notice?.ok ? 'success' : 'error'}
+        ms={notice?.ok ? 4000 : 8000}
+        onDone={clearNotice}
+      />
+      <Segmented<AdminView>
+        label={t.integrations.viewsLabel}
+        value={view}
+        onChange={(v) => setView(v === 'settings' ? null : v)}
+        options={[
+          { value: 'settings', label: t.integrations.viewSettings },
+          { value: 'integrations', label: t.integrations.viewIntegrations },
+        ]}
+      />
+      {view === 'settings' ? (
+        <>
           <SettingsSection />
           <CaptainBattleEditor />
           <AdminsSection />
-        </div>
-      </AdminGuard>
-    </AdminFrame>
+        </>
+      ) : (
+        <IntegrationsView />
+      )}
+    </div>
   );
 }
 

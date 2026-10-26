@@ -400,6 +400,9 @@ export const en: Messages = {
     storyOf: 'Story {i} of {n}',
     openStories: 'Watch stories',
     cover: 'Episode cover',
+    newStory: 'New story · {time}',
+    storySeen: 'Story · {time}',
+    handle: "Israel's Fantasy Premier League podcast",
   },
   audio: {
     play: 'Play episode',

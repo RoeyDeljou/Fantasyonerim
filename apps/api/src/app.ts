@@ -15,8 +15,26 @@ import { fplRoutes } from './routes/fpl.js';
 import { leagueRoutes } from './routes/league.js';
 import { meRoutes } from './routes/me.js';
 import { formatZodIssues } from './validate.js';
+import { realIntegrations, type IntegrationFactories } from './integrations/factories.js';
+import { JOBS } from './jobs/index.js';
+import { JobRunner } from './jobs/runner.js';
+import type { Job } from './jobs/types.js';
+import { LocalDiskMediaStore, type MediaStore } from './media/store.js';
+import type { PushProvider } from './push/provider.js';
+import { adminNewsRoutes } from './routes/adminNews.js';
+import { integrationRoutes } from './routes/integrations.js';
+import { internalRoutes } from './routes/internal.js';
+import { newsRoutes } from './routes/news.js';
+import { pushRoutes } from './routes/push.js';
 import type { FplService } from '@fant/fpl';
 import type { PrismaClient } from '@prisma/client';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    /** Background job runner (scheduler, cron tick, admin "sync now"; tests call it directly). */
+    jobs: JobRunner;
+  }
+}
 
 export interface AppDeps {
   prisma: PrismaClient;
@@ -24,9 +42,19 @@ export interface AppDeps {
   config: AppConfig;
   clock?: Clock;
   logger?: FastifyServerOptions['logger'];
+  /** Platform layer; defaults to the real @fant/integrations functions. Tests override pieces. */
+  integrations?: Partial<IntegrationFactories>;
+  /** fetch for integrations + media downloads (default: global fetch). */
+  fetch?: typeof fetch;
+  /** null/undefined = push disabled (no VAPID keys). */
+  push?: PushProvider | null;
+  /** Default: LocalDiskMediaStore in ./.media. */
+  media?: MediaStore;
+  /** Job registry override (tests). */
+  jobs?: readonly Job[];
 }
 
-const DEFAULT_RATE_LIMIT: RateLimitConfig = { globalMax: 600, authMax: 10, timeWindowMs: 60_000 };
+const DEFAULT_RATE_LIMIT: RateLimitConfig = { globalMax: 600, authMax: 10, writeMax: 30, timeWindowMs: 60_000 };
 
 const STATUS_CODES: Record<number, ApiErrorCode> = {
   400: 'bad_request',
@@ -50,11 +78,18 @@ function statusOf(err: unknown): number | null {
 }
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
+  const clock = deps.clock ?? systemClock;
+  const fetchImpl = deps.fetch ?? globalThis.fetch.bind(globalThis);
   const ctx: AppContext = {
     prisma: deps.prisma,
     fpl: deps.fpl,
-    clock: deps.clock ?? systemClock,
+    clock,
     config: deps.config,
+    integrations: { ...realIntegrations, ...deps.integrations },
+    integrationCtx: { fetch: fetchImpl, now: () => clock.now().getTime() },
+    fetch: fetchImpl,
+    push: deps.push ?? null,
+    media: deps.media ?? new LocalDiskMediaStore('./.media', deps.config.apiPublicUrl ?? 'http://localhost:4000'),
   };
   const limits: RateLimitConfig = { ...DEFAULT_RATE_LIMIT, ...deps.config.rateLimit };
 
@@ -125,6 +160,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   const auth = createAuth(ctx);
   const strictLimit = { max: limits.authMax, timeWindow: limits.timeWindowMs };
+  const writeLimit = { max: limits.writeMax, timeWindow: limits.timeWindowMs };
+  const jobs = new JobRunner(ctx, deps.jobs ?? JOBS, app.log);
+  app.decorate('jobs', jobs);
 
   configRoutes(app, ctx);
   authRoutes(app, ctx, auth, strictLimit);
@@ -133,6 +171,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   leagueRoutes(app, ctx);
   captainBattleRoutes(app, ctx, auth);
   adminRoutes(app, ctx, auth);
+  newsRoutes(app, ctx);
+  pushRoutes(app, ctx, auth, writeLimit);
+  integrationRoutes(app, ctx, auth, jobs);
+  adminNewsRoutes(app, ctx, auth);
+  internalRoutes(app, ctx, jobs);
 
   return app;
 }
