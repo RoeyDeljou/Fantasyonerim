@@ -155,7 +155,12 @@ function TeamView({
       {picks.isPending ? (
         <TeamHeaderSkeleton />
       ) : picks.isError ? null : (
-        <TeamHeader entry={entry.data} picks={picks.data} />
+        <TeamHeader
+          entry={entry.data}
+          picks={picks.data}
+          pointsOverride={live.data?.livePoints}
+          total={live.data ? live.data.liveTotal : gw === current ? entry.data?.overallPoints : null}
+        />
       )}
       <GwSelector value={gw} max={current} onChange={onGw} />
       {picks.isPending && <Skeleton className="h-[28rem]" />}
@@ -171,9 +176,10 @@ function TeamView({
             picks={picks.data.picks}
             index={index}
             onSelect={setSelected}
+            liveByPlayer={liveByPlayer}
             renderLabel={(p, player) => pitchLabel(p, player, liveByPlayer, fixtures.data, index, t)}
           />
-          <ChipsPanel picks={picks.data} />
+          <ChipsPanel picks={picks.data} currentGw={current} />
         </>
       )}
       <PlayerSheet

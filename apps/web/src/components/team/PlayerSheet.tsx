@@ -7,7 +7,8 @@ import type { Messages } from '@/i18n';
 import type { FplIndex } from '@/lib/queries';
 import { BottomSheet } from '../BottomSheet';
 import { ImageWithFallback, fplImage } from '../FplImages';
-import { Badge } from '../ui';
+import { Badge, Ltr, Num } from '../ui';
+import { BonusBadge } from './BonusBadge';
 import { fixtureStatusText, isLivePick, opponentText } from './fixtureText';
 
 function statusText(t: Messages, s: string): string {
@@ -68,7 +69,7 @@ export function PlayerSheet({
               fallbackClassName="size-20 text-2xl"
             />
             <div className="flex min-w-0 flex-col gap-1">
-              <p className="truncate text-lg font-bold text-ink">
+              <p dir="auto" className="truncate text-start text-lg font-bold text-ink">
                 {player.firstName} {player.secondName}
               </p>
               <p className="text-sm text-muted">
@@ -94,11 +95,11 @@ export function PlayerSheet({
           )}
 
           <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <Stat label={t.player.price} value={f.price(player.nowCost)} />
-            <Stat label={t.player.form} value={f.decimal(player.form)} />
-            <Stat label={t.player.selectedBy} value={f.percent(player.selectedByPercent)} />
-            <Stat label={t.player.totalPoints} value={f.num(player.totalPoints)} />
-            {opponent && <Stat label={t.player.fixture} value={opponent} />}
+            <Stat label={t.player.price} value={<Ltr>{f.price(player.nowCost)}</Ltr>} />
+            <Stat label={t.player.form} value={<Ltr>{f.decimal(player.form)}</Ltr>} />
+            <Stat label={t.player.selectedBy} value={<Ltr>{f.percent(player.selectedByPercent)}</Ltr>} />
+            <Stat label={t.player.totalPoints} value={<Num value={player.totalPoints} />} />
+            {opponent && <Stat label={t.player.fixture} value={<bdi>{opponent}</bdi>} />}
           </dl>
 
           {live && (
@@ -106,16 +107,16 @@ export function PlayerSheet({
               <h3 className="mb-2 flex items-center gap-2 text-base font-bold">
                 {t.player.thisGw}
                 <Badge tone={live.fixtureStatus === 'live' ? 'live' : 'neutral'}>
-                  {fixtureStatusText(live, t)}
+                  <bdi>{fixtureStatusText(live, t, f, player.teamId, fixtures)}</bdi>
                 </Badge>
               </h3>
               <dl className="grid grid-cols-3 gap-2">
-                <Stat label={t.player.basePoints} value={f.num(live.basePoints)} />
-                <Stat label={t.player.finalPoints} value={f.num(live.points)} />
-                <Stat label={t.player.minutesPlayed} value={f.num(live.minutes)} />
+                <Stat label={t.player.basePoints} value={<Num value={live.basePoints} />} />
+                <Stat label={t.player.finalPoints} value={<Num value={live.points} />} />
+                <Stat label={t.player.minutesPlayed} value={<Num value={live.minutes} />} />
                 <Stat label={t.player.goals} value={live.goals} />
                 <Stat label={t.player.assists} value={live.assists} />
-                <Stat label={t.player.bps} value={live.bps} />
+                <Stat label={t.player.bps} value={<Num value={live.bps} />} />
                 {player.position !== 'MID' && player.position !== 'FWD' && (
                   <Stat label={t.player.cleanSheet} value={live.cleanSheet ? t.common.yes : t.common.no} />
                 )}
@@ -125,9 +126,7 @@ export function PlayerSheet({
               </dl>
               {live.provisionalBonus > 0 && (
                 <p className="mt-2">
-                  <Badge tone={live.bonusConfirmed ? 'success' : 'warning'}>
-                    {fmt(live.bonusConfirmed ? t.live.bonus : t.live.provBonus, { n: live.provisionalBonus })}
-                  </Badge>
+                  <BonusBadge n={live.provisionalBonus} confirmed={live.bonusConfirmed} />
                 </p>
               )}
             </section>

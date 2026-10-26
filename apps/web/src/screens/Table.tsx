@@ -5,7 +5,7 @@ import { FplEntryIdSchema } from '@fant/shared';
 import type { LeagueStandingRow } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import { isApiError } from '@/lib/api';
-import { useFplIndex, useLivePollInterval, useMe, useStandings } from '@/lib/queries';
+import { useConfig, useFplIndex, useLivePollInterval, useMe, useStandings } from '@/lib/queries';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { AppShell, ShellSkeleton } from '@/components/AppShell';
 import { ArrowDownIcon, ArrowUpIcon, ClockIcon, DotIcon, TableIcon } from '@/components/icons';
@@ -15,6 +15,7 @@ import {
   EmptyState,
   ErrorState,
   InlineError,
+  Num,
   SkeletonList,
   Spinner,
   cx,
@@ -55,9 +56,18 @@ export function Movement({ rank, lastRank }: { rank: number; lastRank: number })
   );
 }
 
+export function NoLeague() {
+  const { t } = useI18n();
+  return (
+    <EmptyState icon={<TableIcon width={32} height={32} />} title={t.table.noLeagueTitle} body={t.table.noLeagueBody} />
+  );
+}
+
 function TableInner() {
   const { t, f } = useI18n();
-  const standings = useStandings();
+  const config = useConfig();
+  const leagueSet = !!config.data?.league;
+  const standings = useStandings(leagueSet);
   const me = useMe();
   const fpl = useFplIndex();
   const { interval } = useLivePollInterval();
@@ -65,16 +75,13 @@ function TableInner() {
   const selectedId = FplEntryIdSchema.safeParse(entryParam ?? undefined);
 
   const data = standings.data;
+  if (config.isPending) return <SkeletonList rows={8} />;
+  if (config.isError) return <ErrorState error={config.error} onRetry={() => config.refetch()} />;
+  if (!leagueSet) return <NoLeague />;
   if (!data) {
     if (standings.isError) {
       if (isApiError(standings.error, 'not_found')) {
-        return (
-          <EmptyState
-            icon={<TableIcon width={32} height={32} />}
-            title={t.table.noLeagueTitle}
-            body={t.table.noLeagueBody}
-          />
-        );
+        return <NoLeague />;
       }
       return <ErrorState error={standings.error} onRetry={() => standings.refetch()} />;
     }
@@ -89,7 +96,9 @@ function TableInner() {
   return (
     <div className="flex flex-col gap-3">
       <header>
-        <h1 className="text-2xl font-extrabold text-ink">{first?.league.name ?? t.table.title}</h1>
+        <h1 dir="auto" className="truncate text-start text-2xl font-extrabold text-ink">
+          {first?.league.name ?? t.table.title}
+        </h1>
         {first && (
           <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
             <ClockIcon width={14} height={14} />
@@ -121,7 +130,7 @@ function TableInner() {
                   )}
                 >
                   <span className="flex items-center gap-1 font-bold text-ink tabular">
-                    {r.rank}
+                    <Num value={r.rank} />
                     <Movement rank={r.rank} lastRank={r.lastRank} />
                   </span>
                   <span className="flex min-w-0 flex-col">
@@ -132,8 +141,12 @@ function TableInner() {
                       {r.managerName}
                     </span>
                   </span>
-                  <span className="text-center font-semibold text-ink tabular">{r.eventTotal}</span>
-                  <span className="text-end font-extrabold text-ink tabular">{f.num(r.total)}</span>
+                  <span className="text-center font-semibold text-ink ">
+                    <Num value={r.eventTotal} />
+                  </span>
+                  <span className="text-end font-extrabold text-ink ">
+                    <Num value={r.total} />
+                  </span>
                 </button>
               </li>
             ))}

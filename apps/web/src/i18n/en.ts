@@ -150,6 +150,8 @@ export const en: Messages = {
     vice: 'Vice-captain',
   },
   live: {
+    bonusLabel: 'bonus',
+    bonusProvLabel: 'bonus (prov.)',
     minutesPlayed: '{n} min played',
     livePoints: 'Live points',
     liveTotal: 'Live total',

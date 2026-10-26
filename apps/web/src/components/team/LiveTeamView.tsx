@@ -1,18 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import type { FplEntryId, Gameweek, LivePick } from '@fant/shared';
+import type { Fixture, FplEntryId, Gameweek, LivePick } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import { isApiError } from '@/lib/api';
 import { useEntryLive, useFixtures, useLivePollInterval } from '@/lib/queries';
 import type { FplIndex } from '@/lib/queries';
 import { ImageWithFallback, fplImage } from '../FplImages';
 import { ClockIcon, ShirtIcon, SubInIcon, SubOutIcon } from '../icons';
-import { Badge, Card, EmptyState, ErrorState, LiveDot, SectionTitle, Skeleton, cx } from '../ui';
+import { Badge, Card, EmptyState, ErrorState, LiveDot, Num, SectionTitle, Skeleton, cx } from '../ui';
+import { BonusBadge } from './BonusBadge';
 import { Pitch } from './Pitch';
 import { PlayerSheet } from './PlayerSheet';
 import { chipName } from './TeamParts';
-import { fixtureStatusText } from './fixtureText';
+import { fixtureStatusText, opponentText } from './fixtureText';
 
 /** My Team → Live: live GW points with auto-subs, provisional bonus and per-player status. */
 export function LiveTeamView({
@@ -135,16 +136,6 @@ export function LiveTeamView({
 
       <PlayerSheet pick={selected} index={index} fixtures={fixtures.data} onClose={() => setSelected(null)} />
     </>
-  );
-}
-
-export function BonusBadge({ n, confirmed }: { n: number; confirmed: boolean }) {
-  const { t } = useI18n();
-  if (n <= 0) return null;
-  return (
-    <Badge tone={confirmed ? 'success' : 'warning'} className={cx(!confirmed && 'border border-dashed border-warning')}>
-      <bdi dir="ltr">+{n}</bdi> {confirmed ? t.live.bonus.replace('+{n} ', '') : t.live.provBonus.replace('+{n} ', '')}
-    </Badge>
   );
 }
 

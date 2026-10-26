@@ -152,6 +152,8 @@ export const he = {
     vice: 'סגן קפטן',
   },
   live: {
+    bonusLabel: 'בונוס',
+    bonusProvLabel: 'בונוס (זמני)',
     minutesPlayed: "{n} דק' שוחקו",
     livePoints: "נק' לייב",
     liveTotal: 'סה״כ לייב',
