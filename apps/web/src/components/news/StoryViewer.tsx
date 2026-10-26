@@ -55,6 +55,7 @@ export function StoryViewer({
 }) {
   const { t, dir } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
   const [index, setIndex] = useState(startIndex);
   const [muted, setMuted] = useState(true);
   const [held, setHeld] = useState(false);
@@ -78,6 +79,8 @@ export function StoryViewer({
   useEffect(() => {
     const d = dialog.current;
     if (d && !d.open) d.showModal();
+    // showModal() focuses the first focusable element (the visually hidden "previous" button); start on Close.
+    closeButton.current?.focus();
   }, []);
 
   const next = useCallback(() => {
@@ -302,9 +305,8 @@ export function StoryViewer({
               )}
               <button
                 type="button"
+                ref={closeButton}
                 onClick={onClose}
-                // Initial focus for showModal(): otherwise the first (visually hidden) prev button gets it.
-                autoFocus
                 aria-label={t.story.close}
                 className="pointer-events-auto flex size-11 items-center justify-center rounded-full"
               >

@@ -39,7 +39,11 @@ bonus, players played / yet to play, auto-refresh while matches are live. 15. Ta
 with player search, admin accounts. 18. Hebrew RTL default + English toggle; light/dark from the logo, system default + toggle; phone viewport has no
 horizontal scroll; every screen has loading, empty and error states.
 
-## Phase 2 — Automatic News feed + push notifications
+## Phase 2 — Automatic News feed + push notifications ✅
+
+_Passed `qa-verifier` on 2026-10-26 at 8b10e86 (second gate). Verified against the client's real RSS (62 episodes,
+all Apple links correct). Client decisions applied: Instagram-style profile circle + story ring instead of a stories
+bar; no in-app audio — Listen hands off to Spotify/Apple (docs/CLIENT_ACCOUNTS.md)._
 
 1. `packages/integrations` sources: Podcast RSS, Spotify show episodes, Apple Podcasts lookup (merged into one
    episode item with all links), Instagram posts + stories, X timeline. Recorded-payload tests for each.
