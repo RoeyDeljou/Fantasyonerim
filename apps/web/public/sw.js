@@ -140,7 +140,10 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = new URL(safeUrl(event.notification.data && event.notification.data.url), self.location.origin);
+  const target = new URL(
+    safeUrl(event.notification.data && event.notification.data.url),
+    self.location.origin,
+  );
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clients) => {
       const same = clients.filter((c) => new URL(c.url).origin === target.origin);

@@ -24,6 +24,23 @@ public/             manifest.webmanifest, sw.js (offline shell + push), icons/
 e2e/run.mjs         Playwright end-to-end suite
 ```
 
+## News, push, integrations (Phase 2)
+
+- **News** (`screens/News.tsx`, `components/news/*`): Instagram-profile-style header (logo + story ring:
+  gradient = unseen stories, thin muted = all seen, none = no unexpired stories; seen ids in localStorage) →
+  full-screen `StoryViewer` · push prompt card · deep-linked item (`/news/?item=<id>`, highlighted, not repeated)
+  · infinite feed (cursor, IntersectionObserver) with one card per source and a "new posts" pill (2-min poll
+  while visible). Admins get a "hide" action per card.
+- **No in-app audio** (owner decision — listens must count in Spotify/Apple creator stats): "Listen" opens the
+  only available platform, the remembered one (Profile → Podcast app), or a chooser sheet. Every external link
+  goes through `lib/external.ts` `openExternal()` so the Capacitor shell can swap in the App Launcher.
+- **Push** (`lib/push.ts`, `components/NotificationsCard.tsx`, `public/sw.js`): support / iOS-needs-install /
+  blocked / off / on states, VAPID subscribe → `POST /v1/push/subscriptions`, re-sync on every signed-in start
+  (covers `pushsubscriptionchange`), per-account preferences.
+- **Admin → Integrations** (`/admin/?view=integrations`, `screens/admin/Integrations.tsx`): five source cards
+  (status, last sync/success, items, last error, sync now, enable, settings + write-only secrets), Instagram
+  OAuth connect/return (`/admin/?instagram=connected|error`), X paid-feature note, manual post + push-to-all.
+
 Detail views and sub-tabs live in query params (`/my-team/?view=live&gw=7`, `/table/?entry=123`,
 `/live/?view=captains`) because a static export has no dynamic route segments.
 
@@ -43,7 +60,16 @@ Detail views and sub-tabs live in query params (`/my-team/?view=live&gw=7`, `/ta
    blocked from `/admin` → admin signs in, sets league 314159 and saves the default captain battle (two linked
    teams + a hand-picked community player) → Table shows the league and opens a manager's team → Captain Battle
    shows the rows plus "my captain" → sign out → recover with the recovery code → admin sign-in on the fan's
-   device keeps the fan session and restores it on admin sign-out.
+   device keeps the fan session and restores it on admin sign-out. Phase 2 adds: News shows the seeded podcast
+   cards (badge, de-duplicated title, duration, no `<audio>`), the Listen sheet has the exact Spotify/Apple hrefs
+   and a single-platform episode opens directly, the story ring goes unseen → seen through the viewer, the
+   `?item=` deep link (and a missing item), notification state + a preference toggle that persists across a
+   reload, admin Integrations with all five cards and the X paid note, the Instagram OAuth error return, and a
+   manual post that appears in News and is hidden again by the admin.
+
+The content jobs are disabled in e2e (`JOBS_ENABLED=false`, no network): three episodes and one story are seeded
+into the throwaway database, and a throwaway VAPID pair is generated. Headless Chromium contexts are incognito,
+where `pushManager.subscribe()` is unsupported, so enabling push is asserted to fail gracefully (or succeed).
 
 Requirements: Postgres on localhost:5432 with the `fant`/`fant` role (see `apps/api/.env.example`), ports 4100 and
 5100 free, and Playwright with Chromium available to Node (`require('playwright')`; it is not a repo dependency).

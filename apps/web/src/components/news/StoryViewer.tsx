@@ -260,6 +260,14 @@ export function StoryViewer({
           )}
         </div>
 
+        {/* tap zones aren't reachable without a pointer: keyboard / screen-reader equivalents */}
+        <button type="button" className="sr-only focus:not-sr-only" onClick={prev}>
+          {t.story.prev}
+        </button>
+        <button type="button" className="sr-only focus:not-sr-only" onClick={next}>
+          {t.story.next}
+        </button>
+
         {/* top chrome */}
         <div className="story-shade-top pointer-events-none relative z-10 flex flex-col gap-2 px-2 pt-[calc(0.5rem+env(safe-area-inset-top))] pb-6">
           <div className="flex gap-1" aria-hidden="true">

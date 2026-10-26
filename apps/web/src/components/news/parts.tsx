@@ -127,10 +127,7 @@ export function ExpandableText({
   const clamp = { 3: 'line-clamp-3', 4: 'line-clamp-4', 6: 'line-clamp-6' }[lines];
   return (
     <div className={className}>
-      <div
-        ref={ref}
-        className={cx('space-y-2 text-[15px] leading-relaxed text-ink', !expanded && clamp)}
-      >
+      <div ref={ref} className={cx('space-y-2 text-[15px] leading-relaxed text-ink', !expanded && clamp)}>
         <LinkifiedText text={text} platform={platform} />
       </div>
       {(overflows || expanded) && (
