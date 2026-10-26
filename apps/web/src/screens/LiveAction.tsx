@@ -102,7 +102,9 @@ function FixturesStrip({ index }: { index: FplIndex }) {
     (a, b) => (a.kickoffTime ?? '9').localeCompare(b.kickoffTime ?? '9') || a.id - b.id,
   );
   const focusId =
-    sorted.find((fx) => fx.status === 'live')?.id ?? sorted.find((fx) => fx.status === 'not_started')?.id ?? null;
+    sorted.find((fx) => fx.status === 'live')?.id ??
+    sorted.find((fx) => fx.status === 'not_started')?.id ??
+    null;
 
   useEffect(() => {
     if (focusId === null || !listRef.current) return;
@@ -184,7 +186,9 @@ function FixtureCard({ fx, index, t, f }: { fx: Fixture; index: FplIndex; t: Mes
         <span
           className="grid grid-cols-[1fr_auto_1fr] items-center gap-1 text-xl font-extrabold whitespace-nowrap text-ink tabular"
           aria-label={
-            started ? `${home?.shortName ?? ''} ${fx.teamHScore ?? 0}, ${away?.shortName ?? ''} ${fx.teamAScore ?? 0}` : undefined
+            started
+              ? `${home?.shortName ?? ''} ${fx.teamHScore ?? 0}, ${away?.shortName ?? ''} ${fx.teamAScore ?? 0}`
+              : undefined
           }
         >
           {started ? (
@@ -243,13 +247,14 @@ function LiveTable({ index, interval }: { index: FplIndex; interval: number }) {
     body = (
       <>
         <header>
-          <h1 dir="auto" className="truncate text-start text-xl font-extrabold text-ink">
+          <h1 dir="auto" className="name-start truncate text-xl font-extrabold text-ink">
             {first?.league.name}
           </h1>
           {first && (
             <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
               <ClockIcon width={14} height={14} />
-              {fmt(t.common.gw, { gw: first.event })} · {fmt(t.common.updatedAt, { time: f.time(first.updatedAt) })}
+              {fmt(t.common.gw, { gw: first.event })} ·{' '}
+              {fmt(t.common.updatedAt, { time: f.time(first.updatedAt) })}
             </p>
           )}
         </header>
@@ -278,7 +283,12 @@ function LiveTable({ index, interval }: { index: FplIndex; interval: number }) {
         )}
         {league.isFetchNextPageError && <InlineError>{errorMessage(t, league.error)}</InlineError>}
         {league.hasNextPage && (
-          <Button variant="secondary" block disabled={league.isFetchingNextPage} onClick={() => league.fetchNextPage()}>
+          <Button
+            variant="secondary"
+            block
+            disabled={league.isFetchingNextPage}
+            onClick={() => league.fetchNextPage()}
+          >
             {league.isFetchingNextPage && <Spinner />}
             {league.isFetchingNextPage ? t.common.loadingMore : t.common.loadMore}
           </Button>
@@ -335,17 +345,17 @@ function LiveLeagueRowItem({
           <Movement rank={r.liveRank} lastRank={r.officialRank} />
         </span>
         <span className="flex min-w-0 flex-col gap-0.5">
-          <span dir="auto" className="truncate text-start font-semibold text-ink">
+          <span dir="auto" className="name-start truncate font-semibold text-ink">
             {r.entryName}
           </span>
-          <span dir="auto" className="truncate text-start text-xs text-muted">
+          <span dir="auto" className="name-start truncate text-xs text-muted">
             {r.managerName}
           </span>
           <span className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-muted">
             {captain && (
               <Badge tone="primary" className="max-w-full px-1.5 py-0">
                 <span className="shrink-0">{viceTook ? 'V' : 'C'}</span>
-                <span dir="auto" className="truncate">
+                <span dir="auto" className="name-start truncate">
                   {captain.webName}
                 </span>
                 {viceTook && <span className="shrink-0 opacity-80">({t.liveAction.viceTook})</span>}
@@ -356,7 +366,9 @@ function LiveLeagueRowItem({
                 {chipName(t, r.activeChip)}
               </Badge>
             )}
-            {r.playersYetToPlay > 0 && <span>{fmt(t.liveAction.yetToPlayShort, { n: r.playersYetToPlay })}</span>}
+            {r.playersYetToPlay > 0 && (
+              <span>{fmt(t.liveAction.yetToPlayShort, { n: r.playersYetToPlay })}</span>
+            )}
           </span>
         </span>
         <span className="text-center text-lg font-extrabold text-primary">
@@ -477,17 +489,16 @@ function CaptainRow({
         fallbackClassName="size-11 text-sm"
       />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span dir="auto" className="min-w-0 truncate text-start font-bold text-ink">
-            {row.label}
-          </span>
-          <Badge tone={mine ? 'primary' : 'neutral'} className="shrink-0">
-            {kindLabel}
-          </Badge>
+        {/* The label gets the full line (user-entered, any script); the kind badge sits above it. */}
+        <Badge tone={mine ? 'primary' : 'neutral'} className="self-start px-1.5 py-0 text-[10px]">
+          {kindLabel}
+        </Badge>
+        <span dir="auto" className="name-start min-w-0 truncate font-bold text-ink">
+          {row.label}
         </span>
         {player ? (
           <span className="flex min-w-0 items-center gap-1 text-sm text-ink">
-            <span dir="auto" className="truncate">
+            <span dir="auto" className="name-start truncate">
               {player.webName}
             </span>
             {team && <span className="shrink-0 text-muted">· {team.shortName}</span>}

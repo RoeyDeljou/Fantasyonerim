@@ -14,7 +14,8 @@ export type SessionStatus = 'loading' | 'signedIn' | 'signedOut';
 
 interface SessionValue {
   status: SessionStatus;
-  signIn(auth: AuthResponse): Promise<void>;
+  /** `adoptLocale` (default true) switches the UI to the account's saved language. */
+  signIn(auth: AuthResponse, opts?: { adoptLocale?: boolean }): Promise<void>;
   signOut(): Promise<void>;
 }
 
@@ -64,7 +65,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [afterSessionEnded]);
 
   const signIn = useCallback(
-    async (auth: AuthResponse) => {
+    async (auth: AuthResponse, opts: { adoptLocale?: boolean } = {}) => {
       // Admin signing in on a fan's device: keep the fan's session aside and restore it on admin sign-out.
       const previous = await tokenStore.get();
       const previousMe = qc.getQueryData<Me>(qk.me);
@@ -74,7 +75,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       await tokenStore.set(auth.token);
       qc.removeQueries({ queryKey: qk.me });
       qc.setQueryData(qk.me, auth.user);
-      setLocale(auth.user.locale);
+      if (opts.adoptLocale !== false) setLocale(auth.user.locale);
       setStatus('signedIn');
     },
     [qc, setLocale],

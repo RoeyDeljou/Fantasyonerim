@@ -296,7 +296,8 @@ export const en: Messages = {
     saveSocials: 'Save links',
     saveReminders: 'Save reminders',
     signOutAdmin: 'Sign out of admin',
-    fanKept: 'This device is signed in as {name}. That account is kept aside and comes back automatically when you sign out of admin.',
+    fanKept:
+      'This device is signed in as {name}. That account is kept aside and comes back automatically when you sign out of admin.',
     rowSource: 'Captain source',
     sourceEntry: 'Linked FPL team',
     sourcePlayer: 'Pick a player',
@@ -307,7 +308,8 @@ export const en: Messages = {
     defaultDor: "Dor's captain",
     defaultItay: "Itay's captain",
     defaultCommunity: 'Community captain',
-    defaultsNote: 'No battle set yet — these are the default rows. Fill in the Team IDs, pick the community player, and save.',
+    defaultsNote:
+      'No battle set yet — these are the default rows. Fill in the Team IDs, pick the community player, and save.',
     title: 'Admin',
     loginTitle: 'Admin sign-in',
     username: 'Username',

@@ -59,7 +59,11 @@ export function Movement({ rank, lastRank }: { rank: number; lastRank: number })
 export function NoLeague() {
   const { t } = useI18n();
   return (
-    <EmptyState icon={<TableIcon width={32} height={32} />} title={t.table.noLeagueTitle} body={t.table.noLeagueBody} />
+    <EmptyState
+      icon={<TableIcon width={32} height={32} />}
+      title={t.table.noLeagueTitle}
+      body={t.table.noLeagueBody}
+    />
   );
 }
 
@@ -96,7 +100,7 @@ function TableInner() {
   return (
     <div className="flex flex-col gap-3">
       <header>
-        <h1 dir="auto" className="truncate text-start text-2xl font-extrabold text-ink">
+        <h1 dir="auto" className="name-start truncate text-2xl font-extrabold text-ink">
           {first?.league.name ?? t.table.title}
         </h1>
         {first && (
@@ -134,10 +138,10 @@ function TableInner() {
                     <Movement rank={r.rank} lastRank={r.lastRank} />
                   </span>
                   <span className="flex min-w-0 flex-col">
-                    <span dir="auto" className="truncate text-start font-semibold text-ink">
+                    <span dir="auto" className="name-start truncate font-semibold text-ink">
                       {r.entryName}
                     </span>
-                    <span dir="auto" className="truncate text-start text-xs text-muted">
+                    <span dir="auto" className="name-start truncate text-xs text-muted">
                       {r.managerName}
                     </span>
                   </span>

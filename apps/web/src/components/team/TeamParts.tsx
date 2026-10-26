@@ -71,10 +71,10 @@ export function TeamHeader({
     <Card className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 dir="auto" className="truncate text-start text-xl font-extrabold text-ink">
+          <h1 dir="auto" className="name-start truncate text-xl font-extrabold text-ink">
             {entry?.teamName ?? '—'}
           </h1>
-          <p dir="auto" className="truncate text-start text-sm text-muted">
+          <p dir="auto" className="name-start truncate text-sm text-muted">
             {entry?.managerName ?? ''}
           </p>
           {picks.activeChip && (
@@ -157,7 +157,12 @@ const HALVES = [
   { from: 20, to: 38 },
 ] as const;
 
-type HalfState = { kind: 'used'; gw: number } | { kind: 'active' } | { kind: 'available' } | { kind: 'upcoming'; from: number } | { kind: 'expired' };
+type HalfState =
+  | { kind: 'used'; gw: number }
+  | { kind: 'active' }
+  | { kind: 'available' }
+  | { kind: 'upcoming'; from: number }
+  | { kind: 'expired' };
 
 /** Chips per half-season: used in GW X / active / available / from GW20 / expired. */
 export function ChipsPanel({ picks, currentGw }: { picks: EntryPicks; currentGw: Gameweek }) {
@@ -166,8 +171,12 @@ export function ChipsPanel({ picks, currentGw }: { picks: EntryPicks; currentGw:
 
   const stateOf = (chip: Chip, half: (typeof HALVES)[number]): HalfState => {
     const use = picks.chipsUsed.find((c) => c.chip === chip && c.event >= half.from && c.event <= half.to);
-    if (use) return picks.activeChip === chip && use.event === picks.event ? { kind: 'active' } : { kind: 'used', gw: use.event };
-    if (picks.activeChip === chip && picks.event >= half.from && picks.event <= half.to) return { kind: 'active' };
+    if (use)
+      return picks.activeChip === chip && use.event === picks.event
+        ? { kind: 'active' }
+        : { kind: 'used', gw: use.event };
+    if (picks.activeChip === chip && picks.event >= half.from && picks.event <= half.to)
+      return { kind: 'active' };
     if (currentGw < half.from) return { kind: 'upcoming', from: half.from };
     if (currentGw > half.to) return { kind: 'expired' };
     return { kind: 'available' };
@@ -206,7 +215,9 @@ export function ChipsPanel({ picks, currentGw }: { picks: EntryPicks; currentGw:
               <span className="text-sm font-bold text-ink">{chipName(t, chip)}</span>
               {HALVES.map((h, i) => (
                 <span key={h.from} className="flex flex-col text-xs leading-tight">
-                  <span className="text-[10px] text-muted">{i === 0 ? t.myTeam.chipHalf1 : t.myTeam.chipHalf2}</span>
+                  <span className="text-[10px] text-muted">
+                    {i === 0 ? t.myTeam.chipHalf1 : t.myTeam.chipHalf2}
+                  </span>
                   {stateText(states[i] ?? { kind: 'available' })}
                 </span>
               ))}

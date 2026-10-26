@@ -69,7 +69,7 @@ export function PlayerSheet({
               fallbackClassName="size-20 text-2xl"
             />
             <div className="flex min-w-0 flex-col gap-1">
-              <p dir="auto" className="truncate text-start text-lg font-bold text-ink">
+              <p dir="auto" className="name-start truncate text-lg font-bold text-ink">
                 {player.firstName} {player.secondName}
               </p>
               <p className="text-sm text-muted">
@@ -114,15 +114,19 @@ export function PlayerSheet({
                 <Stat label={t.player.basePoints} value={<Num value={live.basePoints} />} />
                 <Stat label={t.player.finalPoints} value={<Num value={live.points} />} />
                 <Stat label={t.player.minutesPlayed} value={<Num value={live.minutes} />} />
-                <Stat label={t.player.goals} value={live.goals} />
-                <Stat label={t.player.assists} value={live.assists} />
+                <Stat label={t.player.goals} value={<Num value={live.goals} />} />
+                <Stat label={t.player.assists} value={<Num value={live.assists} />} />
                 <Stat label={t.player.bps} value={<Num value={live.bps} />} />
                 {player.position !== 'MID' && player.position !== 'FWD' && (
                   <Stat label={t.player.cleanSheet} value={live.cleanSheet ? t.common.yes : t.common.no} />
                 )}
-                {player.position === 'GKP' && <Stat label={t.player.saves} value={live.saves} />}
-                {live.yellowCards > 0 && <Stat label={t.player.yellow} value={live.yellowCards} />}
-                {live.redCards > 0 && <Stat label={t.player.red} value={live.redCards} />}
+                {player.position === 'GKP' && (
+                  <Stat label={t.player.saves} value={<Num value={live.saves} />} />
+                )}
+                {live.yellowCards > 0 && (
+                  <Stat label={t.player.yellow} value={<Num value={live.yellowCards} />} />
+                )}
+                {live.redCards > 0 && <Stat label={t.player.red} value={<Num value={live.redCards} />} />}
               </dl>
               {live.provisionalBonus > 0 && (
                 <p className="mt-2">

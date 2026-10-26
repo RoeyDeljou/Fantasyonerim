@@ -87,7 +87,9 @@ function ProfileInner() {
       <Card className="flex flex-col gap-1">
         <NameEditor current={user.name} />
         <div className="mt-2 border-t border-line pt-2">
-          <Row label={t.profile.team}>{user.teamName ?? '—'}</Row>
+          <Row label={t.profile.team}>
+            <bdi dir="auto">{user.teamName ?? '—'}</bdi>
+          </Row>
           <Row label={t.profile.teamId}>
             <span dir="ltr" className="tabular">
               {user.entryId ?? '—'}
@@ -199,7 +201,9 @@ function NameEditor({ current }: { current: string }) {
         </span>
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="text-xs text-muted">{t.profile.name}</span>
-          <span className="truncate text-lg font-bold text-ink">{current}</span>
+          <span dir="auto" className="name-start truncate text-lg font-bold text-ink">
+            {current}
+          </span>
           {saved && (
             <span className="flex items-center gap-1 text-xs font-semibold text-success" role="status">
               <CheckIcon size={14} />

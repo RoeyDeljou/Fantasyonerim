@@ -26,7 +26,10 @@ export function isLivePick(p: Pick | LivePick): p is LivePick {
 }
 
 /** The fixture(s) a club plays in the loaded GW. */
-export function teamFixtures(teamId: FplTeamId | undefined, fixtures: readonly Fixture[] | undefined): Fixture[] {
+export function teamFixtures(
+  teamId: FplTeamId | undefined,
+  fixtures: readonly Fixture[] | undefined,
+): Fixture[] {
   if (teamId === undefined || !fixtures) return [];
   return fixtures.filter((fx) => fx.teamH === teamId || fx.teamA === teamId);
 }

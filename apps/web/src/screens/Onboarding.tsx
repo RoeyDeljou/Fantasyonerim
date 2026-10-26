@@ -153,10 +153,14 @@ export function OnboardingScreen() {
             <Button block onClick={() => setStep('form')} className="min-h-12 text-lg">
               {t.onboarding.start}
             </Button>
-            <Button block variant="ghost" onClick={() => setStep('recover')}>
-              <KeyIcon size={18} />
-              {t.onboarding.haveCode}
-            </Button>
+            <button
+              type="button"
+              onClick={() => setStep('recover')}
+              className="mx-auto flex min-h-11 max-w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-primary hover:bg-surface-2"
+            >
+              <KeyIcon size={18} className="shrink-0" />
+              <span className="text-start">{t.onboarding.haveCode}</span>
+            </button>
           </div>
         </div>
       )}
@@ -195,7 +199,9 @@ export function OnboardingScreen() {
             <span className="flex size-16 items-center justify-center rounded-full bg-accent text-2xl font-extrabold text-on-accent">
               {preview.teamName.slice(0, 1).toUpperCase()}
             </span>
-            <p className="text-2xl font-extrabold text-ink">{preview.teamName}</p>
+            <p dir="auto" className="name-start max-w-full truncate text-2xl font-extrabold text-ink">
+              {preview.teamName}
+            </p>
             <p className="text-base text-muted">
               {fmt(t.onboarding.previewManager, { name: preview.managerName })}
             </p>

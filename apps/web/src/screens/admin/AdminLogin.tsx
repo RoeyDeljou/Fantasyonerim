@@ -5,11 +5,12 @@ import type { FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { AdminLoginBodySchema } from '@fant/shared';
-import { useI18n } from '@/i18n';
+import { fmt, useI18n } from '@/i18n';
+import { useMe } from '@/lib/queries';
 import { api, isApiError } from '@/lib/api';
 import { ROUTES, useSession } from '@/lib/session';
 import { Logo } from '@/components/AppShell';
-import { ShieldIcon } from '@/components/icons';
+import { InfoIcon, ShieldIcon } from '@/components/icons';
 import { Button, Card, InlineError, Spinner, TextField, errorMessage } from '@/components/ui';
 import { AdminFrame } from './AdminShell';
 
@@ -28,7 +29,9 @@ function AdminLoginForm() {
   const { t } = useI18n();
   const router = useRouter();
   const denied = useSearchParams().get('denied') === '1';
-  const { signIn } = useSession();
+  const { signIn, status } = useSession();
+  const me = useMe(status === 'signedIn');
+  const fanName = me.data && me.data.role !== 'admin' ? me.data.name : null;
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [invalid, setInvalid] = useState(false);
@@ -36,7 +39,7 @@ function AdminLoginForm() {
   const login = useMutation({
     mutationFn: () => api.adminLogin(AdminLoginBodySchema.parse({ username, password })),
     onSuccess: async (auth) => {
-      await signIn(auth);
+      await signIn(auth, { adoptLocale: false }); // keep this device's language
       router.replace(ROUTES.admin);
     },
   });
@@ -58,6 +61,12 @@ function AdminLoginForm() {
         </h1>
       </div>
       {denied && <InlineError>{t.admin.notAdmin}</InlineError>}
+      {fanName && (
+        <p role="note" className="flex gap-2 rounded-xl bg-accent px-3 py-2 text-sm text-on-accent">
+          <InfoIcon size={18} className="mt-0.5 shrink-0" />
+          <span>{fmt(t.admin.fanKept, { name: fanName })}</span>
+        </p>
+      )}
       <Card className="flex flex-col gap-4">
         <TextField
           label={t.admin.username}

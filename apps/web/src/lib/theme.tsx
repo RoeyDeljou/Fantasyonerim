@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { THEME_META_COLORS } from '@/app/theme-meta';
 import { PREF_KEYS, isThemePref, readPref, writePref } from './prefs';
 import type { ThemePref } from './prefs';
 
@@ -17,18 +18,16 @@ function systemTheme(): 'light' | 'dark' {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
-function applyTheme(resolved: 'light' | 'dark') {
-  const root = document.documentElement;
-  root.setAttribute('data-theme', resolved);
-  const color = getComputedStyle(root).getPropertyValue('--theme-color').trim();
-  if (!color) return;
-  let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-  if (!meta) {
-    meta = document.createElement('meta');
-    meta.name = 'theme-color';
-    document.head.appendChild(meta);
+/**
+ * Applies the theme and keeps the status-bar colour in sync: on "system" each media-specific theme-color meta
+ * keeps its own colour; with a manual choice every meta gets the chosen theme's colour.
+ */
+function applyTheme(resolved: 'light' | 'dark', pref: ThemePref) {
+  document.documentElement.setAttribute('data-theme', resolved);
+  for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
+    const own = meta.media.includes('dark') ? THEME_META_COLORS.dark : THEME_META_COLORS.light;
+    meta.content = pref === 'system' ? own : THEME_META_COLORS[resolved];
   }
-  meta.content = color;
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -46,7 +45,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const update = () => {
       const r = pref === 'system' ? systemTheme() : pref;
       setResolved(r);
-      applyTheme(r);
+      applyTheme(r, pref);
     };
     update();
     if (pref !== 'system') return;

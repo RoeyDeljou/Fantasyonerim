@@ -4,6 +4,7 @@ import '@fontsource-variable/rubik';
 import './globals.css';
 import { Providers } from './providers';
 import { BOOT_SCRIPT } from '@/lib/prefs';
+import { THEME_META_COLORS } from './theme-meta';
 
 export const metadata: Metadata = {
   title: { default: 'Fantasyonerim · פנטזיונרים', template: '%s · Fantasyonerim' },
@@ -25,6 +26,10 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: THEME_META_COLORS.light },
+    { media: '(prefers-color-scheme: dark)', color: THEME_META_COLORS.dark },
+  ],
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

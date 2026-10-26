@@ -46,7 +46,9 @@ function makeFormatters(locale: Locale): Formatters {
     timeZone: DISPLAY_TIME_ZONE,
   });
   return {
-    num: (n) => int.format(n),
+    // Negatives get a real minus sign inside a directional isolate (LRI…PDI), so "−1" never turns into "1-"
+    // when the string lands in Hebrew text (also inside fmt() templates).
+    num: (n) => (n < 0 ? `\u2066−${int.format(-n)}\u2069` : int.format(n)),
     rank: (n) => (n === null || n === undefined ? '—' : int.format(n)),
     price: (t) =>
       t === null || t === undefined

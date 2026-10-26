@@ -78,7 +78,10 @@ function ManagerTeam({
   }
   return (
     <div className="flex flex-col gap-3">
-      <TeamHeader entry={entry.data} picks={picks.data} pointsOverride={live.data?.livePoints}
+      <TeamHeader
+        entry={entry.data}
+        picks={picks.data}
+        pointsOverride={live.data?.livePoints}
         total={live.data?.liveTotal ?? null}
       />
       <Pitch

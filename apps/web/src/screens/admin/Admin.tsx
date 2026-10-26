@@ -6,9 +6,18 @@ import {
   AdminSettingsSchema,
   CaptainBattleConfigSchema,
   CreateAdminBodySchema,
+  FplEntryIdSchema,
   FplLeagueIdSchema,
+  HttpsUrlSchema,
 } from '@fant/shared';
-import type { AdminSettings, FplPlayerId, Gameweek, PublicConfig } from '@fant/shared';
+import type {
+  AdminSettings,
+  CaptainBattleEntryInput,
+  FplEntryId,
+  FplPlayerId,
+  Gameweek,
+  PublicConfig,
+} from '@fant/shared';
 import { GameweekSchema } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import type { Messages } from '@/i18n';
@@ -19,6 +28,7 @@ import {
   useAdmins,
   useConfig,
   useCreateAdmin,
+  useEntry,
   useFplIndex,
   useSaveAdminCaptainBattle,
   useSaveAdminSettings,
@@ -101,100 +111,74 @@ const SOCIAL_FIELDS: ReadonlyArray<{ key: SocialKey; label: keyof Messages['admi
   { key: 'whatsappUrl', label: 'whatsappUrl' },
 ];
 
-function isSocialKey(v: unknown): v is SocialKey {
-  return SOCIAL_FIELDS.some((f) => f.key === v);
-}
-
-interface SettingsDraft {
-  leagueId: string;
-  reminders: number[];
-  socials: Record<SocialKey, string>;
-}
-
-function toDraft(s: AdminSettings): SettingsDraft {
-  return {
-    leagueId: s.leagueId === null ? '' : String(s.leagueId),
-    reminders: [...s.deadlineReminderMinutes],
-    socials: {
-      spotifyUrl: s.socials.spotifyUrl ?? '',
-      appleUrl: s.socials.appleUrl ?? '',
-      instagramUrl: s.socials.instagramUrl ?? '',
-      xUrl: s.socials.xUrl ?? '',
-      whatsappUrl: s.socials.whatsappUrl ?? '',
-    },
-  };
-}
-
+/**
+ * League, socials and reminders each save on their own: a card PUTs the server's current settings with only
+ * its own fields replaced, and shows its own success / error. Unsaved edits in other cards are untouched.
+ */
 function SettingsSection() {
-  const { t } = useI18n();
   const settings = useAdminSettings(true);
   if (settings.isPending) {
     return (
       <>
         <Skeleton className="h-40" />
         <Skeleton className="h-72" />
+        <Skeleton className="h-40" />
       </>
     );
   }
   if (settings.isError) return <ErrorState error={settings.error} onRetry={() => settings.refetch()} />;
-  // Not keyed on the data: a save updates the cache and must not remount (and reset) the form.
-  return <SettingsForm initial={settings.data} t={t} />;
+  return (
+    <>
+      <LeagueCard server={settings.data} />
+      <SocialsCard server={settings.data} />
+      <RemindersCard server={settings.data} />
+    </>
+  );
 }
 
-function SettingsForm({ initial, t }: { initial: AdminSettings; t: Messages }) {
-  const config = useConfig();
-  const save = useSaveAdminSettings();
-  const [flash, triggerFlash] = useFlash();
-  const [draft, setDraft] = useState<SettingsDraft>(() => toDraft(initial));
-  const [errors, setErrors] = useState<Partial<Record<'leagueId' | SocialKey | 'reminders', string>>>({});
-
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    const nextErrors: typeof errors = {};
-    const leagueTrim = draft.leagueId.trim();
-    let leagueId: AdminSettings['leagueId'] = null;
-    if (leagueTrim) {
-      const parsed = FplLeagueIdSchema.safeParse(leagueTrim);
-      if (parsed.success && /^\d+$/.test(leagueTrim)) leagueId = parsed.data;
-      else nextErrors.leagueId = t.onboarding.teamIdInvalid;
-    }
-    const candidate = {
-      leagueId,
-      deadlineReminderMinutes: draft.reminders,
-      socials: Object.fromEntries(
-        SOCIAL_FIELDS.map(({ key }) => [
-          key,
-          draft.socials[key].trim() === '' ? null : draft.socials[key].trim(),
-        ]),
-      ),
-    };
-    const parsed = AdminSettingsSchema.safeParse(candidate);
-    if (!parsed.success) {
-      for (const issue of parsed.error.issues) {
-        const [first, second] = issue.path;
-        if (first === 'socials' && isSocialKey(second)) nextErrors[second] = t.admin.urlInvalid;
-        else if (first === 'deadlineReminderMinutes') nextErrors.reminders = t.admin.reminderRange;
-        else if (first === 'leagueId') nextErrors.leagueId = t.onboarding.teamIdInvalid;
-      }
-    }
-    setErrors(nextErrors);
-    if (!parsed.success || Object.keys(nextErrors).length > 0) return;
-    save.mutate(parsed.data, { onSuccess: triggerFlash });
-  }
-
-  const leagueName = config.data?.league?.name;
-  const footer = (
+function SaveRow({ label, pending, flash }: { label: string; pending: boolean; flash: boolean }) {
+  return (
     <div className="flex items-center gap-3 pt-1">
-      <Button type="submit" disabled={save.isPending}>
-        {save.isPending && <Spinner />}
-        {t.admin.saveSettings}
+      <Button type="submit" disabled={pending}>
+        {pending && <Spinner />}
+        {label}
       </Button>
       <SaveFeedback ok={flash} />
     </div>
   );
+}
 
+function LeagueCard({ server }: { server: AdminSettings }) {
+  const { t } = useI18n();
+  const config = useConfig();
+  const save = useSaveAdminSettings();
+  const [flash, triggerFlash] = useFlash();
+  const [value, setValue] = useState(server.leagueId === null ? '' : String(server.leagueId));
+  const [error, setError] = useState<string | null>(null);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = value.trim();
+    let leagueId: AdminSettings['leagueId'] = null;
+    if (trimmed) {
+      const parsed = FplLeagueIdSchema.safeParse(trimmed);
+      if (!parsed.success || !/^\d+$/.test(trimmed)) {
+        setError(t.admin.leagueIdInvalid);
+        return;
+      }
+      leagueId = parsed.data;
+    }
+    setError(null);
+    save.mutate({ ...server, leagueId }, { onSuccess: triggerFlash });
+  }
+
+  // Prefer the name the API resolved on save; fall back to the public config.
+  const league =
+    server.leagueId !== null
+      ? { id: server.leagueId, name: server.leagueName ?? config.data?.league?.name ?? null }
+      : null;
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
+    <form onSubmit={submit} noValidate>
       <Card className="flex flex-col gap-3">
         <SectionTitle>{t.admin.leagueSection}</SectionTitle>
         <TextField
@@ -202,19 +186,74 @@ function SettingsForm({ initial, t }: { initial: AdminSettings; t: Messages }) {
           hint={t.admin.leagueHelp}
           inputMode="numeric"
           dir="ltr"
-          value={draft.leagueId}
-          error={errors.leagueId}
-          onChange={(e) => setDraft({ ...draft, leagueId: e.target.value.replace(/[^\d]/g, '') })}
+          value={value}
+          error={error}
+          onChange={(e) => {
+            setValue(e.target.value.replace(/[^\d]/g, ''));
+            setError(null);
+          }}
         />
         <p className="text-sm text-muted">
-          {config.data?.league
-            ? fmt(t.admin.leagueCurrent, { name: leagueName ?? `#${config.data.league.id}` })
-            : t.admin.leagueNone}
+          {league ? (
+            <>
+              {fmt(t.admin.leagueCurrent, { name: '' })}
+              <bdi dir="auto" className="name-start font-semibold text-ink">
+                {league.name ?? `#${league.id}`}
+              </bdi>
+            </>
+          ) : (
+            t.admin.leagueNone
+          )}
         </p>
-        {save.isError && <InlineError>{errorMessage(t, save.error)}</InlineError>}
-        {footer}
+        {save.isError && (
+          <InlineError>
+            {errorMessage(t, save.error, {
+              not_found: t.admin.leagueNotFound,
+              bad_request: t.admin.leagueNotFound,
+            })}
+          </InlineError>
+        )}
+        <SaveRow label={t.admin.saveLeague} pending={save.isPending} flash={flash} />
       </Card>
+    </form>
+  );
+}
 
+function SocialsCard({ server }: { server: AdminSettings }) {
+  const { t } = useI18n();
+  const save = useSaveAdminSettings();
+  const [flash, triggerFlash] = useFlash();
+  const [draft, setDraft] = useState<Record<SocialKey, string>>(() => ({
+    spotifyUrl: server.socials.spotifyUrl ?? '',
+    appleUrl: server.socials.appleUrl ?? '',
+    instagramUrl: server.socials.instagramUrl ?? '',
+    xUrl: server.socials.xUrl ?? '',
+    whatsappUrl: server.socials.whatsappUrl ?? '',
+  }));
+  const [errors, setErrors] = useState<Partial<Record<SocialKey, string>>>({});
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const next: Partial<Record<SocialKey, string>> = {};
+    const socials = { ...server.socials };
+    for (const { key } of SOCIAL_FIELDS) {
+      const v = draft[key].trim();
+      if (v === '') {
+        socials[key] = null;
+        continue;
+      }
+      // Same rule as the API (HttpsUrlSchema): https:// links only.
+      const parsed = HttpsUrlSchema.safeParse(v);
+      if (parsed.success) socials[key] = parsed.data;
+      else next[key] = t.admin.urlInvalid;
+    }
+    setErrors(next);
+    if (Object.keys(next).length > 0) return;
+    save.mutate({ ...server, socials }, { onSuccess: triggerFlash });
+  }
+
+  return (
+    <form onSubmit={submit} noValidate>
       <Card className="flex flex-col gap-3">
         <SectionTitle>{t.admin.socialsSection}</SectionTitle>
         {SOCIAL_FIELDS.map(({ key, label }) => (
@@ -225,23 +264,49 @@ function SettingsForm({ initial, t }: { initial: AdminSettings; t: Messages }) {
             inputMode="url"
             dir="ltr"
             placeholder="https://"
-            value={draft.socials[key]}
+            value={draft[key]}
             error={errors[key]}
-            onChange={(e) => setDraft({ ...draft, socials: { ...draft.socials, [key]: e.target.value } })}
+            onChange={(e) => {
+              setDraft({ ...draft, [key]: e.target.value });
+              setErrors({ ...errors, [key]: undefined });
+            }}
           />
         ))}
-        {footer}
+        {save.isError && (
+          <InlineError>{errorMessage(t, save.error, { bad_request: t.admin.urlInvalid })}</InlineError>
+        )}
+        <SaveRow label={t.admin.saveSocials} pending={save.isPending} flash={flash} />
       </Card>
+    </form>
+  );
+}
 
+function RemindersCard({ server }: { server: AdminSettings }) {
+  const { t } = useI18n();
+  const save = useSaveAdminSettings();
+  const [flash, triggerFlash] = useFlash();
+  const [reminders, setReminders] = useState<number[]>(() => [...server.deadlineReminderMinutes]);
+  const [error, setError] = useState<string | null>(null);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const parsed = AdminSettingsSchema.shape.deadlineReminderMinutes.safeParse(reminders);
+    if (!parsed.success) {
+      setError(t.admin.reminderRange);
+      return;
+    }
+    setError(null);
+    save.mutate({ ...server, deadlineReminderMinutes: parsed.data }, { onSuccess: triggerFlash });
+  }
+
+  return (
+    <form onSubmit={submit} noValidate>
       <Card className="flex flex-col gap-3">
         <SectionTitle>{t.admin.remindersSection}</SectionTitle>
         <p className="text-sm text-muted">{t.admin.remindersHelp}</p>
-        <RemindersEditor
-          value={draft.reminders}
-          onChange={(reminders) => setDraft({ ...draft, reminders })}
-          error={errors.reminders}
-        />
-        {footer}
+        <RemindersEditor value={reminders} onChange={setReminders} error={error ?? undefined} />
+        {save.isError && <InlineError>{errorMessage(t, save.error)}</InlineError>}
+        <SaveRow label={t.admin.saveReminders} pending={save.isPending} flash={flash} />
       </Card>
     </form>
   );
@@ -337,15 +402,63 @@ function RemindersEditor({
 
 // ---------- captain battle editor ----------
 
+// ---------- captain battle editor ----------
+
 interface BattleRowDraft {
   uid: number;
   label: string;
-  playerId: FplPlayerId | null;
   kind: 'community' | 'custom';
+  source: 'player' | 'entry';
+  playerId: FplPlayerId | null;
+  /** Raw Team ID text for linked rows. */
+  entryId: string;
 }
 
 let uidCounter = 0;
 const nextUid = () => ++uidCounter;
+
+/** The client's default battle (used to prefill the editor when nothing is configured yet). */
+function defaultRows(t: Messages): BattleRowDraft[] {
+  return [
+    {
+      uid: nextUid(),
+      label: t.admin.defaultDor,
+      kind: 'custom',
+      source: 'entry',
+      playerId: null,
+      entryId: '',
+    },
+    {
+      uid: nextUid(),
+      label: t.admin.defaultItay,
+      kind: 'custom',
+      source: 'entry',
+      playerId: null,
+      entryId: '',
+    },
+    {
+      uid: nextUid(),
+      label: t.admin.defaultCommunity,
+      kind: 'community',
+      source: 'player',
+      playerId: null,
+      entryId: '',
+    },
+  ];
+}
+
+function toDraft(e: CaptainBattleEntryInput): BattleRowDraft {
+  return e.source === 'player'
+    ? { uid: nextUid(), label: e.label, kind: e.kind, source: 'player', playerId: e.playerId, entryId: '' }
+    : {
+        uid: nextUid(),
+        label: e.label,
+        kind: e.kind,
+        source: 'entry',
+        playerId: null,
+        entryId: String(e.entryId),
+      };
+}
 
 function CaptainBattleEditor() {
   const { t } = useI18n();
@@ -355,7 +468,7 @@ function CaptainBattleEditor() {
   if (battle.isError) return <ErrorState error={battle.error} onRetry={() => battle.refetch()} />;
   if (fpl.isError || !fpl.index) return <ErrorState error={fpl.error} onRetry={() => fpl.refetch()} />;
   const b = fpl.index.bootstrap;
-  // Default: the GW in progress (until it is finished), otherwise the next one.
+  // Default GW: the one in progress (until it is finished), otherwise the next one.
   const currentInfo = b.events.find((e) => e.id === b.currentEvent);
   const defaultEvent =
     battle.data?.event ??
@@ -366,8 +479,8 @@ function CaptainBattleEditor() {
     <BattleForm
       index={fpl.index}
       initialEvent={defaultEvent}
-      initialRows={(battle.data?.entries ?? []).map((e) => ({ uid: nextUid(), ...e }))}
-      t={t}
+      initialRows={battle.data ? battle.data.entries.map(toDraft) : defaultRows(t)}
+      isDefault={!battle.data}
     />
   );
 }
@@ -376,13 +489,14 @@ function BattleForm({
   index,
   initialEvent,
   initialRows,
-  t,
+  isDefault,
 }: {
   index: FplIndex;
   initialEvent: Gameweek | null;
   initialRows: BattleRowDraft[];
-  t: Messages;
+  isDefault: boolean;
 }) {
+  const { t } = useI18n();
   const save = useSaveAdminCaptainBattle();
   const [flash, triggerFlash] = useFlash();
   const [event, setEvent] = useState(initialEvent === null ? '' : String(initialEvent));
@@ -395,12 +509,11 @@ function BattleForm({
   const move = (i: number, d: -1 | 1) =>
     setRows((rs) => {
       const next = [...rs];
-      const j = i + d;
       const a = next[i];
-      const b = next[j];
+      const b = next[i + d];
       if (!a || !b) return rs;
       next[i] = b;
-      next[j] = a;
+      next[i + d] = a;
       return next;
     });
 
@@ -413,7 +526,16 @@ function BattleForm({
     }
     const parsed = CaptainBattleConfigSchema.safeParse({
       event: ev.data,
-      entries: rows.map((r) => ({ label: r.label, playerId: r.playerId ?? undefined, kind: r.kind })),
+      entries: rows.map((r) =>
+        r.source === 'player'
+          ? { source: 'player', label: r.label, kind: r.kind, playerId: r.playerId ?? undefined }
+          : {
+              source: 'entry',
+              label: r.label,
+              kind: r.kind,
+              entryId: /^\d+$/.test(r.entryId) ? r.entryId : undefined,
+            },
+      ),
     });
     if (!parsed.success) {
       setError(t.admin.battleInvalid);
@@ -427,6 +549,9 @@ function BattleForm({
     <form onSubmit={submit} noValidate>
       <Card className="flex flex-col gap-3">
         <SectionTitle>{t.admin.battleSection}</SectionTitle>
+        {isDefault && (
+          <p className="rounded-xl bg-accent px-3 py-2 text-sm text-on-accent">{t.admin.defaultsNote}</p>
+        )}
         <TextField
           label={t.admin.battleEvent}
           inputMode="numeric"
@@ -437,82 +562,37 @@ function BattleForm({
         />
         {rows.length === 0 && <p className="text-sm text-muted">{t.admin.battleEmpty}</p>}
         <ol className="flex flex-col gap-2">
-          {rows.map((r, i) => {
-            const player = r.playerId ? index.players.get(r.playerId) : undefined;
-            const team = player ? index.teams.get(player.teamId) : undefined;
-            return (
-              <li key={r.uid} className="flex flex-col gap-2 rounded-xl border border-line bg-surface-2 p-3">
-                <div className="flex items-center gap-1">
-                  <span className="me-1 text-sm font-bold text-muted tabular">{i + 1}</span>
-                  <input
-                    aria-label={t.admin.label}
-                    placeholder={t.admin.labelPlaceholder}
-                    maxLength={40}
-                    value={r.label}
-                    onChange={(e) => update(r.uid, { label: e.target.value })}
-                    className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-base text-ink focus:border-primary focus:outline-none"
-                  />
-                  <IconButton label={t.admin.moveUp} disabled={i === 0} onClick={() => move(i, -1)}>
-                    <ArrowUpIcon size={18} />
-                  </IconButton>
-                  <IconButton
-                    label={t.admin.moveDown}
-                    disabled={i === rows.length - 1}
-                    onClick={() => move(i, 1)}
-                  >
-                    <ArrowDownIcon size={18} />
-                  </IconButton>
-                  <IconButton
-                    label={t.common.remove}
-                    className="text-live"
-                    onClick={() => setRows((rs) => rs.filter((x) => x.uid !== r.uid))}
-                  >
-                    <TrashIcon size={18} />
-                  </IconButton>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPicking(r.uid)}
-                  className={cx(
-                    'flex min-h-11 items-center gap-2 rounded-lg border bg-surface px-3 text-start',
-                    player ? 'border-line text-ink' : 'border-dashed border-primary text-primary',
-                  )}
-                >
-                  <SearchIcon size={18} />
-                  <span className="flex-1 truncate font-semibold">
-                    {player ? player.webName : t.admin.pickPlayer}
-                  </span>
-                  {player && (
-                    <span className="text-xs text-muted">
-                      {team?.shortName} · {t.positions[player.position]}
-                    </span>
-                  )}
-                </button>
-                <Segmented<'community' | 'custom'>
-                  label={t.admin.kind}
-                  value={r.kind}
-                  onChange={(kind) => update(r.uid, { kind })}
-                  options={[
-                    { value: 'community', label: t.liveAction.kindCommunity },
-                    { value: 'custom', label: t.liveAction.kindCustom },
-                  ]}
-                />
-              </li>
-            );
-          })}
+          {rows.map((r, i) => (
+            <BattleRowEditor
+              key={r.uid}
+              row={r}
+              position={i}
+              count={rows.length}
+              index={index}
+              onChange={(patch) => update(r.uid, patch)}
+              onMove={(d) => move(i, d)}
+              onRemove={() => setRows((rs) => rs.filter((x) => x.uid !== r.uid))}
+              onPick={() => setPicking(r.uid)}
+            />
+          ))}
         </ol>
         <Button
           variant="secondary"
           disabled={rows.length >= 20}
           onClick={() =>
-            setRows((rs) => [...rs, { uid: nextUid(), label: '', playerId: null, kind: 'custom' }])
+            setRows((rs) => [
+              ...rs,
+              { uid: nextUid(), label: '', playerId: null, entryId: '', kind: 'custom', source: 'entry' },
+            ])
           }
         >
           <PlusIcon size={18} />
           {t.admin.addCaptain}
         </Button>
         {error && <InlineError>{error}</InlineError>}
-        {save.isError && <InlineError>{errorMessage(t, save.error)}</InlineError>}
+        {save.isError && (
+          <InlineError>{errorMessage(t, save.error, { bad_request: t.admin.battleInvalid })}</InlineError>
+        )}
         <div className="flex items-center gap-3">
           <Button type="submit" disabled={save.isPending}>
             {save.isPending && <Spinner />}
@@ -531,6 +611,142 @@ function BattleForm({
         }}
       />
     </form>
+  );
+}
+
+function BattleRowEditor({
+  row: r,
+  position: i,
+  count,
+  index,
+  onChange,
+  onMove,
+  onRemove,
+  onPick,
+}: {
+  row: BattleRowDraft;
+  position: number;
+  count: number;
+  index: FplIndex;
+  onChange(patch: Partial<BattleRowDraft>): void;
+  onMove(d: -1 | 1): void;
+  onRemove(): void;
+  onPick(): void;
+}) {
+  const { t } = useI18n();
+  const player = r.playerId ? index.players.get(r.playerId) : undefined;
+  const team = player ? index.teams.get(player.teamId) : undefined;
+  return (
+    <li className="flex flex-col gap-2 rounded-xl border border-line bg-surface-2 p-3">
+      <div className="flex items-center gap-1">
+        <span className="me-1 text-sm font-bold text-muted tabular">{i + 1}</span>
+        <input
+          aria-label={t.admin.label}
+          placeholder={t.admin.labelPlaceholder}
+          maxLength={40}
+          dir="auto"
+          value={r.label}
+          onChange={(e) => onChange({ label: e.target.value })}
+          className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-start text-base text-ink focus:border-primary focus:outline-none"
+        />
+        <IconButton label={t.admin.moveUp} disabled={i === 0} onClick={() => onMove(-1)}>
+          <ArrowUpIcon size={18} />
+        </IconButton>
+        <IconButton label={t.admin.moveDown} disabled={i === count - 1} onClick={() => onMove(1)}>
+          <ArrowDownIcon size={18} />
+        </IconButton>
+        <IconButton label={t.common.remove} className="text-live" onClick={onRemove}>
+          <TrashIcon size={18} />
+        </IconButton>
+      </div>
+      <Segmented<'entry' | 'player'>
+        label={t.admin.rowSource}
+        value={r.source}
+        onChange={(source) => onChange({ source })}
+        options={[
+          { value: 'entry', label: t.admin.sourceEntry },
+          { value: 'player', label: t.admin.sourcePlayer },
+        ]}
+      />
+      {r.source === 'entry' ? (
+        <LinkedEntryField value={r.entryId} onChange={(entryId) => onChange({ entryId })} />
+      ) : (
+        <button
+          type="button"
+          onClick={onPick}
+          className={cx(
+            'flex min-h-11 items-center gap-2 rounded-lg border bg-surface px-3 text-start',
+            player ? 'border-line text-ink' : 'border-dashed border-primary text-primary',
+          )}
+        >
+          <SearchIcon size={18} />
+          <span dir="auto" className="name-start flex-1 truncate font-semibold">
+            {player ? player.webName : t.admin.pickPlayer}
+          </span>
+          {player && (
+            <span className="text-xs text-muted">
+              {team?.shortName} · {t.positions[player.position]}
+            </span>
+          )}
+        </button>
+      )}
+      <Segmented<'community' | 'custom'>
+        label={t.admin.kind}
+        value={r.kind}
+        onChange={(kind) => onChange({ kind })}
+        options={[
+          { value: 'community', label: t.liveAction.kindCommunity },
+          { value: 'custom', label: t.liveAction.kindCustom },
+        ]}
+      />
+    </li>
+  );
+}
+
+/** Team ID input with a live preview of the team (GET /v1/fpl/entries/:id). */
+function LinkedEntryField({ value, onChange }: { value: string; onChange(v: string): void }) {
+  const { t } = useI18n();
+  const parsed = FplEntryIdSchema.safeParse(/^\d+$/.test(value) ? value : undefined);
+  const [debounced, setDebounced] = useState<FplEntryId | null>(parsed.success ? parsed.data : null);
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(parsed.success ? parsed.data : null), 400);
+    return () => window.clearTimeout(id);
+  }, [parsed.success, parsed.data]);
+  const entry = useEntry(debounced);
+  return (
+    <div className="flex flex-col gap-1">
+      <TextField
+        label={t.admin.entryIdLabel}
+        hint={t.admin.entryHelp}
+        inputMode="numeric"
+        dir="ltr"
+        placeholder="1234567"
+        value={value}
+        onChange={(e) => onChange(e.target.value.replace(/[^\d]/g, '').slice(0, 8))}
+      />
+      {debounced !== null && (
+        <p className="flex min-w-0 items-center gap-1.5 text-sm" aria-live="polite">
+          {entry.isPending ? (
+            <span className="text-muted">{t.admin.entryChecking}</span>
+          ) : entry.isError ? (
+            <span className="text-live">
+              {errorMessage(t, entry.error, { not_found: t.admin.entryNotFound })}
+            </span>
+          ) : (
+            <>
+              <CheckIcon size={16} className="shrink-0 text-success" />
+              <bdi dir="auto" className="name-start truncate font-semibold text-ink">
+                {entry.data.teamName}
+              </bdi>
+              <span className="shrink-0 text-muted">·</span>
+              <bdi dir="auto" className="name-start truncate text-muted">
+                {entry.data.managerName}
+              </bdi>
+            </>
+          )}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -595,7 +811,9 @@ function PlayerPicker({
                     fallbackClassName="size-9 text-xs"
                   />
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate font-semibold text-ink">{p.webName}</span>
+                    <span dir="auto" className="name-start truncate font-semibold text-ink">
+                      {p.webName}
+                    </span>
                     <span className="truncate text-xs text-muted">
                       {p.firstName} {p.secondName}
                     </span>
@@ -662,7 +880,9 @@ function AdminsSection() {
       <ul className="divide-y divide-line rounded-xl border border-line">
         {admins.data.map((a) => (
           <li key={a.userId} className="flex min-h-12 items-center justify-between gap-2 px-3">
-            <span className="font-semibold text-ink">{a.name}</span>
+            <span dir="auto" className="name-start min-w-0 truncate font-semibold text-ink">
+              {a.name}
+            </span>
             <span dir="ltr" className="text-sm text-muted">
               @{a.username}
             </span>

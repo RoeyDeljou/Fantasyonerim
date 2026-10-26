@@ -8,23 +8,32 @@ import { useI18n } from '@/i18n';
 import { ROUTES, useSession } from '@/lib/session';
 import { useMe } from '@/lib/queries';
 import { ShellSkeleton, TopBar } from '@/components/AppShell';
-import { ChevronStartIcon } from '@/components/icons';
-import { ErrorState } from '@/components/ui';
+import { ChevronStartIcon, LogOutIcon } from '@/components/icons';
+import { ErrorState, IconButton } from '@/components/ui';
 
 export function AdminFrame({ title, children }: { title: string; children: ReactNode }) {
   const { t } = useI18n();
+  const { status, signOut } = useSession();
+  const me = useMe(status === 'signedIn');
   return (
     <div className="min-h-dvh">
       <TopBar
         title={title}
         end={
-          <Link
-            href={ROUTES.home}
-            className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-sm font-semibold text-primary hover:bg-surface-2"
-          >
-            <ChevronStartIcon width={18} height={18} />
-            {t.admin.toApp}
-          </Link>
+          <>
+            {me.data?.role === 'admin' && (
+              <IconButton label={t.admin.signOutAdmin} onClick={() => void signOut()}>
+                <LogOutIcon />
+              </IconButton>
+            )}
+            <Link
+              href={ROUTES.home}
+              className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-sm font-semibold text-primary hover:bg-surface-2"
+            >
+              <ChevronStartIcon width={18} height={18} />
+              {t.admin.toApp}
+            </Link>
+          </>
         }
       />
       <main className="mx-auto w-full max-w-xl px-4 pt-4 pb-[calc(2rem+env(safe-area-inset-bottom))]">

@@ -179,7 +179,7 @@ function LivePlayerRow({
         )}
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex min-w-0 items-center gap-1.5">
-            <span dir="auto" className="truncate font-semibold text-ink">
+            <span dir="auto" className="name-start truncate font-semibold text-ink">
               {player?.webName ?? '?'}
             </span>
             {pick.isCaptain && (

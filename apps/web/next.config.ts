@@ -6,6 +6,8 @@ import type { NextConfig } from 'next';
  */
 const nextConfig: NextConfig = {
   output: 'export',
+  // The e2e suite builds a second copy (pointing at its own API) without touching .next/ and out/.
+  ...(process.env.FANT_E2E_DIST ? { distDir: process.env.FANT_E2E_DIST } : {}),
   trailingSlash: true,
   images: { unoptimized: true },
   reactStrictMode: true,

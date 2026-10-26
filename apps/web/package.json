@@ -6,7 +6,8 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "typecheck": "tsc --noEmit",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "e2e": "node e2e/run.mjs"
   },
   "dependencies": {
     "@fant/shared": "0.1.0",

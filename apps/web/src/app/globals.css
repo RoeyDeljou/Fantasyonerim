@@ -105,6 +105,10 @@ dialog.sheet {
   border-start-end-radius: 1.25rem;
   box-shadow: var(--shadow);
 }
+/* the page behind an open sheet must not scroll */
+html:has(dialog.sheet[open]) {
+  overflow: hidden;
+}
 dialog.sheet::backdrop {
   background: var(--scrim);
 }
@@ -126,4 +130,15 @@ dialog.sheet[open] {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/*
+ * Names and other user/third-party text use dir="auto" so Latin names truncate at their real end even inside
+ * Hebrew UI. dir="auto" would also flip "start" alignment, so align them to the PAGE's start edge instead.
+ */
+html[dir='rtl'] .name-start {
+  text-align: right;
+}
+html[dir='ltr'] .name-start {
+  text-align: left;
 }
