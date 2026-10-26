@@ -130,6 +130,7 @@ export const AdminPushBodySchema = z.object({
 export type AdminPushBody = z.infer<typeof AdminPushBodySchema>;
 
 export const AdminPushResultSchema = z.object({ recipients: z.number().int(), delivered: z.number().int() });
+export type AdminPushResult = z.infer<typeof AdminPushResultSchema>;
 
 // ---------- admin: integrations ----------
 export const IntegrationIdSchema = z.enum(['podcast_rss', 'spotify', 'apple', 'instagram', 'x']);

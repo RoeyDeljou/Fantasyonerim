@@ -33,3 +33,29 @@ Legend: 🌐 public · 👤 signed-in user · 🛡 admin
 | POST    | `/v1/admin/admins`               | 🛡                       | `CreateAdminBody`           | `AdminAccount` (201)                                                     |
 
 Upstream FPL failures map to `503 upstream_unavailable`.
+
+## Phase 2 — News feed, push, integrations
+
+Schemas: `packages/shared/src/news.ts`.
+
+| Method  | Path                                           | Auth                          | Body / query                        | Response                                                                        |
+| ------- | ---------------------------------------------- | ----------------------------- | ----------------------------------- | ------------------------------------------------------------------------------- |
+| GET     | `/v1/news`                                     | 🌐                            | `NewsPageQuery` (`?cursor=&limit=`) | `NewsPage` — newest first, stories and hidden items excluded                    |
+| GET     | `/v1/news/stories`                             | 🌐                            | –                                   | `Stories` — unexpired stories, oldest first                                     |
+| GET     | `/v1/news/:id`                                 | 🌐                            | –                                   | `NewsItem` (deep link from a push) · 404                                        |
+| GET     | `/v1/push/vapid-public-key`                    | 🌐                            | –                                   | `{ publicKey }` · 503 when VAPID isn't configured                               |
+| POST    | `/v1/push/subscriptions`                       | 👤                            | `WebPushSubscriptionBody`           | 204 — upsert by endpoint (re-binds the endpoint to this user)                   |
+| DELETE  | `/v1/push/subscriptions`                       | 👤                            | `{ endpoint }`                      | 204                                                                             |
+| POST    | `/v1/push/devices`                             | 👤                            | `NativePushDeviceBody`              | 204 — stored for the future native apps (no sender yet)                         |
+| GET/PUT | `/v1/me/notification-prefs`                    | 👤                            | `NotificationPrefs`                 | `NotificationPrefs` (defaults: all true)                                        |
+| GET     | `/v1/admin/integrations`                       | 🛡                             | –                                   | `IntegrationList` — one row per `IntegrationId`, secrets never returned         |
+| PUT     | `/v1/admin/integrations/:id`                   | 🛡                             | `IntegrationUpdateBody`             | `IntegrationStatus` · 400 with a field-specific message                         |
+| POST    | `/v1/admin/integrations/:id/sync`              | 🛡                             | –                                   | `IntegrationStatus` after running that source now                               |
+| GET     | `/v1/admin/integrations/instagram/connect-url` | 🛡                             | –                                   | `{ url }` (Meta OAuth dialog, signed `state`) · 503 when META_APP_ID unset      |
+| GET     | `/v1/integrations/instagram/callback`          | 🌐 (state-verified)           | `?code=&state=`                     | 302 → `${WEB_APP_URL}/admin/?instagram=connected` or `?instagram=error&reason=` |
+| DELETE  | `/v1/admin/integrations/instagram`             | 🛡                             | –                                   | 204 — forget token + account                                                    |
+| POST    | `/v1/admin/news`                               | 🛡                             | `AdminNewsBody`                     | `NewsItem` (201) — manual fallback post, source `admin_update`                  |
+| DELETE  | `/v1/admin/news/:id`                           | 🛡                             | –                                   | 204 — hides the item from the feed (kept for dedupe)                            |
+| POST    | `/v1/admin/push`                               | 🛡                             | `AdminPushBody`                     | `AdminPushResult`                                                               |
+| POST    | `/internal/jobs/tick`                          | `x-cron-secret: $CRON_SECRET` | –                                   | `{ ran: string[] }` — runs every due job; 401 on a bad secret                   |
+| GET     | `/media/*`                                     | 🌐                            | –                                   | re-hosted media bytes (local MediaStore only; S3/R2 serves its own public URL)  |

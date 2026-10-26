@@ -10,7 +10,10 @@ A criterion that cannot be verified in the build sandbox (e.g. a host blocked by
 - [x] `packages/shared` API contract (ids + Zod DTOs) and `FplService` interface in `packages/fpl`.
 - [x] CLAUDE.md, five subagents in `.claude/agents/`, this plan.
 
-## Phase 1 — FPL core: accounts, My Team, Table, Live Action, Captain Battle
+## Phase 1 — FPL core: accounts, My Team, Table, Live Action, Captain Battle ✅
+
+_Passed `qa-verifier` on 2026-10-26 at fc713c3 (third gate; two earlier FAILs fixed). Verified against live FPL
+and the client's league 4611._
 
 **packages/fpl**
 
