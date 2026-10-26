@@ -55,8 +55,10 @@ export function toBattleConfig(battle: BattleWithEntries): CaptainBattleConfig {
       event: battle.event,
       entries: battle.entries.map((e) => ({
         label: e.label,
-        playerId: e.playerId,
         kind: e.kind === 'COMMUNITY' ? 'community' : 'custom',
+        ...(e.source === 'ENTRY'
+          ? { source: 'entry', entryId: e.entryId }
+          : { source: 'player', playerId: e.playerId }),
       })),
     },
     'settings',

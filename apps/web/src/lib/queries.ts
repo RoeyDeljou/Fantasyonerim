@@ -158,20 +158,21 @@ export function useEntryLive(id: FplEntryId | null, event: Gameweek | null, refe
   });
 }
 
-export function useStandings() {
+/** League queries only run once /v1/config says a league is set (avoids 404s on a fresh install). */
+export function useStandings(enabled: boolean) {
   return useInfiniteQuery({
     queryKey: qk.standings,
-    queryFn: ({ pageParam, signal }) => api.standings(pageParam, { signal }),
+    queryFn: enabled ? ({ pageParam, signal }) => api.standings(pageParam, { signal }) : skipToken,
     initialPageParam: 1,
     getNextPageParam: (last) => (last.hasNext ? last.page + 1 : undefined),
     staleTime: 60_000,
   });
 }
 
-export function useLiveLeague(refetchInterval: number) {
+export function useLiveLeague(refetchInterval: number, enabled: boolean) {
   return useInfiniteQuery({
     queryKey: qk.liveLeague,
-    queryFn: ({ pageParam, signal }) => api.liveLeague(pageParam, { signal }),
+    queryFn: enabled ? ({ pageParam, signal }) => api.liveLeague(pageParam, { signal }) : skipToken,
     initialPageParam: 1,
     getNextPageParam: (last) => (last.hasNext ? last.page + 1 : undefined),
     refetchInterval,

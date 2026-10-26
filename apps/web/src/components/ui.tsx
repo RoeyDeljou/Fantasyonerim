@@ -2,9 +2,10 @@
 
 import { useId, useState } from 'react';
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
-import { useT } from '@/i18n';
+import { useI18n, useT } from '@/i18n';
 import type { Messages } from '@/i18n';
 import { isApiError } from '@/lib/api';
+import type { ClientErrorCode } from '@/lib/api';
 import { CheckIcon, CopyIcon, RefreshIcon, WifiOffIcon } from './icons';
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
@@ -240,8 +241,13 @@ export function EmptyState({
   );
 }
 
-export function errorMessage(t: Messages, error: unknown): string {
+export type ErrorOverrides = Partial<Record<ClientErrorCode, string>>;
+
+/** Localized message for any client/API error code; call sites can override per code for context. */
+export function errorMessage(t: Messages, error: unknown, overrides: ErrorOverrides = {}): string {
   if (!isApiError(error)) return t.errors.generic;
+  const override = overrides[error.code];
+  if (override) return override;
   switch (error.code) {
     case 'network':
       return t.errors.network;
@@ -253,12 +259,28 @@ export function errorMessage(t: Messages, error: unknown): string {
       return t.errors.forbidden;
     case 'invalid_response':
       return t.errors.invalid;
-    default:
-      return t.errors.generic;
+    case 'not_found':
+      return t.errors.notFound;
+    case 'bad_request':
+      return t.errors.badRequest;
+    case 'conflict':
+      return t.errors.conflict;
+    case 'unauthorized':
+      return t.errors.unauthorized;
+    case 'internal':
+      return t.errors.internal;
   }
 }
 
-export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+export function ErrorState({
+  error,
+  onRetry,
+  overrides,
+}: {
+  error: unknown;
+  onRetry?: () => void;
+  overrides?: ErrorOverrides;
+}) {
   const t = useT();
   const offline = isApiError(error, 'network');
   return (
@@ -270,7 +292,7 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
         {offline ? <WifiOffIcon /> : <RefreshIcon />}
       </div>
       <h2 className="text-base font-bold text-ink">{t.errors.title}</h2>
-      <p className="max-w-xs text-sm text-muted">{errorMessage(t, error)}</p>
+      <p className="max-w-xs text-sm text-muted">{errorMessage(t, error, overrides)}</p>
       {onRetry && (
         <Button variant="secondary" onClick={onRetry}>
           <RefreshIcon size={18} />
@@ -328,5 +350,43 @@ export function CopyButton({ value, className }: { value: string; className?: st
       {copied ? <CheckIcon size={18} /> : <CopyIcon size={18} />}
       <span aria-live="polite">{copied ? t.common.copied : t.common.copy}</span>
     </Button>
+  );
+}
+
+// ---------- numbers ----------
+
+/**
+ * Every number goes through this: locale formatting + an isolated LTR run, so "−4" / "-1" never renders as
+ * "4−" / "1-" inside Hebrew text. `signed` adds an explicit + for positives (e.g. rank moves, bonus).
+ */
+export function Num({
+  value,
+  signed = false,
+  className,
+}: {
+  value: number | null | undefined;
+  signed?: boolean;
+  className?: string;
+}) {
+  const { f } = useI18n();
+  const text =
+    value === null || value === undefined
+      ? '—'
+      : value < 0
+        ? `−${f.num(Math.abs(value))}`
+        : `${signed && value > 0 ? '+' : ''}${f.num(value)}`;
+  return (
+    <bdi dir="ltr" className={cx('tabular', className)}>
+      {text}
+    </bdi>
+  );
+}
+
+/** Wraps already-formatted LTR text (prices, ranks, scores) as an isolated run. */
+export function Ltr({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <bdi dir="ltr" className={className}>
+      {children}
+    </bdi>
   );
 }

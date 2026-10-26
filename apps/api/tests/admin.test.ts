@@ -175,11 +175,12 @@ describe('admin captain battle', () => {
     expect(empty.statusCode).toBe(200);
     expect(empty.json()).toBeNull();
 
+    fpl.addEntry(777);
     const config = {
       event: 9,
       entries: [
-        { label: 'Community captain', playerId: 1, kind: 'community' },
-        { label: "Dor's captain", playerId: 2, kind: 'custom' },
+        { label: 'Community captain', source: 'player', playerId: 1, kind: 'community' },
+        { label: "Dor's captain", source: 'entry', entryId: 777, kind: 'custom' },
       ],
     };
     const put = await app.inject({
@@ -191,7 +192,10 @@ describe('admin captain battle', () => {
     expect(put.statusCode).toBe(200);
     expect(CaptainBattleConfigSchema.parse(put.json())).toEqual(config);
 
-    const replaced = { event: 9, entries: [{ label: 'Only one', playerId: 3, kind: 'custom' }] };
+    const replaced = {
+      event: 9,
+      entries: [{ label: 'Only one', source: 'player', playerId: 3, kind: 'custom' }],
+    };
     await app.inject({
       method: 'PUT',
       url: '/v1/admin/captain-battle',
@@ -206,22 +210,98 @@ describe('admin captain battle', () => {
     expect(pub.captainBattleEvent).toBe(9);
   });
 
-  it('PUT 400s on unknown players and invalid bodies', async () => {
+  it.each([
+    [
+      'unknown player',
+      { event: 9, entries: [{ label: 'X', source: 'player', playerId: 999, kind: 'custom' }] },
+    ],
+    ['bad event', { event: 39, entries: [] }],
+    ['empty label', { event: 9, entries: [{ label: '', source: 'player', playerId: 1, kind: 'custom' }] }],
+    ['kind mine', { event: 9, entries: [{ label: 'X', source: 'player', playerId: 1, kind: 'mine' }] }],
+    ['no source', { event: 9, entries: [{ label: 'X', playerId: 1, kind: 'custom' }] }],
+    [
+      'player row without playerId',
+      { event: 9, entries: [{ label: 'X', source: 'player', kind: 'custom' }] },
+    ],
+    [
+      'player row with entryId only',
+      { event: 9, entries: [{ label: 'X', source: 'player', entryId: 777, kind: 'custom' }] },
+    ],
+    [
+      'entry row without entryId',
+      { event: 9, entries: [{ label: 'X', source: 'entry', playerId: 1, kind: 'custom' }] },
+    ],
+  ])('PUT 400s (%s)', async (_label, payload) => {
     const token = await adminToken(app, prisma);
-    for (const payload of [
-      { event: 9, entries: [{ label: 'X', playerId: 999, kind: 'custom' }] },
-      { event: 39, entries: [] },
-      { event: 9, entries: [{ label: '', playerId: 1, kind: 'custom' }] },
-      { event: 9, entries: [{ label: 'X', playerId: 1, kind: 'mine' }] },
-    ]) {
-      const res = await app.inject({
-        method: 'PUT',
-        url: '/v1/admin/captain-battle',
-        headers: bearer(token),
-        payload,
-      });
-      expect(res.statusCode).toBe(400);
-    }
+    fpl.addEntry(777);
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/admin/captain-battle',
+      headers: bearer(token),
+      payload,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(ApiErrorSchema.parse(res.json()).error.code).toBe('bad_request');
+    expect(await prisma.captainBattle.count()).toBe(0);
+  });
+
+  it('PUT 400s naming an unknown linked Team ID; 503 when FPL is down', async () => {
+    const token = await adminToken(app, prisma);
+    const payload = {
+      event: 9,
+      entries: [
+        { label: 'Real', source: 'entry', entryId: 777, kind: 'custom' },
+        { label: 'Ghost', source: 'entry', entryId: 4242, kind: 'custom' },
+      ],
+    };
+    fpl.addEntry(777);
+    const bad = await app.inject({
+      method: 'PUT',
+      url: '/v1/admin/captain-battle',
+      headers: bearer(token),
+      payload,
+    });
+    expect(bad.statusCode).toBe(400);
+    const body = ApiErrorSchema.parse(bad.json());
+    expect(body.error.message).toContain('4242');
+    expect(body.error.message).not.toContain('777');
+
+    fpl.failAll = upstreamDown();
+    const down = await app.inject({
+      method: 'PUT',
+      url: '/v1/admin/captain-battle',
+      headers: bearer(token),
+      payload,
+    });
+    expect(down.statusCode).toBe(503);
+    expect(await prisma.captainBattle.count()).toBe(0);
+  });
+
+  it('DB check rejects rows with the wrong target for their source', async () => {
+    const battle = await prisma.captainBattle.create({ data: { event: 9 } });
+    await expect(
+      prisma.captainBattleEntry.create({
+        data: { battleId: battle.id, order: 0, label: 'x', kind: 'CUSTOM', source: 'ENTRY', playerId: 1 },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      prisma.captainBattleEntry.create({
+        data: {
+          battleId: battle.id,
+          order: 0,
+          label: 'x',
+          kind: 'CUSTOM',
+          source: 'PLAYER',
+          playerId: 1,
+          entryId: 5,
+        },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      prisma.captainBattleEntry.create({
+        data: { battleId: battle.id, order: 0, label: 'x', kind: 'CUSTOM', source: 'PLAYER' },
+      }),
+    ).rejects.toThrow();
   });
 });
 

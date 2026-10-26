@@ -117,6 +117,8 @@ export class FakeFplService implements FplService {
   entries = new Map<number, EntrySummary>();
   picks = new Map<string, EntryPicks>();
   playerPoints = new Map<number, number>();
+  /** Minutes per player (default 90). 0 = didn't play → vice-captain gets the armband in live league. */
+  playerMinutes = new Map<number, number>();
   leagues = new Map<number, FakeLeague>();
   /** When set, every call throws this error. */
   failAll: Error | null = null;
@@ -231,6 +233,8 @@ export class FakeFplService implements FplService {
           livePoints: 71,
           liveTotal: 671,
           captainPlayerId: 1,
+          // Vice (2) takes the armband when the captain (1) didn't play.
+          effectiveCaptainPlayerId: (this.playerMinutes.get(1) ?? 90) > 0 ? 1 : 2,
           activeChip: null,
           playersYetToPlay: 2,
         },
@@ -241,7 +245,12 @@ export class FakeFplService implements FplService {
 
   async getPlayersLive(playerIds: readonly FplPlayerId[], event: Gameweek): Promise<PlayerLive[]> {
     this.check(`getPlayersLive:${[...playerIds].sort().join(',')}:${event}`);
-    return playerIds.map((id) => makePlayerLive(id, this.playerPoints.get(id) ?? 0));
+    return playerIds.map((id) =>
+      PlayerLiveSchema.parse({
+        ...makePlayerLive(id, this.playerPoints.get(id) ?? 0),
+        minutes: this.playerMinutes.get(id) ?? 90,
+      }),
+    );
   }
 }
 

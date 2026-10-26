@@ -4,6 +4,7 @@ import {
   CaptainBattleConfigSchema,
   CreateAdminBodySchema,
 } from '@fant/shared';
+import { mapWithConcurrency } from '@fant/fpl';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -94,10 +95,27 @@ export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth): 
 
     admin.put('/v1/admin/captain-battle', async (request) => {
       const body = parseInput(CaptainBattleConfigSchema, request.body);
-      const bootstrap = await ctx.fpl.getBootstrap();
-      const known = new Set<number>(bootstrap.players.map((p) => p.id));
-      const unknown = body.entries.filter((e) => !known.has(e.playerId)).map((e) => e.playerId);
-      if (unknown.length > 0) throw badRequest(`Unknown player id(s): ${unknown.join(', ')}`);
+      const playerIds = body.entries.flatMap((e) => (e.source === 'player' ? [e.playerId] : []));
+      const entryIds = [...new Set(body.entries.flatMap((e) => (e.source === 'entry' ? [e.entryId] : [])))];
+      if (playerIds.length > 0) {
+        const bootstrap = await ctx.fpl.getBootstrap();
+        const known = new Set<number>(bootstrap.players.map((p) => p.id));
+        const unknown = playerIds.filter((id) => !known.has(id));
+        if (unknown.length > 0) throw badRequest(`Unknown player id(s): ${unknown.join(', ')}`);
+      }
+      // Linked teams must exist. FPL down → FplUnavailableError → 503 via the error handler.
+      const missing = (
+        await mapWithConcurrency(entryIds, 5, async (entryId) => {
+          try {
+            await ctx.fpl.getEntry(entryId);
+            return null;
+          } catch (err) {
+            if (isFplNotFound(err)) return entryId;
+            throw err;
+          }
+        })
+      ).filter((id) => id !== null);
+      if (missing.length > 0) throw badRequest(`Unknown FPL Team ID(s): ${missing.join(', ')}`);
 
       const now = ctx.clock.now();
       const battle = await prisma.$transaction(async (tx) => {
@@ -112,8 +130,10 @@ export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth): 
             battleId: saved.id,
             order,
             label: e.label,
-            playerId: e.playerId,
-            kind: e.kind === 'community' ? 'COMMUNITY' : 'CUSTOM',
+            kind: e.kind === 'community' ? ('COMMUNITY' as const) : ('CUSTOM' as const),
+            ...(e.source === 'entry'
+              ? { source: 'ENTRY' as const, entryId: e.entryId, playerId: null }
+              : { source: 'PLAYER' as const, playerId: e.playerId, entryId: null }),
           })),
         });
         return tx.captainBattle.findUniqueOrThrow({

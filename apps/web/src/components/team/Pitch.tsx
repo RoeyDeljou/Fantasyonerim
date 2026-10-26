@@ -1,12 +1,12 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import type { LivePick, Pick, Player, PlTeam, Position } from '@fant/shared';
-import { useT } from '@/i18n';
+import type { FplPlayerId, LivePick, Pick, Player, PlTeam, Position } from '@fant/shared';
+import { fmt, useT } from '@/i18n';
 import type { FplIndex } from '@/lib/queries';
 import { ImageWithFallback, fplImage } from '../FplImages';
 import { SubInIcon, SubOutIcon } from '../icons';
-import { cx } from '../ui';
+import { Num, cx } from '../ui';
 import { isLivePick } from './fixtureText';
 
 const ROWS: readonly Position[] = ['GKP', 'DEF', 'MID', 'FWD'];
@@ -17,10 +17,18 @@ export interface PitchProps<P extends Pick | LivePick> {
   /** Under-name label: points once the fixture started, otherwise the opponent. */
   renderLabel(pick: P, player: Player | undefined): ReactNode;
   onSelect?: ((pick: P) => void) | undefined;
+  /** Live data for plain picks (My Team view) — drives the bonus / auto-sub badges. */
+  liveByPlayer?: Map<FplPlayerId, LivePick> | undefined;
 }
 
 /** Stylized pitch (CSS stripes + SVG markings in theme colours) with the XI in formation rows and the bench. */
-export function Pitch<P extends Pick | LivePick>({ picks, index, renderLabel, onSelect }: PitchProps<P>) {
+export function Pitch<P extends Pick | LivePick>({
+  picks,
+  index,
+  renderLabel,
+  onSelect,
+  liveByPlayer,
+}: PitchProps<P>) {
   const t = useT();
   const sorted = [...picks].sort((a, b) => a.slot - b.slot);
   const xi = sorted.filter((p) => p.slot <= 11);
@@ -41,6 +49,7 @@ export function Pitch<P extends Pick | LivePick>({ picks, index, renderLabel, on
       label={renderLabel(p, index.players.get(p.playerId))}
       onBench={onBench}
       onSelect={onSelect}
+      liveByPlayer={liveByPlayer}
     />
   );
 
@@ -111,7 +120,9 @@ function PlayerToken<P extends Pick | LivePick>({
   label,
   onBench,
   onSelect,
+  liveByPlayer,
 }: {
+  liveByPlayer: Map<FplPlayerId, LivePick> | undefined;
   pick: P;
   player: Player | undefined;
   team: PlTeam | undefined;
@@ -121,7 +132,7 @@ function PlayerToken<P extends Pick | LivePick>({
 }) {
   const t = useT();
   const name = player?.webName ?? '?';
-  const live = isLivePick(pick) ? pick : null;
+  const live = isLivePick(pick) ? pick : (liveByPlayer?.get(pick.playerId) ?? null);
   const flagged = player && player.status !== 'a';
   const content = (
     <>
@@ -157,6 +168,17 @@ function PlayerToken<P extends Pick | LivePick>({
             )}
           />
         )}
+        {live && live.provisionalBonus > 0 && (
+          <span
+            title={fmt(live.bonusConfirmed ? t.live.bonus : t.live.provBonus, { n: live.provisionalBonus })}
+            className={cx(
+              'absolute -bottom-1 -end-2 rounded-full px-1 text-[10px] leading-4 font-extrabold ring-2 ring-surface',
+              live.bonusConfirmed ? 'bg-success text-surface' : 'border border-dashed border-warning bg-warning-soft text-warning',
+            )}
+          >
+            <bdi dir="ltr">+{live.provisionalBonus}</bdi>
+          </span>
+        )}
         {live?.autoSubIn && (
           <span
             aria-label={t.live.autoSubIn}
@@ -181,12 +203,13 @@ function PlayerToken<P extends Pick | LivePick>({
         {name}
       </span>
       <span
+        dir="auto"
         className={cx(
           'block w-full truncate rounded-b-md px-1 text-center text-[11px] leading-5 font-bold tabular',
           onBench ? 'bg-surface-3 text-ink' : 'bg-primary text-on-primary',
         )}
       >
-        {label}
+        {typeof label === 'number' ? <Num value={label} /> : label}
       </span>
     </>
   );

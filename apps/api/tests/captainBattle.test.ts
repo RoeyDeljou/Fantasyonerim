@@ -1,4 +1,8 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CaptainBattleSchema } from '@fant/shared';
+import { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { makePicks, upstreamDown, type FakeFplService } from './fakeFpl.js';
@@ -10,6 +14,7 @@ import {
   migrateTestDb,
   registerUser,
   resetDb,
+  TEST_DATABASE_URL,
 } from './helpers.js';
 
 const prisma = createTestPrisma();
@@ -27,7 +32,7 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-async function configureBattle(event = 9): Promise<void> {
+async function configureBattle(event = 9, extra: object[] = []): Promise<void> {
   const token = await adminToken(app, prisma);
   const res = await app.inject({
     method: 'PUT',
@@ -36,9 +41,10 @@ async function configureBattle(event = 9): Promise<void> {
     payload: {
       event,
       entries: [
-        { label: 'Community captain', playerId: 1, kind: 'community' },
-        { label: "Dor's captain", playerId: 2, kind: 'custom' },
-        { label: "Moshe's captain", playerId: 3, kind: 'custom' },
+        { label: 'Community captain', source: 'player', playerId: 1, kind: 'community' },
+        { label: "Dor's captain", source: 'player', playerId: 2, kind: 'custom' },
+        { label: "Moshe's captain", source: 'player', playerId: 3, kind: 'custom' },
+        ...extra,
       ],
     },
   });
@@ -67,7 +73,9 @@ describe('GET /v1/captain-battle', () => {
       ['Community captain', 12, 2],
       ["Moshe's captain", 4, 2],
     ]);
-    expect(battle.rows.every((r) => r.kind !== 'mine')).toBe(true);
+    expect(battle.rows.every((r) => r.kind !== 'mine' && r.source === 'player' && r.entryId === null)).toBe(
+      true,
+    );
     expect(battle.rows[0]?.live).toMatchObject({ playerId: 2, basePoints: 13 });
   });
 
@@ -83,7 +91,15 @@ describe('GET /v1/captain-battle', () => {
       ["Moshe's captain", 4],
     ]);
     const mine = battle.rows[0];
-    expect(mine).toMatchObject({ key: 'me', kind: 'mine', label: 'Roey', playerId: 4, multiplier: 3 });
+    expect(mine).toMatchObject({
+      key: 'me',
+      kind: 'mine',
+      source: 'mine',
+      entryId: 555,
+      label: 'Roey',
+      playerId: 4,
+      multiplier: 3,
+    });
   });
 
   it('normal captain in the mine row is ×2', async () => {
@@ -117,7 +133,10 @@ describe('GET /v1/captain-battle', () => {
       method: 'PUT',
       url: '/v1/admin/captain-battle',
       headers: bearer(token),
-      payload: { event: 10, entries: [{ label: 'Next week', playerId: 4, kind: 'custom' }] },
+      payload: {
+        event: 10,
+        entries: [{ label: 'Next week', source: 'player', playerId: 4, kind: 'custom' }],
+      },
     });
     const battle = await getBattle();
     expect(battle.event).toBe(10);
@@ -129,5 +148,115 @@ describe('GET /v1/captain-battle', () => {
     fpl.failAll = upstreamDown();
     const res = await app.inject({ method: 'GET', url: '/v1/captain-battle' });
     expect(res.statusCode).toBe(503);
+  });
+
+  it('entry-linked rows resolve the team captain; TC = ×3', async () => {
+    fpl.addEntry(777).addEntry(888);
+    fpl.picks.set('777:9', makePicks(777, 9, 4, 3)); // TC on Saka (9) → 27
+    fpl.picks.set('888:9', makePicks(888, 9, 3, 2)); // Palmer (2) → 4
+    await configureBattle(9, [
+      { label: "Dor's team", source: 'entry', entryId: 777, kind: 'custom' },
+      { label: "Moshe's team", source: 'entry', entryId: 888, kind: 'custom' },
+    ]);
+    const battle = await getBattle();
+    expect(
+      battle.rows.map((r) => [r.label, r.source, r.entryId, r.playerId, r.multiplier, r.captainPoints]),
+    ).toEqual([
+      ["Dor's team", 'entry', 777, 4, 3, 27],
+      ["Dor's captain", 'player', null, 2, 2, 26],
+      ['Community captain', 'player', null, 1, 2, 12],
+      ["Moshe's captain", 'player', null, 3, 2, 4],
+      ["Moshe's team", 'entry', 888, 3, 2, 4],
+    ]);
+    expect(battle.rows[0]?.live).toMatchObject({ playerId: 4, basePoints: 9 });
+    // One live call for every resolved player.
+    expect(fpl.calls.filter((c) => c.startsWith('getPlayersLive'))).toEqual(['getPlayersLive:1,2,3,4:9']);
+  });
+
+  it('entry row before the deadline (picks 404) → null player, 0 points, sorted last', async () => {
+    fpl.addEntry(777).addEntry(888);
+    fpl.picks.set('888:9', makePicks(888, 9, 3, 2));
+    fpl.playerPoints.set(1, 0).set(2, 0).set(3, 0);
+    await configureBattle(9, [
+      { label: 'Hidden team', source: 'entry', entryId: 777, kind: 'community' },
+      { label: 'Known team', source: 'entry', entryId: 888, kind: 'custom' },
+    ]);
+    const battle = await getBattle();
+    const last = battle.rows.at(-1);
+    expect(last).toMatchObject({
+      label: 'Hidden team',
+      source: 'entry',
+      entryId: 777,
+      playerId: null,
+      live: null,
+      captainPoints: 0,
+      multiplier: 2,
+    });
+    // Resolved rows with 0 points still rank above the unresolved one.
+    expect(battle.rows.slice(0, -1).every((r) => r.live !== null)).toBe(true);
+  });
+
+  it('entry row survives an upstream failure on its picks (row kept, captain unknown)', async () => {
+    fpl.addEntry(777);
+    await configureBattle(9, [{ label: 'Linked', source: 'entry', entryId: 777, kind: 'custom' }]);
+    fpl.failPicks = upstreamDown();
+    const battle = await getBattle();
+    expect(battle.rows).toHaveLength(4);
+    expect(battle.rows.at(-1)).toMatchObject({ label: 'Linked', playerId: null, live: null });
+  });
+
+  it('viewer who is also a linked team: picks fetched once, both rows present', async () => {
+    const fan = await registerUser(app, fpl, 777, 'Dor');
+    fpl.picks.set('777:9', makePicks(777, 9, 2, 2));
+    await configureBattle(9, [{ label: "Dor's team", source: 'entry', entryId: 777, kind: 'custom' }]);
+    fpl.calls = [];
+    const battle = await getBattle(bearer(fan.token));
+    expect(battle.rows.filter((r) => r.entryId === 777).map((r) => r.source)).toEqual(['entry', 'mine']);
+    expect(fpl.calls.filter((c) => c.startsWith('getEntryPicks'))).toEqual(['getEntryPicks:777:9']);
+  });
+});
+
+describe('captain battle migration', () => {
+  it('moves pre-existing rows to source PLAYER and enforces one target per source', async () => {
+    const dir = resolve(dirname(fileURLToPath(import.meta.url)), '../prisma/migrations');
+    const [init, ...rest] = readdirSync(dir)
+      .filter((d) => /^\d+_/.test(d))
+      .sort();
+    const sql = (name: string) =>
+      readFileSync(resolve(dir, name, 'migration.sql'), 'utf8')
+        .split(/;\s*$/m)
+        .map((stmt) => stmt.replace(/^\s*--.*$/gm, '').trim())
+        .filter((stmt) => stmt.length > 0);
+
+    const schema = 'migration_check';
+    const url = new URL(TEST_DATABASE_URL);
+    url.searchParams.set('schema', schema);
+    const scratch = new PrismaClient({ datasourceUrl: url.toString() });
+    try {
+      await scratch.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      await scratch.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
+      await scratch.$executeRawUnsafe(`SET search_path TO "${schema}"`);
+      for (const stmt of sql(init ?? '')) await scratch.$executeRawUnsafe(stmt);
+      await scratch.$executeRawUnsafe(
+        `INSERT INTO "CaptainBattle" (id, event, "updatedAt") VALUES ('b1', 9, now())`,
+      );
+      await scratch.$executeRawUnsafe(
+        `INSERT INTO "CaptainBattleEntry" (id, "battleId", "order", label, "playerId", kind) VALUES ('e1', 'b1', 0, 'Old row', 7, 'CUSTOM')`,
+      );
+      for (const name of rest) for (const stmt of sql(name)) await scratch.$executeRawUnsafe(stmt);
+
+      const rows = await scratch.$queryRawUnsafe<
+        { source: string; playerId: number | null; entryId: number | null }[]
+      >(`SELECT source::text AS source, "playerId", "entryId" FROM "CaptainBattleEntry"`);
+      expect(rows).toEqual([{ source: 'PLAYER', playerId: 7, entryId: null }]);
+      await expect(
+        scratch.$executeRawUnsafe(
+          `INSERT INTO "CaptainBattleEntry" (id, "battleId", "order", label, kind, source) VALUES ('e2', 'b1', 1, 'Bad', 'CUSTOM', 'ENTRY')`,
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await scratch.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      await scratch.$disconnect();
+    }
   });
 });

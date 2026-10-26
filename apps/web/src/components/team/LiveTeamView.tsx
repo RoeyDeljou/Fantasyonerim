@@ -58,19 +58,19 @@ export function LiveTeamView({
               {fmt(t.common.gw, { gw: d.event })} · {t.live.livePoints}
             </span>
             <span className="text-6xl leading-none font-extrabold text-primary tabular" aria-live="polite">
-              {d.livePoints}
+              <Num value={d.livePoints} />
             </span>
           </div>
           <div className="flex flex-col items-end gap-1 text-end">
             {d.activeChip && <Badge tone="accent">{chipName(t, d.activeChip)}</Badge>}
             {d.liveTotal !== null && (
               <span className="text-sm text-muted">
-                {t.live.liveTotal}: <b className="text-ink tabular">{f.num(d.liveTotal)}</b>
+                {t.live.liveTotal}: <Num value={d.liveTotal} className="font-bold text-ink" />
               </span>
             )}
             {d.transfersCost > 0 && (
               <span className="text-sm font-semibold text-live tabular">
-                {t.myTeam.hits} −{d.transfersCost}
+                {t.myTeam.hits} <Num value={-d.transfersCost} />
               </span>
             )}
           </div>
@@ -78,15 +78,21 @@ export function LiveTeamView({
         <dl className="grid grid-cols-3 gap-2 text-center">
           <div className="rounded-xl bg-surface-2 py-2">
             <dt className="text-xs text-muted">{t.live.played}</dt>
-            <dd className="text-lg font-bold tabular">{d.playersPlayed}</dd>
+            <dd className="text-lg font-bold">
+              <Num value={d.playersPlayed} />
+            </dd>
           </div>
           <div className="rounded-xl bg-surface-2 py-2">
             <dt className="text-xs text-muted">{t.live.yetToPlay}</dt>
-            <dd className="text-lg font-bold tabular">{d.playersYetToPlay}</dd>
+            <dd className="text-lg font-bold">
+              <Num value={d.playersYetToPlay} />
+            </dd>
           </div>
           <div className="rounded-xl bg-surface-2 py-2">
             <dt className="text-xs text-muted">{t.live.benchPts}</dt>
-            <dd className="text-lg font-bold tabular">{d.benchPoints}</dd>
+            <dd className="text-lg font-bold">
+              <Num value={d.benchPoints} />
+            </dd>
           </div>
         </dl>
         <p className="flex items-center gap-1.5 text-xs text-muted">
@@ -101,9 +107,9 @@ export function LiveTeamView({
         picks={d.picks}
         index={index}
         onSelect={setSelected}
-        renderLabel={(p) =>
+        renderLabel={(p, player) =>
           p.fixtureStatus === 'not_started' || p.fixtureStatus === 'no_fixture'
-            ? '—'
+            ? ((player && opponentText(player.teamId, fixtures.data, index.teams, t)) ?? '—')
             : p.effectiveMultiplier === 0
               ? p.basePoints
               : p.points
@@ -116,7 +122,13 @@ export function LiveTeamView({
         </div>
         <ul className="divide-y divide-line">
           {sorted.map((p) => (
-            <LivePlayerRow key={p.playerId} pick={p} index={index} onSelect={() => setSelected(p)} />
+            <LivePlayerRow
+              key={p.playerId}
+              pick={p}
+              index={index}
+              fixtures={fixtures.data}
+              onSelect={() => setSelected(p)}
+            />
           ))}
         </ul>
       </Card>
@@ -126,12 +138,32 @@ export function LiveTeamView({
   );
 }
 
-function LivePlayerRow({ pick, index, onSelect }: { pick: LivePick; index: FplIndex; onSelect(): void }) {
+export function BonusBadge({ n, confirmed }: { n: number; confirmed: boolean }) {
   const { t } = useI18n();
+  if (n <= 0) return null;
+  return (
+    <Badge tone={confirmed ? 'success' : 'warning'} className={cx(!confirmed && 'border border-dashed border-warning')}>
+      <bdi dir="ltr">+{n}</bdi> {confirmed ? t.live.bonus.replace('+{n} ', '') : t.live.provBonus.replace('+{n} ', '')}
+    </Badge>
+  );
+}
+
+function LivePlayerRow({
+  pick,
+  index,
+  fixtures,
+  onSelect,
+}: {
+  pick: LivePick;
+  index: FplIndex;
+  fixtures: readonly Fixture[] | undefined;
+  onSelect(): void;
+}) {
+  const { t, f } = useI18n();
   const player = index.players.get(pick.playerId);
   const team = player ? index.teams.get(player.teamId) : undefined;
   const bench = pick.slot > 11;
-  const status = fixtureStatusText(pick, t);
+  const status = fixtureStatusText(pick, t, f, player?.teamId, fixtures);
   return (
     <li>
       <button
@@ -155,11 +187,13 @@ function LivePlayerRow({ pick, index, onSelect }: { pick: LivePick; index: FplIn
           <span className="size-8 shrink-0" />
         )}
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="flex items-center gap-1.5">
-            <span className="truncate font-semibold text-ink">{player?.webName ?? '?'}</span>
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span dir="auto" className="truncate font-semibold text-ink">
+              {player?.webName ?? '?'}
+            </span>
             {pick.isCaptain && (
               <Badge tone="primary" className="px-1.5">
-                {pick.multiplier === 3 ? '3×' : 'C'}
+                {pick.multiplier === 3 ? 'TC' : 'C'}
               </Badge>
             )}
             {pick.isViceCaptain && (
@@ -178,27 +212,26 @@ function LivePlayerRow({ pick, index, onSelect }: { pick: LivePick; index: FplIn
               </span>
             )}
           </span>
-          <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
+          <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted">
+            {team && <span>{team.shortName}</span>}
             <span className={cx(pick.fixtureStatus === 'live' && 'font-semibold text-live')}>
               {pick.fixtureStatus === 'live' && <LiveDot className="me-1 align-middle" />}
-              {status}
+              <bdi>{status}</bdi>
             </span>
-            {team && <span>· {team.shortName}</span>}
-            {pick.provisionalBonus > 0 && (
-              <Badge tone={pick.bonusConfirmed ? 'success' : 'warning'}>
-                {fmt(pick.bonusConfirmed ? t.live.bonus : t.live.provBonus, { n: pick.provisionalBonus })}
-              </Badge>
+            {(pick.fixtureStatus === 'live' || pick.fixtureStatus === 'finished') && (
+              <span>· {fmt(t.live.minutesPlayed, { n: f.num(pick.minutes) })}</span>
             )}
+            <BonusBadge n={pick.provisionalBonus} confirmed={pick.bonusConfirmed} />
           </span>
         </span>
         <span className="flex shrink-0 flex-col items-end">
-          <span className="text-lg font-extrabold text-ink tabular">
-            {pick.effectiveMultiplier === 0 ? pick.basePoints : pick.points}
+          <span className="text-lg font-extrabold text-ink">
+            <Num value={pick.effectiveMultiplier === 0 ? pick.basePoints : pick.points} />
           </span>
           {pick.effectiveMultiplier > 1 && (
-            <span dir="ltr" className="text-[11px] text-muted tabular">
-              {pick.basePoints} {fmt(t.live.multiplier, { n: pick.effectiveMultiplier })}
-            </span>
+            <bdi dir="ltr" className="text-[11px] text-muted tabular">
+              {f.num(pick.basePoints)} ×{pick.effectiveMultiplier}
+            </bdi>
           )}
         </span>
       </button>

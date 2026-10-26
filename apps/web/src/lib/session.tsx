@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import type { AuthResponse } from '@fant/shared';
+import type { AuthResponse, Me } from '@fant/shared';
 import { api, setUnauthorizedHandler } from './api';
 import { tokenStore } from './tokenStore';
 import { qk } from './queries';
@@ -43,17 +43,34 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  useEffect(() => {
-    setUnauthorizedHandler(() => {
-      setStatus('signedOut');
-      qc.clear();
-      router.replace(ROUTES.onboarding);
-    });
-    return () => setUnauthorizedHandler(null);
+  /** After the active session ends: bring back a stashed fan session, else go to onboarding. */
+  const afterSessionEnded = useCallback(async () => {
+    qc.clear();
+    const fan = await tokenStore.get('fan');
+    if (fan) {
+      await tokenStore.set(fan);
+      await tokenStore.clear('fan');
+      setStatus('signedIn');
+      router.replace(ROUTES.home);
+      return;
+    }
+    setStatus('signedOut');
+    router.replace(ROUTES.onboarding);
   }, [qc, router]);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => void afterSessionEnded());
+    return () => setUnauthorizedHandler(null);
+  }, [afterSessionEnded]);
 
   const signIn = useCallback(
     async (auth: AuthResponse) => {
+      // Admin signing in on a fan's device: keep the fan's session aside and restore it on admin sign-out.
+      const previous = await tokenStore.get();
+      const previousMe = qc.getQueryData<Me>(qk.me);
+      if (auth.user.role === 'admin' && previous && previous !== auth.token && previousMe?.role !== 'admin') {
+        await tokenStore.set(previous, 'fan');
+      }
       await tokenStore.set(auth.token);
       qc.removeQueries({ queryKey: qk.me });
       qc.setQueryData(qk.me, auth.user);
@@ -70,10 +87,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // already invalid / offline — sign out locally regardless
     }
     await tokenStore.clear();
-    qc.clear();
-    setStatus('signedOut');
-    router.replace(ROUTES.onboarding);
-  }, [qc, router]);
+    await afterSessionEnded();
+  }, [afterSessionEnded]);
 
   const value = useMemo(() => ({ status, signIn, signOut }), [status, signIn, signOut]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
