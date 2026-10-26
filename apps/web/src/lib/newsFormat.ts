@@ -18,7 +18,10 @@ export type RelativeUnit = 'second' | 'minute' | 'hour' | 'day';
  * Relative time for card headers: "now", "5 minutes ago", "yesterday", "3 days ago"; older than a week returns
  * null so the caller shows a date instead.
  */
-export function relativeParts(iso: string, now: number): { value: number; unit: RelativeUnit } | 'now' | null {
+export function relativeParts(
+  iso: string,
+  now: number,
+): { value: number; unit: RelativeUnit } | 'now' | null {
   const diffSec = Math.round((new Date(iso).getTime() - now) / 1000);
   const abs = Math.abs(diffSec);
   if (abs < 45) return 'now';
@@ -72,7 +75,11 @@ export function linkify(text: string, platform: LinkPlatform): TextToken[] {
     if (url) {
       const trimmed = url.replace(TRAILING_PUNCT, '');
       const rest = url.slice(trimmed.length);
-      out.push({ kind: 'url', value: trimmed, href: trimmed.startsWith('www.') ? `https://${trimmed}` : trimmed });
+      out.push({
+        kind: 'url',
+        value: trimmed,
+        href: trimmed.startsWith('www.') ? `https://${trimmed}` : trimmed,
+      });
       pushText(rest);
       continue;
     }
@@ -123,4 +130,15 @@ export function xUsername(input: string): string | null {
 export function expiresWithin(iso: string | null, days: number, now: number): boolean {
   if (!iso) return false;
   return new Date(iso).getTime() - now < days * 86_400_000;
+}
+
+/**
+ * Feed titles often repeat the number shown in the badge ("פרק 62 - אין צ'יפים" / "Ep. 62: …"); drop that
+ * prefix when it matches `episodeNumber`. Never returns an empty title.
+ */
+export function episodeTitle(title: string, episodeNumber: number | null): string {
+  if (episodeNumber === null) return title;
+  const re = new RegExp(`^\\s*(?:פרק|episode|ep\\.?|#)\\s*${episodeNumber}\\s*[-–—:|.]\\s*`, 'iu');
+  const stripped = title.replace(re, '').trim();
+  return stripped || title;
 }

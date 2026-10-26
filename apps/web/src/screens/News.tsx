@@ -16,7 +16,15 @@ import { pushErrorText } from '@/components/NotificationsCard';
 import { ArrowUpIcon, BellIcon, CloseIcon, MicIcon, RefreshIcon } from '@/components/icons';
 import { NewsCard, NewsCardSkeleton } from '@/components/news/NewsCards';
 import { ProfileHeader } from '@/components/news/ProfileHeader';
-import { Button, EmptyState, ErrorState, IconButton, InlineError, Spinner, errorMessage } from '@/components/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  IconButton,
+  InlineError,
+  Spinner,
+  errorMessage,
+} from '@/components/ui';
 
 export function NewsScreen() {
   const { t } = useI18n();
@@ -186,7 +194,9 @@ function Feed({ isAdmin, skipId }: { isAdmin: boolean; skipId: NewsItem['id'] | 
   const newest = feed.data?.pages[0]?.items[0];
   const hasNewer =
     !!newest &&
-    !!head.data?.items.some((i) => i.id !== newest.id && Date.parse(i.publishedAt) > Date.parse(newest.publishedAt));
+    !!head.data?.items.some(
+      (i) => i.id !== newest.id && Date.parse(i.publishedAt) > Date.parse(newest.publishedAt),
+    );
 
   const { hasNextPage, isFetchingNextPage, fetchNextPage, isFetchNextPageError } = feed;
   useEffect(() => {

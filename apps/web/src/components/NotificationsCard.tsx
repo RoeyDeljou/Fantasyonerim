@@ -121,7 +121,9 @@ export function NotificationsCard() {
             ))}
           </div>
         )}
-        {save.isError && <InlineError>{errorMessage(t, save.error, { internal: t.push.prefsError })}</InlineError>}
+        {save.isError && (
+          <InlineError>{errorMessage(t, save.error, { internal: t.push.prefsError })}</InlineError>
+        )}
       </div>
     </Card>
   );

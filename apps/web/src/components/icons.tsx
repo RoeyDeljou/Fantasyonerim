@@ -286,7 +286,10 @@ export const GripIcon = (p: IconProps) => (
 
 export const PlayIcon = (p: IconProps) => (
   <Svg {...p}>
-    <path d="M7.5 4.8v14.4a.8.8 0 0 0 1.2.7l11.3-7.2a.8.8 0 0 0 0-1.4L8.7 4.1a.8.8 0 0 0-1.2.7Z" fill="currentColor" />
+    <path
+      d="M7.5 4.8v14.4a.8.8 0 0 0 1.2.7l11.3-7.2a.8.8 0 0 0 0-1.4L8.7 4.1a.8.8 0 0 0-1.2.7Z"
+      fill="currentColor"
+    />
   </Svg>
 );
 

@@ -12,17 +12,12 @@ import { useSession } from '@/lib/session';
 import { useTheme } from '@/lib/theme';
 import type { ThemePref } from '@/lib/prefs';
 import { promptInstall, useInstallState } from '@/lib/pwa';
+import { setListenPref, useListenPref } from '@/lib/localState';
+import type { ListenPref } from '@/lib/localState';
 import { AppShell } from '@/components/AppShell';
 import { IosInstallSteps } from '@/components/InstallGuide';
 import { NotificationsCard } from '@/components/NotificationsCard';
-import {
-  CheckIcon,
-  ChevronEndIcon,
-  DownloadIcon,
-  KeyIcon,
-  LogOutIcon,
-  ShieldIcon,
-} from '@/components/icons';
+import { CheckIcon, ChevronEndIcon, DownloadIcon, KeyIcon, LogOutIcon, ShieldIcon } from '@/components/icons';
 import {
   Badge,
   Button,
@@ -65,6 +60,7 @@ function ProfileInner() {
   const theme = useTheme();
   const { signOut } = useSession();
   const [confirmOut, setConfirmOut] = useState(false);
+  const listenPref = useListenPref();
 
   if (me.isPending) {
     return (
@@ -122,6 +118,20 @@ function ProfileInner() {
               { value: 'system', label: t.profile.themeSystem },
               { value: 'light', label: t.profile.themeLight },
               { value: 'dark', label: t.profile.themeDark },
+            ]}
+          />
+        </div>
+        <div>
+          <SectionTitle>{t.listen.prefTitle}</SectionTitle>
+          <p className="-mt-1 mb-2 text-xs text-muted">{t.listen.prefBody}</p>
+          <Segmented<ListenPref>
+            label={t.listen.prefTitle}
+            value={listenPref}
+            onChange={setListenPref}
+            options={[
+              { value: 'ask', label: t.listen.prefAsk },
+              { value: 'spotify', label: t.socials.spotify },
+              { value: 'apple', label: 'Apple' },
             ]}
           />
         </div>

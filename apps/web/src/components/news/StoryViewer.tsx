@@ -70,6 +70,9 @@ export function StoryViewer({
   const story = stories[index];
   const media = story?.media[0];
   const isVideo = media?.kind === 'video';
+  // Portrait stories fill the screen like Instagram; landscape/unknown media is letterboxed.
+  const fit =
+    media?.width && media.height && media.width / media.height < 0.75 ? 'object-cover' : 'object-contain';
   const paused = held || hidden;
 
   useEffect(() => {
@@ -229,7 +232,7 @@ export function StoryViewer({
               playsInline
               autoPlay
               preload="auto"
-              className="size-full object-contain"
+              className={cx('size-full', fit)}
               onLoadedData={() => setLoaded(true)}
               onError={() => setFailed(true)}
               onTimeUpdate={(e) => {
@@ -245,7 +248,7 @@ export function StoryViewer({
               src={media.url}
               alt={story.text ?? ''}
               draggable={false}
-              className="size-full object-contain"
+              className={cx('size-full', fit)}
               onLoad={() => setLoaded(true)}
               onError={() => setFailed(true)}
             />

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applePodcastId,
+  episodeTitle,
   expiresWithin,
   formatDuration,
   linkify,
@@ -89,5 +90,15 @@ describe('settings parsers', () => {
     expect(expiresWithin('2026-11-01T00:00:00Z', 14, now)).toBe(true);
     expect(expiresWithin('2027-01-01T00:00:00Z', 14, now)).toBe(false);
     expect(expiresWithin(null, 14, now)).toBe(false);
+  });
+});
+
+describe('episodeTitle', () => {
+  it('drops a prefix that repeats the episode number', () => {
+    expect(episodeTitle("פרק 62 - אין צ'יפים, נגמרו הצ'יפים", 62)).toBe("אין צ'יפים, נגמרו הצ'יפים");
+    expect(episodeTitle('Ep. 5: Wildcard time', 5)).toBe('Wildcard time');
+    expect(episodeTitle('פרק 61 - משהו', 62)).toBe('פרק 61 - משהו');
+    expect(episodeTitle('פרק 62', 62)).toBe('פרק 62');
+    expect(episodeTitle('Title', null)).toBe('Title');
   });
 });

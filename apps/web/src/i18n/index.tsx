@@ -52,7 +52,11 @@ function makeFormatters(locale: Locale): Formatters {
     timeZone: DISPLAY_TIME_ZONE,
   });
   const rel = new Intl.RelativeTimeFormat(tag, { numeric: 'auto', style: 'long' });
-  const dayMonth = new Intl.DateTimeFormat(tag, { day: 'numeric', month: 'short', timeZone: DISPLAY_TIME_ZONE });
+  const dayMonth = new Intl.DateTimeFormat(tag, {
+    day: 'numeric',
+    month: 'short',
+    timeZone: DISPLAY_TIME_ZONE,
+  });
   const dayMonthYear = new Intl.DateTimeFormat(tag, {
     day: 'numeric',
     month: 'short',
@@ -87,7 +91,8 @@ function makeFormatters(locale: Locale): Formatters {
     relative: (iso, now = Date.now()) => {
       const p = relativeParts(iso, now);
       if (p === 'now') return rel.format(0, 'second');
-      return p ? rel.format(p.value, p.unit) : date(iso);
+      // Some ICU builds (Chromium's) render Hebrew duals as "לפני שעתיים (2)" — drop the redundant count.
+      return p ? rel.format(p.value, p.unit).replace(/\s*\(\d+\)$/, '') : date(iso);
     },
     date,
     dateTime: (iso) => dateTime.format(new Date(iso)),

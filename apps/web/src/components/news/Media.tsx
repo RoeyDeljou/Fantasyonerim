@@ -139,7 +139,10 @@ export function MediaCarousel({ media, alt }: { media: readonly NewsMedia[]; alt
               {index + 1}/{media.length}
             </bdi>
           </span>
-          <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center gap-1.5" aria-hidden="true">
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center gap-1.5"
+            aria-hidden="true"
+          >
             {media.map((m, i) => (
               <span
                 key={`${m.url}-dot-${i}`}
@@ -182,7 +185,8 @@ export function MediaGrid({ media, alt }: { media: readonly NewsMedia[]; alt: st
   if (items.length === 1) {
     const only = items[0];
     if (!only) return null;
-    const ratio = only.width && only.height ? Math.min(1.91, Math.max(0.75, only.width / only.height)) : 16 / 9;
+    const ratio =
+      only.width && only.height ? Math.min(1.91, Math.max(0.75, only.width / only.height)) : 16 / 9;
     return (
       <div
         className="overflow-hidden rounded-2xl border border-line bg-surface-2"
@@ -202,7 +206,10 @@ export function MediaGrid({ media, alt }: { media: readonly NewsMedia[]; alt: st
       {items.map((m, i) => (
         <div
           key={`${m.url}-${i}`}
-          className={cx('relative min-h-0 overflow-hidden bg-surface-2', items.length === 3 && i === 0 && 'row-span-2')}
+          className={cx(
+            'relative min-h-0 overflow-hidden bg-surface-2',
+            items.length === 3 && i === 0 && 'row-span-2',
+          )}
         >
           <Slide media={m} alt={alt} eager={false} />
         </div>

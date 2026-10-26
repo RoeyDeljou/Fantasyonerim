@@ -1,25 +1,29 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import type { NewsItem } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
-import type { Episode } from '@/lib/audioPlayer';
-import { formatDuration } from '@/lib/newsFormat';
+import { openExternal } from '@/lib/external';
+import { setListenPref, useListenPref } from '@/lib/localState';
+import { episodeTitle, formatDuration } from '@/lib/newsFormat';
 import { useHideNews } from '@/lib/queries';
 import { BottomSheet } from '@/components/BottomSheet';
 import { Logo } from '@/components/AppShell';
 import {
   ApplePodcastsIcon,
   CameraIcon,
+  ChevronEndIcon,
+  ClockIcon,
   EyeOffIcon,
+  HeadphonesIcon,
   MegaphoneIcon,
   MicIcon,
+  PlayIcon,
   SpotifyIcon,
   XBrandIcon,
 } from '@/components/icons';
 import { Badge, Button, IconButton, InlineError, Spinner, cx, errorMessage } from '@/components/ui';
-import { AudioPlayer } from './AudioPlayer';
 import { MediaCarousel, MediaGrid } from './Media';
 import { ExpandableText, ExternalButton, MediaImage, RelativeTime } from './parts';
 
@@ -132,37 +136,71 @@ function CardFrame({
 
 // ---------- podcast ----------
 
+type Platform = 'spotify' | 'apple';
+
+/**
+ * No in-app audio (owner decision): every listen happens on Spotify / Apple so it counts in their creator
+ * stats. "Listen" opens the only available platform directly, the remembered one, or a chooser sheet.
+ */
 function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
   const { t, f } = useI18n();
+  const pref = useListenPref();
+  const [choosing, setChoosing] = useState(false);
   const cover = item.media.find((m) => m.kind === 'image')?.url ?? item.media[0]?.posterUrl ?? null;
   const n = item.podcast?.episodeNumber ?? null;
   const duration = item.podcast?.durationSec ?? null;
-  const title = item.title ?? item.text ?? '';
-  const episode = useMemo<Episode | null>(
-    () =>
-      item.links.audio
-        ? {
-            id: item.id,
-            src: item.links.audio,
-            title,
-            artist: t.app.name,
-            artworkUrl: cover,
-            durationSec: duration,
-          }
-        : null,
-    [item.id, item.links.audio, title, t.app.name, cover, duration],
+  const title = episodeTitle(item.title ?? item.text ?? '', n);
+  const links: Array<{ platform: Platform; url: string }> = [];
+  if (item.links.spotify) links.push({ platform: 'spotify', url: item.links.spotify });
+  if (item.links.apple) links.push({ platform: 'apple', url: item.links.apple });
+
+  const listen = () => {
+    const only = links.length === 1 ? links[0] : undefined;
+    const preferred = links.find((l) => l.platform === pref);
+    const direct = only ?? preferred;
+    if (direct) openExternal(direct.url);
+    else if (links.length > 1) setChoosing(true);
+  };
+  const canListen = links.length > 0;
+
+  const coverEl = (
+    <div className="relative size-24 shrink-0 overflow-hidden rounded-2xl bg-accent shadow-card">
+      {cover ? (
+        <MediaImage
+          src={cover}
+          alt={t.news.cover}
+          className="size-full object-cover"
+          fallback={<img src="/brand/logo-320.png" alt="" className="size-full object-cover" />}
+        />
+      ) : (
+        <img src="/brand/logo-320.png" alt="" className="size-full object-cover" />
+      )}
+      {canListen && (
+        <span className="absolute inset-0 flex items-center justify-center" aria-hidden="true">
+          <span className="flex size-9 items-center justify-center rounded-full bg-media-scrim text-on-media">
+            <PlayIcon size={16} />
+          </span>
+        </span>
+      )}
+    </div>
   );
+
   return (
     <CardFrame item={item} highlighted={highlighted}>
       <CardHeader item={item} isAdmin={isAdmin} />
       <div className="flex gap-3">
-        <div className="relative size-24 shrink-0 overflow-hidden rounded-2xl bg-accent shadow-card">
-          {cover ? (
-            <MediaImage src={cover} alt={t.news.cover} className="size-full object-cover" />
-          ) : (
-            <img src="/brand/logo-320.png" alt="" className="size-full object-cover" />
-          )}
-        </div>
+        {canListen ? (
+          <button
+            type="button"
+            onClick={listen}
+            aria-label={`${t.listen.listen}: ${title}`}
+            className="rounded-2xl"
+          >
+            {coverEl}
+          </button>
+        ) : (
+          coverEl
+        )}
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           {n !== null && (
             <Badge tone="accent" className="self-start">
@@ -170,7 +208,13 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
             </Badge>
           )}
           <h2 dir="auto" className="name-start line-clamp-3 text-base leading-snug font-bold text-ink">
-            {title}
+            {canListen ? (
+              <button type="button" onClick={listen} className="text-start hover:underline">
+                {title}
+              </button>
+            ) : (
+              title
+            )}
           </h2>
           <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
             <time dateTime={item.publishedAt}>{f.date(item.publishedAt)}</time>
@@ -186,30 +230,95 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
         </div>
       </div>
       {item.text && item.title && <ExpandableText text={item.text} platform="none" lines={3} />}
-      {episode && <AudioPlayer episode={episode} />}
-      {(item.links.spotify || item.links.apple) && (
-        <div className="grid grid-cols-2 gap-2">
-          {item.links.spotify && (
-            <ExternalButton
-              href={item.links.spotify}
-              icon={<SpotifyIcon size={18} />}
-              className={item.links.apple ? undefined : 'col-span-2'}
-            >
-              {t.socials.spotify}
-            </ExternalButton>
-          )}
-          {item.links.apple && (
-            <ExternalButton
-              href={item.links.apple}
-              icon={<ApplePodcastsIcon size={18} />}
-              className={item.links.spotify ? undefined : 'col-span-2'}
-            >
-              {t.socials.apple}
-            </ExternalButton>
-          )}
-        </div>
+      {canListen ? (
+        <>
+          <Button block onClick={listen} data-testid="listen-button">
+            <HeadphonesIcon size={20} />
+            {t.listen.listen}
+          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            {links.map((l) => (
+              <ExternalButton
+                key={l.platform}
+                href={l.url}
+                icon={l.platform === 'spotify' ? <SpotifyIcon size={18} /> : <ApplePodcastsIcon size={18} />}
+                className={links.length === 1 ? 'col-span-2' : undefined}
+              >
+                {l.platform === 'spotify' ? t.socials.spotify : t.socials.apple}
+              </ExternalButton>
+            ))}
+          </div>
+        </>
+      ) : (
+        <p
+          className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2.5 text-sm text-muted"
+          data-testid="listen-soon"
+        >
+          <ClockIcon size={18} className="shrink-0" />
+          {t.listen.soon}
+        </p>
       )}
+      <ListenSheet open={choosing} onClose={() => setChoosing(false)} links={links} title={title} />
     </CardFrame>
+  );
+}
+
+function ListenSheet({
+  open,
+  onClose,
+  links,
+  title,
+}: {
+  open: boolean;
+  onClose(): void;
+  links: ReadonlyArray<{ platform: Platform; url: string }>;
+  title: string;
+}) {
+  const { t } = useI18n();
+  const [remember, setRemember] = useState(false);
+  return (
+    <BottomSheet open={open} onClose={onClose} title={t.listen.whereTitle}>
+      <div className="flex flex-col gap-3" data-testid="listen-sheet">
+        <p dir="auto" className="line-clamp-2 text-sm font-semibold text-ink">
+          {title}
+        </p>
+        <p className="-mt-2 text-xs text-muted">{t.listen.whereBody}</p>
+        {links.map((l) => (
+          <a
+            key={l.platform}
+            href={l.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-platform={l.platform}
+            onClick={(e) => {
+              e.preventDefault();
+              if (remember) setListenPref(l.platform);
+              openExternal(l.url);
+              onClose();
+            }}
+            className="flex min-h-16 items-center gap-3 rounded-2xl border border-line bg-surface-2 px-4 text-base font-bold text-ink hover:bg-surface-3"
+          >
+            <span className="flex size-10 items-center justify-center rounded-full bg-primary text-on-primary">
+              {l.platform === 'spotify' ? <SpotifyIcon size={22} /> : <ApplePodcastsIcon size={22} />}
+            </span>
+            <span className="flex-1">{l.platform === 'spotify' ? t.socials.spotify : t.socials.apple}</span>
+            <ChevronEndIcon className="text-muted" />
+          </a>
+        ))}
+        <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+            className="size-5 accent-[var(--primary)]"
+          />
+          <span className="flex flex-col">
+            <span className="font-medium">{t.listen.remember}</span>
+            <span className="text-xs text-muted">{t.listen.rememberHint}</span>
+          </span>
+        </label>
+      </div>
+    </BottomSheet>
   );
 }
 
@@ -254,9 +363,12 @@ function XCard({ item, isAdmin, highlighted }: CardProps) {
 function AdminUpdateCard({ item, isAdmin, highlighted }: CardProps) {
   const { t } = useI18n();
   const links: Array<{ href: string; label: string; icon: ReactNode }> = [];
-  if (item.links.spotify) links.push({ href: item.links.spotify, label: t.socials.spotify, icon: <SpotifyIcon size={18} /> });
-  if (item.links.apple) links.push({ href: item.links.apple, label: t.socials.apple, icon: <ApplePodcastsIcon size={18} /> });
-  if (item.links.instagram) links.push({ href: item.links.instagram, label: t.socials.instagram, icon: <CameraIcon size={18} /> });
+  if (item.links.spotify)
+    links.push({ href: item.links.spotify, label: t.socials.spotify, icon: <SpotifyIcon size={18} /> });
+  if (item.links.apple)
+    links.push({ href: item.links.apple, label: t.socials.apple, icon: <ApplePodcastsIcon size={18} /> });
+  if (item.links.instagram)
+    links.push({ href: item.links.instagram, label: t.socials.instagram, icon: <CameraIcon size={18} /> });
   if (item.links.x) links.push({ href: item.links.x, label: t.socials.x, icon: <XBrandIcon size={16} /> });
   return (
     <CardFrame item={item} highlighted={highlighted} className="border-primary/40 bg-primary-soft">
@@ -266,7 +378,9 @@ function AdminUpdateCard({ item, isAdmin, highlighted }: CardProps) {
           <MegaphoneIcon size={20} />
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="text-xs font-bold tracking-wide text-primary uppercase">{t.news.announcement}</span>
+          <span className="text-xs font-bold tracking-wide text-primary uppercase">
+            {t.news.announcement}
+          </span>
           {item.title && (
             <h2 dir="auto" className="name-start text-base font-bold text-ink">
               {item.title}
@@ -295,7 +409,15 @@ interface CardProps {
 }
 
 /** One card component per source. Stories never reach the feed (they live in the profile header). */
-export function NewsCard({ item, isAdmin, highlighted = false }: { item: NewsItem; isAdmin: boolean; highlighted?: boolean }) {
+export function NewsCard({
+  item,
+  isAdmin,
+  highlighted = false,
+}: {
+  item: NewsItem;
+  isAdmin: boolean;
+  highlighted?: boolean;
+}) {
   const props = { item, isAdmin, highlighted };
   switch (item.source) {
     case 'podcast':
@@ -332,4 +454,3 @@ export function NewsCardSkeleton() {
     </div>
   );
 }
-

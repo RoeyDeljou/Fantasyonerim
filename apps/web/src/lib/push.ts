@@ -36,12 +36,29 @@ export function pushSupported(): boolean {
   );
 }
 
-/** Synchronous part of the state (everything except "is there a subscription"). */
-function baseState(): Exclude<PushState, 'enabled' | 'loading'> | 'maybe' {
+/**
+ * Notification permission from both APIs. They can disagree (older Safari, headless Chromium): "granted" from
+ * either wins, then "denied", else "default".
+ */
+async function permission(): Promise<NotificationPermission> {
+  const legacy = Notification.permission;
+  let modern: PermissionState | null = null;
+  try {
+    modern = (await navigator.permissions.query({ name: 'notifications' })).state;
+  } catch {
+    // Permissions API missing or doesn't know "notifications"
+  }
+  if (legacy === 'granted' || modern === 'granted') return 'granted';
+  if (legacy === 'denied' || modern === 'denied') return 'denied';
+  return 'default';
+}
+
+/** Everything except "is there a subscription". */
+async function baseState(): Promise<Exclude<PushState, 'enabled' | 'loading'> | 'maybe'> {
   if (typeof window === 'undefined') return 'unsupported';
   if (isIos() && !isStandalone()) return 'needs-install';
   if (!pushSupported()) return 'unsupported';
-  if (Notification.permission === 'denied') return 'denied';
+  if ((await permission()) === 'denied') return 'denied';
   return 'maybe';
 }
 
@@ -68,9 +85,9 @@ async function currentSubscription(): Promise<PushSubscription | null> {
 }
 
 export async function readPushState(): Promise<PushState> {
-  const base = baseState();
+  const base = await baseState();
   if (base !== 'maybe') return base;
-  if (Notification.permission !== 'granted') return 'disabled';
+  if ((await permission()) !== 'granted') return 'disabled';
   try {
     const sub = await currentSubscription();
     return sub && readPref(OPT_OUT_KEY) !== '1' ? 'enabled' : 'disabled';
@@ -109,11 +126,11 @@ async function subscribeAndSave(): Promise<void> {
 
 /** Ask for permission (must run from a tap), subscribe and register with the API. */
 export async function enablePush(): Promise<{ state: PushState; error?: PushError }> {
-  const base = baseState();
+  const base = await baseState();
   if (base !== 'maybe') return { state: base };
-  const permission = await Notification.requestPermission();
-  if (permission === 'denied') return { state: 'denied' };
-  if (permission !== 'granted') return { state: 'disabled', error: 'dismissed' };
+  const asked = (await permission()) === 'granted' ? 'granted' : await Notification.requestPermission();
+  if (asked === 'denied') return { state: 'denied' };
+  if (asked !== 'granted') return { state: 'disabled', error: 'dismissed' };
   try {
     await subscribeAndSave();
     writePref(OPT_OUT_KEY, '0');
@@ -145,7 +162,7 @@ export async function disablePush(): Promise<PushState> {
  * and it re-binds the endpoint to whoever is signed in now.
  */
 export async function resyncPush(): Promise<void> {
-  if (baseState() !== 'maybe' || Notification.permission !== 'granted') return;
+  if ((await baseState()) !== 'maybe' || (await permission()) !== 'granted') return;
   if (readPref(OPT_OUT_KEY) === '1') return;
   try {
     await subscribeAndSave();

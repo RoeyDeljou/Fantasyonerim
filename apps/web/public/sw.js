@@ -1,6 +1,6 @@
 /* Fantasyonerim service worker — offline app shell + push notifications.
  * API calls (cross-origin, NEXT_PUBLIC_API_URL) are never intercepted or cached. */
-const VERSION = 'fant-v1';
+const VERSION = 'fant-v2';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const SHELL_URLS = [
@@ -74,46 +74,93 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(networkFirst(request));
 });
 
-// ---------- push (Phase 2 sends these) ----------
+// ---------- push ----------
+// Payload shape = PushPayloadSchema in packages/shared/src/news.ts: { title, body, url, tag, icon, image }.
+// Parsed defensively: a malformed push still shows *something* (browsers penalise silent pushes).
+
+const DEFAULT_ICON = '/icons/icon-192.png';
+const BADGE = '/icons/favicon-32.png';
+
+function str(v, max) {
+  return typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null;
+}
+
+/** Only same-origin, app-relative targets (e.g. "/news/?item=abc"); anything else opens News. */
+function safeUrl(v) {
+  const s = str(v, 500);
+  if (!s || !s.startsWith('/') || s.startsWith('//')) return '/news/';
+  return s;
+}
+
+function httpsUrl(v) {
+  const s = str(v, 2000);
+  if (!s) return undefined;
+  try {
+    const u = new URL(s, self.location.origin);
+    return u.protocol === 'https:' || u.origin === self.location.origin ? u.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parsePayload(event) {
+  if (!event.data) return {};
+  try {
+    const json = event.data.json();
+    return json && typeof json === 'object' ? json : {};
+  } catch {
+    return { body: event.data.text() };
+  }
+}
 
 self.addEventListener('push', (event) => {
-  let data = {};
-  try {
-    data = event.data ? event.data.json() : {};
-  } catch {
-    data = { body: event.data ? event.data.text() : '' };
+  const data = parsePayload(event);
+  const title = str(data.title, 120) || 'Fantasyonerim · פנטזיונרים';
+  const body = str(data.body, 400) || '';
+  const tag = str(data.tag, 100);
+  const text = title + ' ' + body;
+  const options = {
+    body,
+    icon: httpsUrl(data.icon) || DEFAULT_ICON,
+    badge: BADGE,
+    // dir "auto" lets each notification follow its own text; lang is a hint for the TTS / font fallback.
+    dir: 'auto',
+    lang: /[֐-׿]/.test(text) ? 'he' : 'en',
+    data: { url: safeUrl(data.url) },
+  };
+  const image = httpsUrl(data.image);
+  if (image) options.image = image;
+  if (tag) {
+    options.tag = tag;
+    // A new deadline reminder replaces the previous one but must still alert.
+    options.renotify = tag.startsWith('deadline');
   }
-  const title = data.title || 'Fantasyonerim';
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body: data.body || '',
-      icon: data.icon || '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
-      image: data.image,
-      tag: data.tag,
-      dir: data.dir || 'auto',
-      lang: data.lang || 'he',
-      data: { url: data.url || '/' },
-    }),
-  );
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = new URL(
-    (event.notification.data && event.notification.data.url) || '/',
-    self.location.origin,
-  );
+  const target = new URL(safeUrl(event.notification.data && event.notification.data.url), self.location.origin);
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        const url = new URL(client.url);
-        if (url.origin === target.origin) {
-          if ('navigate' in client && url.href !== target.href) client.navigate(target.href);
-          return client.focus();
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clients) => {
+      const same = clients.filter((c) => new URL(c.url).origin === target.origin);
+      const client = same.find((c) => c.focused) || same[0];
+      if (client) {
+        let c = client;
+        if ('navigate' in client && client.url !== target.href) {
+          try {
+            c = (await client.navigate(target.href)) || client;
+          } catch {
+            // navigate() rejects for clients this worker doesn't control — open a fresh window instead
+            return self.clients.openWindow(target.href);
+          }
         }
+        return c.focus();
       }
       return self.clients.openWindow(target.href);
     }),
   );
 });
+
+// `pushsubscriptionchange` is deliberately not handled here: the worker has no bearer token. The app re-syncs
+// the subscription on every start (lib/push.ts → resyncPush), which re-POSTs the new endpoint.

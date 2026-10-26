@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import type { ReactNode } from 'react';
 import { useI18n } from '@/i18n';
 import { linkify } from '@/lib/newsFormat';
+import { openExternal } from '@/lib/external';
 import type { LinkPlatform } from '@/lib/newsFormat';
 import { cx } from '@/components/ui';
 
@@ -78,6 +79,10 @@ export function LinkifiedText({ text, platform }: { text: string; platform: Link
                 href={tok.href}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openExternal(tok.href);
+                }}
                 className="font-medium text-primary underline-offset-2 hover:underline"
               >
                 <bdi dir={tok.kind === 'hashtag' ? 'auto' : 'ltr'}>
@@ -124,7 +129,7 @@ export function ExpandableText({
     <div className={className}>
       <div
         ref={ref}
-        className={cx('flex flex-col gap-2 text-[15px] leading-relaxed text-ink', !expanded && clamp)}
+        className={cx('space-y-2 text-[15px] leading-relaxed text-ink', !expanded && clamp)}
       >
         <LinkifiedText text={text} platform={platform} />
       </div>
@@ -154,7 +159,7 @@ export function ExternalButton({
   href: string;
   icon: ReactNode;
   children: ReactNode;
-  tone?: 'soft' | 'outline';
+  tone?: 'soft' | 'outline' | 'primary';
   className?: string | undefined;
 }) {
   return (
@@ -162,11 +167,15 @@ export function ExternalButton({
       href={href}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={(e) => {
+        e.preventDefault();
+        openExternal(href);
+      }}
       className={cx(
         'inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold transition-colors',
-        tone === 'soft'
-          ? 'bg-primary-soft text-on-primary-soft hover:bg-surface-3'
-          : 'border border-line text-ink hover:bg-surface-2',
+        tone === 'soft' && 'bg-primary-soft text-on-primary-soft hover:bg-surface-3',
+        tone === 'outline' && 'border border-line text-ink hover:bg-surface-2',
+        tone === 'primary' && 'bg-primary text-on-primary hover:opacity-90',
         className,
       )}
     >
@@ -184,15 +193,17 @@ export function MediaImage({
   alt,
   className,
   loading = 'lazy',
+  fallback,
 }: {
   src: string;
   alt: string;
   className?: string;
   loading?: 'lazy' | 'eager';
+  fallback?: ReactNode;
 }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
-  if (failed) return <div aria-hidden="true" className={cx('bg-surface-2', className)} />;
+  if (failed) return fallback ?? <div aria-hidden="true" className={cx('bg-surface-2', className)} />;
   return (
     <img
       src={src}

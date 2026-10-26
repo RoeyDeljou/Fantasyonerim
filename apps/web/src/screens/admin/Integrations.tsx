@@ -146,7 +146,8 @@ function statusOf(s: IntegrationStatus): Status {
   if (!s.configured) return 'needsSetup';
   const failedLast =
     s.lastError !== null &&
-    (s.lastSuccessAt === null || (s.lastRunAt !== null && Date.parse(s.lastRunAt) > Date.parse(s.lastSuccessAt)));
+    (s.lastSuccessAt === null ||
+      (s.lastRunAt !== null && Date.parse(s.lastRunAt) > Date.parse(s.lastSuccessAt)));
   return failedLast ? 'error' : 'active';
 }
 
@@ -305,12 +306,7 @@ function IntegrationCard({ status: s }: { status: IntegrationStatus }) {
           </span>
         )}
         {hasForm && (
-          <Button
-            variant="ghost"
-            className="ms-auto"
-            aria-expanded={open}
-            onClick={() => setOpen((o) => !o)}
-          >
+          <Button variant="ghost" className="ms-auto" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
             {it.settingsToggle}
             <ChevronDownIcon size={18} className={cx('transition-transform', open && 'rotate-180')} />
           </Button>
@@ -531,7 +527,11 @@ function InstagramConnect({ status: s }: { status: IntegrationStatus }) {
         </p>
       )}
       {!connected && <p className="text-xs text-muted">{it.igConnectHelp}</p>}
-      <Button onClick={() => void connect()} disabled={starting} variant={connected ? 'secondary' : 'primary'}>
+      <Button
+        onClick={() => void connect()}
+        disabled={starting}
+        variant={connected ? 'secondary' : 'primary'}
+      >
         {starting ? <Spinner /> : <CameraIcon size={18} />}
         {connected ? it.igReconnect : it.igConnect}
       </Button>
@@ -594,7 +594,13 @@ function AdminPushCard() {
           </span>
         </SectionTitle>
         <p className="-mt-2 text-xs text-muted">{it.pushNote}</p>
-        <TextField label={it.pushTitleField} value={title} maxLength={80} dir="auto" onChange={(e) => setTitle(e.target.value)} />
+        <TextField
+          label={it.pushTitleField}
+          value={title}
+          maxLength={80}
+          dir="auto"
+          onChange={(e) => setTitle(e.target.value)}
+        />
         <TextArea label={it.pushBody} value={body} maxLength={300} onChange={setBody} />
         <TextField
           label={it.pushUrl}
@@ -606,7 +612,11 @@ function AdminPushCard() {
         {error && <InlineError>{error}</InlineError>}
         {push.isError && <InlineError>{apiText(t, push.error)}</InlineError>}
         {push.data && (
-          <p role="status" className="flex items-center gap-1 text-sm font-semibold text-success" data-testid="push-result">
+          <p
+            role="status"
+            className="flex items-center gap-1 text-sm font-semibold text-success"
+            data-testid="push-result"
+          >
             <CheckIcon size={16} />
             {fmt(it.pushResult, { delivered: push.data.delivered, recipients: push.data.recipients })}
           </p>
@@ -718,7 +728,13 @@ function ManualPostCard() {
           <InfoIcon size={14} />
           {it.manualNote}
         </p>
-        <TextField label={it.manualTitleField} value={title} maxLength={120} dir="auto" onChange={(e) => setTitle(e.target.value)} />
+        <TextField
+          label={it.manualTitleField}
+          value={title}
+          maxLength={120}
+          dir="auto"
+          onChange={(e) => setTitle(e.target.value)}
+        />
         <TextArea label={it.manualText} value={text} maxLength={2000} onChange={setText} />
         <TextField
           label={`${it.manualLink} (${t.common.optional})`}
