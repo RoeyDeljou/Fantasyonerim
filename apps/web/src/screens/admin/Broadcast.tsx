@@ -612,28 +612,30 @@ function ResultsCard({ result, onNew }: { result: BroadcastResult; onNew(): void
   const all = ok === result.results.length;
   const heading = all ? b.resultsOk : ok > 0 ? b.resultsPartial : b.resultsFailed;
   return (
-    <Card className="flex flex-col gap-3">
-      <div className="flex items-center gap-3" role="status" data-testid="broadcast-results">
-        <span
-          className={cx(
-            'flex size-10 shrink-0 items-center justify-center rounded-full',
-            all
-              ? 'bg-success-soft text-success'
-              : ok > 0
-                ? 'bg-warning-soft text-warning'
-                : 'bg-live-soft text-live',
-          )}
-        >
-          {all ? <CheckIcon size={22} /> : <InfoIcon size={22} />}
-        </span>
-        <h2 className="text-lg font-extrabold text-ink">{heading}</h2>
-      </div>
-      <ResultList results={result.results} />
-      <Button block className="min-h-12 text-lg" onClick={onNew} data-testid="broadcast-new">
-        <BoltIcon size={20} />
-        {b.newUpdate}
-      </Button>
-    </Card>
+    <div data-testid="broadcast-results">
+      <Card className="flex flex-col gap-3">
+        <div className="flex items-center gap-3" role="status">
+          <span
+            className={cx(
+              'flex size-10 shrink-0 items-center justify-center rounded-full',
+              all
+                ? 'bg-success-soft text-success'
+                : ok > 0
+                  ? 'bg-warning-soft text-warning'
+                  : 'bg-live-soft text-live',
+            )}
+          >
+            {all ? <CheckIcon size={22} /> : <InfoIcon size={22} />}
+          </span>
+          <h2 className="text-lg font-extrabold text-ink">{heading}</h2>
+        </div>
+        <ResultList results={result.results} />
+        <Button block className="min-h-12 text-lg" onClick={onNew} data-testid="broadcast-new">
+          <BoltIcon size={20} />
+          {b.newUpdate}
+        </Button>
+      </Card>
+    </div>
   );
 }
 

@@ -802,6 +802,240 @@ async function journeys(browser) {
   await modCtx.close();
   await fan2Ctx.close();
 
+  // ---------- Phase 4: live updates (broadcast), admin password, terms ----------
+  const BROADCAST_TEXT = 'עדכון חי e2e — סלאח כובש!';
+  const target = (p, tg) => p.locator(`[data-testid=broadcast-target][data-target=${tg}]`);
+
+  await step('admin home leads with the live-update card; it opens the composer', async () => {
+    await admin.goto(`${WEB}/admin/`);
+    const card = admin.getByTestId('live-update-card');
+    await card.waitFor();
+    const league = admin.getByLabel('League ID של הליגה הקלאסית');
+    await league.waitFor();
+    const cardBox = await card.boundingBox();
+    const leagueBox = await league.boundingBox();
+    assert(cardBox && leagueBox && cardBox.y < leagueBox.y, 'the live-update card must come before settings');
+    await card.click();
+    await admin.waitForURL('**/admin/?view=broadcast');
+    await admin.getByRole('heading', { name: 'עדכון חי' }).waitFor();
+    await noHorizontalScroll(admin, 'broadcast composer');
+  });
+
+  await step('composer: X disabled with the paid note; a template chip inserts editable text', async () => {
+    const x = target(admin, 'x');
+    await x.waitFor();
+    assert((await x.getAttribute('data-available')) === 'false', 'X must be unavailable in e2e');
+    assert(await x.getByRole('switch').isDisabled(), 'X switch must be disabled');
+    await x
+      .getByTestId('broadcast-x-paid')
+      .getByText("פיצ'ר בתשלום — צרו קשר עם היוצר אם תרצו להפעיל אותו")
+      .waitFor();
+    for (const tg of ['news', 'push']) {
+      const on = await target(admin, tg).getByRole('switch').getAttribute('aria-checked');
+      assert(on === 'true', `${tg} is on by default`);
+    }
+    assert((await admin.getByTestId('x-counter').count()) === 0, 'no X counter while X is off');
+    await admin.getByRole('button', { name: '⚽ גול!' }).click();
+    const text = admin.getByTestId('broadcast-text');
+    assert(
+      (await text.inputValue()).startsWith('⚽ גול! [שחקן]'),
+      `template text: ${await text.inputValue()}`,
+    );
+    const selected = await text.evaluate((el) => el.value.slice(el.selectionStart, el.selectionEnd));
+    assert(selected === '[שחקן]', `the first placeholder is selected, got "${selected}"`);
+    await admin.keyboard.type('סלאח');
+    assert((await text.inputValue()).startsWith('⚽ גול! סלאח כובש'), 'typing replaces the placeholder');
+  });
+
+  await step('composer: the X counter is shown and enforced only when X is selected', async () => {
+    // X needs the paid API keys, so e2e simulates "X connected" by answering the targets call on the client.
+    await admin.route(`${API}/v1/admin/broadcast/targets`, (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'access-control-allow-origin': WEB },
+        body: JSON.stringify({
+          targets: [
+            { target: 'news', available: true, reason: null, paidFeature: false },
+            { target: 'push', available: true, reason: null, paidFeature: false },
+            { target: 'x', available: true, reason: null, paidFeature: true },
+          ],
+        }),
+      }),
+    );
+    await admin.reload();
+    const x = target(admin, 'x');
+    await admin.locator('[data-testid=broadcast-target][data-target=x][data-available=true]').waitFor();
+    assert((await admin.getByTestId('x-counter').count()) === 0, 'X available but off → no counter');
+    await x.getByRole('switch').click();
+    const counter = admin.getByTestId('x-counter');
+    const text = admin.getByTestId('broadcast-text');
+    await text.fill('⚽ https://example.com/a/really/long/link/that/x/shortens/to/23');
+    await counter.getByText('26/280').waitFor(); // emoji 2 + space 1 + any URL 23
+    await text.fill('א'.repeat(281));
+    await counter.getByText('281/280').waitFor();
+    assert((await counter.getAttribute('data-over')) === 'true', 'counter turns red over 280');
+    await admin.getByTestId('broadcast-review').click();
+    await admin.getByText('ארוך מדי ל־X').first().waitFor();
+    assert((await admin.locator('dialog[open]').count()) === 0, 'no confirm step while too long for X');
+    await x.getByRole('switch').click(); // X off → the same text is fine for News / push
+    assert((await admin.getByTestId('x-counter').count()) === 0, 'counter hidden once X is off');
+    await admin.getByTestId('broadcast-review').click();
+    await admin.locator('dialog[open] [data-testid=broadcast-confirm]').waitFor();
+    await admin.keyboard.press('Escape');
+    await admin.locator('dialog[open]').waitFor({ state: 'detached' });
+    await admin.unroute(`${API}/v1/admin/broadcast/targets`);
+  });
+
+  let broadcastNewsUrl = '';
+  await step(
+    'admin sends a live update (News + Push, with a photo) and sees per-target results',
+    async () => {
+      await admin.goto(`${WEB}/admin/?view=broadcast`);
+      await target(admin, 'news').waitFor();
+      await admin.getByTestId('broadcast-text').fill(BROADCAST_TEXT);
+      await admin.getByLabel('כותרת (לא חובה)').fill('גול e2e');
+      await admin.getByTestId('broadcast-file').setInputFiles({
+        name: 'goal.png',
+        mimeType: 'image/png',
+        buffer: makePng(320, 200),
+      });
+      await admin.waitForFunction(
+        (api) =>
+          document.querySelector('[data-testid=broadcast-photo] img')?.getAttribute('src')?.startsWith(api),
+        API,
+      );
+      await admin.getByTestId('broadcast-review').click();
+      const confirm = admin.locator('dialog[open] [data-testid=broadcast-confirm]');
+      await confirm.waitFor();
+      await confirm.getByText(BROADCAST_TEXT).waitFor();
+      await confirm.getByText('פיד החדשות').waitFor();
+      await confirm.getByText('התראה', { exact: true }).waitFor();
+      assert((await confirm.getByText('X', { exact: true }).count()) === 0, 'X is not a destination');
+      await admin.getByTestId('broadcast-send').click();
+      const results = admin.getByTestId('broadcast-results');
+      await results.waitFor();
+      const news = results.locator('[data-testid=broadcast-result][data-target=news]');
+      assert((await news.getAttribute('data-status')) === 'ok', 'news target ok');
+      const push = results.locator('[data-testid=broadcast-result][data-target=push]');
+      const pushStatus = await push.getAttribute('data-status');
+      assert(pushStatus === 'ok' || pushStatus === 'skipped', `push target: ${pushStatus}`);
+      assert((await push.locator('p').count()) === 1, 'push result shows its detail');
+      assert(
+        (await results.locator('[data-testid=broadcast-result][data-target=x]').count()) === 0,
+        'no X result',
+      );
+      const saved = await admin.evaluate(() =>
+        globalThis.localStorage.getItem('fant.admin.broadcastTargets'),
+      );
+      assert(saved === '["news","push"]', `remembered targets: ${saved}`);
+      await noHorizontalScroll(admin, 'broadcast results');
+      await news.getByTestId('broadcast-result-link').click();
+      await admin.waitForURL('**/news/?item=*');
+      broadcastNewsUrl = admin.url();
+      await admin.locator('[data-testid=news-card]', { hasText: BROADCAST_TEXT }).first().waitFor();
+    },
+  );
+
+  await step('the live update is in the fan’s News feed; history lists it; the composer resets', async () => {
+    await page.goto(`${WEB}/news/`);
+    const card = page.locator('[data-testid=news-card]', { hasText: BROADCAST_TEXT });
+    await card.waitFor();
+    await card.getByText('גול e2e').waitFor();
+    await admin.goto(`${WEB}/admin/?view=broadcast`);
+    const item = admin.locator('[data-testid=broadcast-history-item]', { hasText: BROADCAST_TEXT });
+    await item.waitFor();
+    await item.getByText('גול e2e').waitFor();
+    await item.locator('summary').click();
+    await item.locator('[data-testid=broadcast-result][data-target=news][data-status=ok]').waitFor();
+    assert((await admin.getByTestId('broadcast-text').inputValue()) === '', 'fresh composer');
+    // The next update starts from the remembered targets.
+    const on = await target(admin, 'push').getByRole('switch').getAttribute('aria-checked');
+    assert(on === 'true', 'push remembered');
+    assert(broadcastNewsUrl.includes('/news/?item='), 'news deep link');
+  });
+
+  const NEW_PASSWORD = 'e2e-new-admin-password';
+  await step('admin password: validation, wrong current password, then a successful change', async () => {
+    await admin.goto(`${WEB}/admin/?view=account`);
+    await admin.getByRole('heading', { name: 'שינוי סיסמה' }).waitFor();
+    const current = admin.getByLabel('הסיסמה הנוכחית');
+    const next = admin.getByLabel('סיסמה חדשה', { exact: true });
+    const confirm = admin.getByLabel('אימות הסיסמה החדשה');
+    await current.fill('not-the-password');
+    await next.fill('short');
+    await admin.getByTestId('password-submit').click();
+    await admin.getByText('הסיסמה החדשה צריכה לפחות 10 תווים').waitFor();
+    await next.fill(NEW_PASSWORD);
+    await confirm.fill(NEW_PASSWORD + 'x');
+    await admin.getByTestId('password-submit').click();
+    await admin.getByText('הסיסמאות לא תואמות').waitFor();
+    // Show-password toggle
+    assert((await next.getAttribute('type')) === 'password', 'hidden by default');
+    await admin.getByRole('button', { name: 'הצגת הסיסמה' }).nth(1).click();
+    assert((await next.getAttribute('type')) === 'text', 'shown after the toggle');
+    await confirm.fill(NEW_PASSWORD);
+    await admin.getByTestId('password-submit').click();
+    await admin.getByText('הסיסמה הנוכחית שגויה').waitFor();
+    assert(admin.url().endsWith('/admin/?view=account'), 'a wrong current password must not sign out');
+    await current.fill(ADMIN.password);
+    await admin.getByTestId('password-submit').click();
+    await admin.getByText('הסיסמה שונתה. המכשירים האחרים נותקו.').waitFor();
+    assert((await current.inputValue()) === '', 'form cleared');
+  });
+
+  await step('the new admin password signs in (the old one does not), then it is changed back', async () => {
+    const ctx = await newContext(browser);
+    const p2 = await ctx.newPage();
+    watch(p2, 'admin-2');
+    await p2.goto(`${WEB}/admin/login/`);
+    await p2.getByLabel('שם משתמש').fill(ADMIN.username);
+    await p2.getByLabel('סיסמה').fill(ADMIN.password);
+    await p2.getByRole('button', { name: 'כניסה' }).click();
+    await p2.getByText('שם משתמש או סיסמה שגויים').waitFor();
+    await p2.getByLabel('סיסמה').fill(NEW_PASSWORD);
+    await p2.getByRole('button', { name: 'כניסה' }).click();
+    await p2.waitForURL('**/admin/');
+    await p2.getByTestId('live-update-card').waitFor();
+    await ctx.close();
+    // Back to the original so the later journeys (and reruns) keep working. This device stayed signed in.
+    await admin.getByLabel('הסיסמה הנוכחית').fill(NEW_PASSWORD);
+    await admin.getByLabel('סיסמה חדשה', { exact: true }).fill(ADMIN.password);
+    await admin.getByLabel('אימות הסיסמה החדשה').fill(ADMIN.password);
+    await admin.getByTestId('password-submit').click();
+    await admin.getByText('הסיסמה שונתה. המכשירים האחרים נותקו.').waitFor();
+    await noHorizontalScroll(admin, 'admin account');
+  });
+
+  await step('/terms/ renders and is linked from Profile and onboarding', async () => {
+    await page.goto(`${WEB}/profile/`);
+    await page.getByTestId('profile-terms').click();
+    await page.waitForURL('**/terms/');
+    await page.getByRole('heading', { name: 'כללי הקהילה ופרטיות', level: 1 }).waitFor();
+    await page.getByText('ashalim.fantasy@gmail.com').waitFor();
+    await page.getByText('דיווח ואכיפה').waitFor();
+    await noHorizontalScroll(page, 'terms');
+    await page.getByRole('button', { name: 'חזרה' }).click();
+    await page.waitForURL('**/profile/');
+
+    const ctx = await newContext(browser);
+    const guest = await ctx.newPage();
+    watch(guest, 'guest');
+    await guest.goto(`${WEB}/onboarding/`);
+    await guest
+      .getByTestId('terms-line')
+      .getByRole('link', { name: 'כללי הקהילה ולמדיניות הפרטיות' })
+      .waitFor();
+    await guest.getByRole('button', { name: 'בואו נתחיל' }).click();
+    const line = guest.getByTestId('terms-line');
+    await line.waitFor();
+    await line.getByRole('link').click();
+    await guest.waitForURL('**/terms/');
+    await guest.getByRole('heading', { name: 'כללי הקהילה ופרטיות', level: 1 }).waitFor();
+    assert(guest.url().endsWith('/terms/'), 'a signed-out visitor stays on /terms/');
+    await ctx.close();
+  });
+
   await step('sign out, then recover the account with the recovery code', async () => {
     await page.goto(`${WEB}/profile/`);
     await page.getByRole('button', { name: 'התנתקות' }).click();
