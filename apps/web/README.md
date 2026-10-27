@@ -63,6 +63,27 @@ e2e/run.mjs         Playwright end-to-end suite
   (preview, reasons, notes, count) → remove / dismiss with confirm; user search (name / team / Team ID) with ban
   (reason required) / unban and post counts; hidden News items with "שחזור".
 
+## Live updates, admin account, terms, native readiness (Phase 4)
+
+- **Live update composer** (`/admin/?view=broadcast`, `screens/admin/Broadcast.tsx`): the admin home opens with a
+  big "עדכון חי" card, and admins get a quick entry at the top of Profile. Quick-template chips (goal, assist, red
+  card, lineups, deadline reminder with the next GW, new episode) insert editable text and select the first
+  `[placeholder]`; large textarea with a 1000-char counter plus an X-weighted counter (`lib/xLength.ts`: URL = 23,
+  emoji/CJK = 2 — approximate, the API decides) that is shown and enforced only while X is selected; optional
+  headline; optional photo (shared `components/PhotoUpload.tsx`, also used by the Community composer); News /
+  Push / X toggles from `GET /v1/admin/broadcast/targets` (unavailable = disabled with the reason; X shows the
+  paid-feature note); confirm sheet → per-target results (ok / skipped / error + detail; the News link opens in
+  the app, the X link via `openExternal`) → "new update" resets; the last targets are remembered on the device;
+  history of the last 50 (who / when / where / results).
+- **Account** (`/admin/?view=account`, `screens/admin/Account.tsx`): change the admin password (current / new /
+  confirm, ≥ 10 chars, show-password toggles). A 401 here means "wrong current password" — `api.ts` doesn't treat
+  it as a session end (`credentialCheck`). Other devices are signed out by the API.
+- **`/terms/`** (`screens/Terms.tsx`): community rules + privacy note (he/en, public), linked from onboarding
+  ("by continuing you agree…") and Profile.
+- **Native readiness**: `capacitor.config.json` (no Capacitor packages installed) and `docs/NATIVE.md`.
+  `lib/platform.ts` `isNativeShell()` switches off the service worker, web push and the install card inside the
+  shell; `lib/external.ts` has `openExternal()` and `navigateExternal()` (OAuth) seams.
+
 Detail views and sub-tabs live in query params (`/my-team/?view=live&gw=7`, `/table/?entry=123`,
 `/live/?view=captains`) because a static export has no dynamic route segments.
 
@@ -93,7 +114,14 @@ Detail views and sub-tabs live in query params (`/my-team/?view=live&gw=7`, `/ta
    comment and delete own comment → Profile "my posts" → a second fan reports the post (reason + note) → the admin
    removes it from the reports queue → the admin bans the second fan (reason required) and their composer, reply
    bar and like are blocked with the notice → unban and they can post again → the admin hides a News episode and
-   restores it from Admin → Community. Uploaded files go to a throwaway `MEDIA_DIR` that is deleted afterwards.
+   restores it from Admin → Community. Phase 4 adds: the admin home leads with the live-update card → X is
+   disabled with the paid note, News + Push on by default → a template chip inserts text with its first
+   placeholder selected → the X counter appears and blocks only while X is selected (X availability is simulated
+   on the client; the paid keys aren't available) → a live update with a photo goes to News + Push with
+   per-target results, opens in News, shows in the fan's feed and in the history; remembered targets → password
+   change: validation, wrong current password (stays signed in), success, the new password signs in and the old
+   one doesn't, then it is changed back → `/terms/` from Profile and from onboarding (signed out). Uploaded files
+   go to a throwaway `MEDIA_DIR` that is deleted afterwards.
 
 The content jobs are disabled in e2e (`JOBS_ENABLED=false`, no network): three episodes and one story are seeded
 into the throwaway database, and a throwaway VAPID pair is generated. Headless Chromium contexts are incognito,

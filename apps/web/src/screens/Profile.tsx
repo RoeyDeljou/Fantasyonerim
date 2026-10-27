@@ -105,6 +105,31 @@ function ProfileInner() {
         </div>
       </Card>
 
+      {user.role === 'admin' && (
+        <div className="flex flex-col gap-2">
+          <Link
+            href="/admin/?view=broadcast"
+            data-testid="profile-live-update"
+            className="flex min-h-16 items-center gap-3 rounded-2xl bg-primary px-4 py-2 text-on-primary shadow-card hover:opacity-95"
+          >
+            <BoltIcon />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="font-bold">{t.broadcast.title}</span>
+              <span className="text-xs opacity-90">{t.broadcast.profileEntryBody}</span>
+            </span>
+            <ChevronEndIcon />
+          </Link>
+          <Link
+            href="/admin/"
+            className="flex min-h-14 items-center gap-3 rounded-2xl border border-line bg-surface px-4 font-semibold text-ink shadow-card hover:bg-surface-2"
+          >
+            <ShieldIcon className="text-primary" />
+            <span className="flex-1">{t.profile.adminConsole}</span>
+            <ChevronEndIcon className="text-muted" />
+          </Link>
+        </div>
+      )}
+
       <MyPostsCard userId={user.id} />
 
       <Card className="flex flex-col gap-4">
@@ -152,31 +177,6 @@ function ProfileInner() {
       <NotificationsCard />
       <RecoveryCard />
       <InstallCard />
-
-      {user.role === 'admin' && (
-        <div className="flex flex-col gap-2">
-          <Link
-            href="/admin/?view=broadcast"
-            data-testid="profile-live-update"
-            className="flex min-h-16 items-center gap-3 rounded-2xl bg-primary px-4 py-2 text-on-primary shadow-card hover:opacity-95"
-          >
-            <BoltIcon />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="font-bold">{t.broadcast.title}</span>
-              <span className="text-xs opacity-90">{t.broadcast.profileEntryBody}</span>
-            </span>
-            <ChevronEndIcon />
-          </Link>
-          <Link
-            href="/admin/"
-            className="flex min-h-14 items-center gap-3 rounded-2xl border border-line bg-surface px-4 font-semibold text-ink shadow-card hover:bg-surface-2"
-          >
-            <ShieldIcon className="text-primary" />
-            <span className="flex-1">{t.profile.adminConsole}</span>
-            <ChevronEndIcon className="text-muted" />
-          </Link>
-        </div>
-      )}
 
       <Link
         href="/terms/"

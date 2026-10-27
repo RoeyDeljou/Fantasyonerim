@@ -608,8 +608,10 @@ function ResultList({ results, compact = false }: { results: BroadcastTargetResu
 function ResultsCard({ result, onNew }: { result: BroadcastResult; onNew(): void }) {
   const { t } = useI18n();
   const b = t.broadcast;
+  // "Skipped" (e.g. no push subscribers yet) is not a failure: the update went out wherever it could.
   const ok = result.results.filter((r) => r.status === 'ok').length;
-  const all = ok === result.results.length;
+  const failed = result.results.filter((r) => r.status === 'error').length;
+  const all = ok > 0 && failed === 0;
   const heading = all ? b.resultsOk : ok > 0 ? b.resultsPartial : b.resultsFailed;
   return (
     <div data-testid="broadcast-results">
