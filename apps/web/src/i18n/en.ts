@@ -816,7 +816,7 @@ export const en: Messages = {
       'Your posts, comments, likes and photos. Hidden photo metadata (like location and device details) is removed.',
     priv3: "If you turn on notifications — your browser's push subscription and the preferences you picked.",
     priv4: "We don't ask for an email, phone number or password, and we never sell data to anyone.",
-    priv5: 'Want your account or content deleted? Write to us and we will take care of it.',
+    priv5: 'Want your account gone? Profile → "Delete account": your profile, posts, comments, photos, likes and notifications are deleted right away and for good. You can also write to us.',
     contactTitle: 'Contact',
     contactBody: 'Questions, a suspension appeal or a deletion request:',
     agreeLine: 'By continuing you agree to the {link}',

@@ -72,6 +72,7 @@ export function TermsScreen() {
         <Section title={tm.modTitle}>
           <p>{tm.mod1}</p>
           <p>{tm.mod2}</p>
+          <p data-testid="terms-block">{tm.mod3}</p>
         </Section>
 
         <Section title={tm.privacyTitle}>
