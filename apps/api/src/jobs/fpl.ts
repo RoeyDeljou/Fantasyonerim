@@ -8,6 +8,7 @@ import { notify } from '../push/notify.js';
 import { getSettings } from '../settings.js';
 import { HOUR, MINUTE, type Job } from './types.js';
 import { purgeDeletedPostImages } from '../community/moderation.js';
+import { purgePendingMediaDeletes } from '../media/pending.js';
 
 /** A reminder that is due but more than this late (host was asleep) is dropped, not sent late. */
 export const REMINDER_MAX_LATENESS_MS = 30 * MINUTE;
@@ -147,8 +148,10 @@ export const cleanupJob: Job = {
     const uploads = await deleteUnusedUploads(app, now);
     // Safety net: images of deleted posts whose immediate purge failed (e.g. storage briefly down).
     const removedImages = await purgeDeletedPostImages(app.prisma, app.media);
+    // Files whose rows are already gone (deleted accounts) and whose first delete attempt failed.
+    const pending = await purgePendingMediaDeletes(app.prisma, app.media);
     return {
-      summary: `${hidden.count} stories hidden, ${deleted} media files deleted, ${uploads} unused uploads deleted, ${removedImages} deleted-post images purged`,
+      summary: `${hidden.count} stories hidden, ${deleted} media files deleted, ${uploads} unused uploads deleted, ${removedImages} deleted-post images purged, ${pending} pending files deleted`,
     };
   },
 };

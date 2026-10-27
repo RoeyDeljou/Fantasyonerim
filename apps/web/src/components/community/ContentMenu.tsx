@@ -65,9 +65,9 @@ export function ContentMenu({
         ? c.reportTitle
         : mode === 'block' && blockAuthor
           ? fmt(c.blockTitle, { name: blockAuthor.name })
-        : target.kind === 'post'
-          ? c.actionsTitle
-          : c.commentActionsTitle;
+          : target.kind === 'post'
+            ? c.actionsTitle
+            : c.commentActionsTitle;
 
   return (
     <>

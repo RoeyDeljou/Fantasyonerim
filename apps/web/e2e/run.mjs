@@ -856,9 +856,9 @@ async function journeys(browser) {
         headers: { 'access-control-allow-origin': WEB },
         body: JSON.stringify({
           targets: [
-            { target: 'news', available: true, reason: null, paidFeature: false },
-            { target: 'push', available: true, reason: null, paidFeature: false },
-            { target: 'x', available: true, reason: null, paidFeature: true },
+            { target: 'news', available: true, reason: null, reasonCode: null, paidFeature: false },
+            { target: 'push', available: true, reason: null, reasonCode: null, paidFeature: false },
+            { target: 'x', available: true, reason: null, reasonCode: null, paidFeature: true },
           ],
         }),
       }),
@@ -920,7 +920,16 @@ async function journeys(browser) {
       const push = results.locator('[data-testid=broadcast-result][data-target=push]');
       const pushStatus = await push.getAttribute('data-status');
       assert(pushStatus === 'ok' || pushStatus === 'skipped', `push target: ${pushStatus}`);
-      assert((await push.locator('p').count()) === 1, 'push result shows its detail');
+      // Outcomes are localized from the API's codes (the English `detail` is for logs).
+      await news
+        .getByTestId('broadcast-result-text')
+        .getByText('פורסם בפיד החדשות', { exact: true })
+        .waitFor();
+      const pushText = (await push.getByTestId('broadcast-result-text').textContent()) ?? '';
+      assert(
+        pushText === 'עוד אף אחד לא הפעיל התראות חיות' || /^נשלח ל־\d+ מתוך \d+ מכשירים$/.test(pushText),
+        `localized push outcome: "${pushText}"`,
+      );
       assert(
         (await results.locator('[data-testid=broadcast-result][data-target=x]').count()) === 0,
         'no X result',
@@ -1007,6 +1016,91 @@ async function journeys(browser) {
     await noHorizontalScroll(admin, 'admin account');
   });
 
+  await step('block: fan A blocks fan B → B’s post disappears for A only; unblock restores it', async () => {
+    const B_POST = 'חזרתי לפרסם e2e'; // fan2 ("E2E Second") posted it in Phase 3
+    await page.goto(`${WEB}/community/`);
+    const bCard = feedCard(page, B_POST);
+    await bCard.waitFor();
+    // Not offered on your own content.
+    const own = feedCard(page, 'צילום מסך של ההעברות e2e');
+    await own.getByTestId('content-menu').click();
+    assert(
+      (await page.locator('dialog[open] [data-testid=block-user]').count()) === 0,
+      'no block on own post',
+    );
+    await page.keyboard.press('Escape');
+    await page.locator('dialog[open]').waitFor({ state: 'detached' });
+    await bCard.getByTestId('content-menu').click();
+    await page.locator('dialog[open]').getByTestId('block-user').click();
+    const sheet = page.locator('dialog[open] [data-testid=block-sheet]');
+    await sheet.getByText('הם לא יקבלו הודעה על החסימה').waitFor();
+    await page.getByRole('dialog', { name: 'לחסום את E2E Second?' }).waitFor();
+    await sheet.getByTestId('block-confirm').click();
+    await page.getByText('חסמתם את E2E Second').waitFor();
+    await bCard.waitFor({ state: 'detached' });
+    await page.reload();
+    await feedCard(page, 'צילום מסך של ההעברות e2e').waitFor();
+    assert((await feedCard(page, B_POST).count()) === 0, 'blocked author stays hidden after reload');
+    // Others still see it.
+    await admin.goto(`${WEB}/community/`);
+    await feedCard(admin, B_POST).waitFor();
+    // Profile → Blocked users → unblock.
+    await page.goto(`${WEB}/profile/`);
+    const row = page.locator('[data-testid=blocked-user]', { hasText: 'E2E Second' });
+    await row.waitFor();
+    await noHorizontalScroll(page, 'profile blocked users');
+    await row.getByRole('button', { name: 'ביטול חסימה' }).click();
+    await page.getByTestId('blocked-empty').waitFor();
+    await page.goto(`${WEB}/community/`);
+    await feedCard(page, B_POST).waitFor();
+  });
+
+  await step(
+    'delete account: a fresh fan deletes it, the token dies, and the Team ID can register again',
+    async () => {
+      const ctx = await newContext(browser);
+      const fan = await ctx.newPage();
+      watch(fan, 'deleter');
+      const register = async (name) => {
+        await fan.goto(`${WEB}/onboarding/`);
+        await fan.getByRole('button', { name: 'בואו נתחיל' }).click();
+        await fan.getByLabel('איך לקרוא לכם?').fill(name);
+        await fan.getByLabel('Team ID של FPL').fill(DEMO.normal);
+        await fan.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
+        await fan.getByRole('button', { name: 'כן, זו הקבוצה שלי' }).click();
+        await fan.getByRole('button', { name: 'שמרתי, יאללה' }).click();
+        await fan.waitForURL('**/news/');
+      };
+      await register('E2E Leaver');
+      const token = await fan.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+      assert(token, 'signed in');
+      await fan.goto(`${WEB}/profile/`);
+      await fan.getByTestId('delete-account-open').click();
+      const sheet = fan.locator('dialog[open] [data-testid=delete-account-sheet]');
+      await sheet.getByText('קבוצת ה־FPL שלכם לא נפגעת', { exact: false }).waitFor();
+      const submit = sheet.getByTestId('delete-account-submit');
+      assert(await submit.isDisabled(), 'disabled until the word is typed');
+      await sheet.getByTestId('delete-account-confirm-input').fill('מחקקק');
+      assert(await submit.isDisabled(), 'a wrong word keeps it disabled');
+      await sheet.getByTestId('delete-account-confirm-input').fill('מחק');
+      await noHorizontalScroll(fan, 'delete account sheet');
+      await submit.click();
+      await fan.waitForURL('**/onboarding/');
+      await fan.getByText('החשבון נמחק. תודה שהייתם איתנו!').waitFor();
+      assert(
+        (await fan.evaluate(() => globalThis.localStorage.getItem('fant.token'))) === null,
+        'token cleared',
+      );
+      const me = await globalThis.fetch(`${API}/v1/me`, { headers: { authorization: `Bearer ${token}` } });
+      assert(me.status === 401, `the old token must be dead, got ${me.status}`);
+      // The same Team ID registers again as a brand-new account (no "already registered").
+      await register('E2E Returner');
+      await fan.goto(`${WEB}/profile/`);
+      await fan.getByText('E2E Returner').first().waitFor();
+      await ctx.close();
+    },
+  );
+
   await step('/terms/ renders and is linked from Profile and onboarding', async () => {
     await page.goto(`${WEB}/profile/`);
     await page.getByTestId('profile-terms').click();
@@ -1014,6 +1108,8 @@ async function journeys(browser) {
     await page.getByRole('heading', { name: 'כללי הקהילה ופרטיות', level: 1 }).waitFor();
     await page.getByText('ashalim.fantasy@gmail.com').waitFor();
     await page.getByText('דיווח ואכיפה').waitFor();
+    await page.getByTestId('terms-block').getByText('חסימת משתמש', { exact: false }).waitFor();
+    await page.getByText('פרופיל ← "מחיקת חשבון"', { exact: false }).waitFor();
     await noHorizontalScroll(page, 'terms');
     await page.getByRole('button', { name: 'חזרה' }).click();
     await page.waitForURL('**/profile/');

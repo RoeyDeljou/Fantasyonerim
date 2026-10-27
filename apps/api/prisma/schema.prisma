@@ -55,6 +55,8 @@ model User {
   likes             PostLike[]
   uploads           Upload[]
   reports           Report[]
+  blocking          UserBlock[]        @relation("blocker")
+  blockedBy         UserBlock[]        @relation("blocked")
 }
 
 model Session {
@@ -400,4 +402,27 @@ model Broadcast {
   upload Upload? @relation(fields: [uploadId], references: [id], onDelete: SetNull)
 
   @@index([createdAt(sort: Desc), id(sort: Desc)])
+}
+
+// ---------- Store compliance: blocking + account deletion ----------
+
+/// One-way, private block: the blocker no longer sees the blocked user's posts/comments or gets their notifications.
+model UserBlock {
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker User @relation("blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@id([blockerId, blockedId])
+  @@index([blockerId, createdAt(sort: Desc)])
+  @@index([blockedId])
+}
+
+/// MediaStore keys whose rows are already gone (e.g. a deleted account's photos). Recorded in the same transaction
+/// as the row deletes; removed once the file is deleted, so the hourly cleanup retries any that failed.
+model PendingMediaDelete {
+  key       String   @id
+  createdAt DateTime @default(now())
 }

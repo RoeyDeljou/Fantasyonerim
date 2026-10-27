@@ -816,7 +816,8 @@ export const en: Messages = {
       'Your posts, comments, likes and photos. Hidden photo metadata (like location and device details) is removed.',
     priv3: "If you turn on notifications — your browser's push subscription and the preferences you picked.",
     priv4: "We don't ask for an email, phone number or password, and we never sell data to anyone.",
-    priv5: 'Want your account gone? Profile → "Delete account": your profile, posts, comments, photos, likes and notifications are deleted right away and for good. You can also write to us.',
+    priv5:
+      'Want your account gone? Profile → "Delete account": your profile, posts, comments, photos, likes and notifications are deleted right away and for good. You can also write to us.',
     contactTitle: 'Contact',
     contactBody: 'Questions, a suspension appeal or a deletion request:',
     agreeLine: 'By continuing you agree to the {link}',
@@ -833,7 +834,8 @@ export const en: Messages = {
     item2: 'All your posts and comments, including photos',
     item3: 'Your likes, reports and blocks',
     item4: 'Notifications and every signed-in device',
-    untouched: 'Your FPL team itself is untouched — it stays on FPL as usual. You can sign up again later with the same Team ID.',
+    untouched:
+      'Your FPL team itself is untouched — it stays on FPL as usual. You can sign up again later with the same Team ID.',
     irreversible: "This can't be undone. Your recovery code stops working too.",
     typeLabel: 'To confirm, type "{word}"',
     word: 'DELETE',

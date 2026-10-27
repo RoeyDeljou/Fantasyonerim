@@ -805,7 +805,11 @@ export function useChangePassword() {
 // ---------- blocking (App Store 1.2) ----------
 
 export function useBlocks(enabled: boolean) {
-  return useQuery({ queryKey: qk.blocks, queryFn: ({ signal }) => api.community.blocks({ signal }), enabled });
+  return useQuery({
+    queryKey: qk.blocks,
+    queryFn: ({ signal }) => api.community.blocks({ signal }),
+    enabled,
+  });
 }
 
 /** Drops everything by `userId` from the cached feeds and threads right away, then refetches. */
@@ -831,7 +835,8 @@ function dropAuthor(qc: QC, userId: UserId) {
 export function useBlockUser() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ userId, blocked }: { userId: UserId; blocked: boolean }) => api.community.block(userId, blocked),
+    mutationFn: ({ userId, blocked }: { userId: UserId; blocked: boolean }) =>
+      api.community.block(userId, blocked),
     onError: (e) => trackBan(qc, e),
     onSuccess: (_v, { userId, blocked }) => {
       if (blocked) dropAuthor(qc, userId);

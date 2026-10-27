@@ -153,15 +153,19 @@ a dedicated demo team ID that is never registered in production, or give them a 
 to act on reports. Already built: report on every post/comment (reason + note) → admin reports queue → remove
 content; admin can suspend (ban) an account, which blocks posting, commenting and liking. The community rules are
 at **`/terms/`** ("Community rules & privacy"), linked from onboarding ("by continuing you agree…") and Profile.
-If Apple asks for a user-level "block this user" (hide their content for me), it is a small addition (client-side
-mute list + filter in the feed) — not built yet.
+**Blocking is built:** "⋯" → "חסימת משתמש" / "Block user" on any other fan's post or comment (not admins, not
+yourself) → confirm sheet → `PUT /v1/community/blocks/:userId`; their posts and comments disappear for the
+blocker immediately and server-side everywhere, no notifications from them, they aren't told. Profile → "Blocked
+users" lists them with unblock. Mention both report and block in the review notes.
 
 **Other expectations.**
 
 - Privacy: App Store "privacy nutrition label" — data linked to the user: name, FPL Team ID (identifiers), user
   content (posts, photos), device push token. No tracking, no ads. Google Play Data safety form: the same.
-- Account deletion (Apple 5.1.1(v)): apps with account creation must offer deletion. Today it is "write to us"
-  on `/terms/`; Apple may require an in-app "delete my account" button → needs an API route (not built).
+- Account deletion (Apple 5.1.1(v)) **is built**: Profile → "מחיקת חשבון" / "Delete account" (bottom, danger
+  zone) explains what is deleted, requires typing "מחק" / "DELETE", calls `DELETE /v1/me` (profile, sessions,
+  posts, comments, likes, reports, blocks, photos, push subscriptions; the FPL team itself is untouched), then
+  clears the device and returns to onboarding. Also described on `/terms/`. Point reviewers to it in the notes.
 - Push: ask permission from the Notifications card only (never on launch) — already the case.
 - Age rating: user-generated content → answer the UGC questions; likely 12+.
 - "Minimum functionality" (4.2): the app is more than a website wrapper (live points, league, community, push),
@@ -182,4 +186,4 @@ mute list + filter in the feed) — not built yet.
       (sign-up, recovery code, Listen opens Spotify/Apple, push arrives and opens the right screen, photo upload)
 - [ ] Store listings (Hebrew + English), screenshots (6.7" and 5.5" iPhone, Android phone), privacy forms
 - [ ] Review notes with the demo Team ID; `/terms/` URL as the EULA / community rules link
-- [ ] Decide on in-app account deletion and user-level block before submitting to Apple
+- [x] In-app account deletion (Profile) and user-level block ("⋯" menu + Profile list) — built

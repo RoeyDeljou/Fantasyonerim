@@ -1,4 +1,10 @@
-import { MeSchema, RecoveryCodeResponseSchema, UpdateMeBodySchema } from '@fant/shared';
+import {
+  DeleteAccountBodySchema,
+  MeSchema,
+  RecoveryCodeResponseSchema,
+  UpdateMeBodySchema,
+} from '@fant/shared';
+import { deleteAccount } from '../account/deleteAccount.js';
 import type { FastifyInstance } from 'fastify';
 import type { Auth } from '../auth/session.js';
 import type { AppContext } from '../context.js';
@@ -7,7 +13,7 @@ import { decryptSecret } from '../secrets.js';
 import { toMe } from '../serializers.js';
 import { parseInput, serialize } from '../validate.js';
 
-export function meRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth): void {
+export function meRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, writeLimit: object): void {
   app.get('/v1/me', async (request) => {
     const { user } = await auth.requireUser(request);
     return toMe(user);
@@ -27,6 +33,14 @@ export function meRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth): voi
       },
     });
     return serialize(MeSchema, toMe(updated));
+  });
+
+  // Permanent account deletion (App Store 5.1.1(v)). Allowed while banned: it only removes the user's own data.
+  app.delete('/v1/me', { config: { rateLimit: writeLimit } }, async (request, reply) => {
+    const { user } = await auth.requireUser(request);
+    parseInput(DeleteAccountBodySchema, request.body);
+    await deleteAccount(ctx, user.id);
+    return reply.code(204).send();
   });
 
   app.get('/v1/me/recovery-code', async (request, reply) => {

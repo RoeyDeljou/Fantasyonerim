@@ -19,6 +19,7 @@ import { Prisma, type ReportTargetKind, type User } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Auth } from '../auth/session.js';
+import { blockedIdsOf, hasBlocked } from '../community/blocks.js';
 import { requireWriter } from '../community/guard.js';
 import { purgeDeletedPostImages, softDeleteComment, softDeletePost } from '../community/moderation.js';
 import { COMMENT_INCLUDE, POST_INCLUDE, toComment, toPost, toPosts } from '../community/serialize.js';
@@ -104,8 +105,15 @@ export function communityRoutes(
   // ---------- posts ----------
   app.get('/v1/community/posts', async (request) => {
     const query = parseInput(CommunityPageQuerySchema, cleanQuery(request.query));
+    const viewer = await viewerId(request);
+    const blocked = await blockedIdsOf(prisma, viewer);
     const where: Prisma.CommunityPostWhereInput = { deletedAt: null };
-    if (query.authorId !== undefined) where.authorId = query.authorId;
+    if (query.authorId !== undefined || blocked.length > 0) {
+      where.authorId = {
+        ...(query.authorId !== undefined ? { equals: query.authorId } : {}),
+        ...(blocked.length > 0 ? { notIn: blocked } : {}),
+      };
+    }
     if (query.cursor !== undefined) {
       const c = decodeCursor(query.cursor);
       where.OR = [{ createdAt: { lt: c.at } }, { createdAt: c.at, id: { lt: c.id } }];
@@ -119,7 +127,7 @@ export function communityRoutes(
     const page = rows.slice(0, query.limit);
     const last = page[page.length - 1];
     return serialize(CommunityPageSchema, {
-      items: await toPosts(prisma, page, await viewerId(request)),
+      items: await toPosts(prisma, page, viewer),
       nextCursor:
         rows.length > query.limit && last !== undefined ? encodeCursor(last.createdAt, last.id) : null,
     });
@@ -131,8 +139,11 @@ export function communityRoutes(
       where: { id, deletedAt: null },
       include: POST_INCLUDE,
     });
-    if (row === null) throw notFound('This post does not exist');
-    const [post] = await toPosts(prisma, [row], await viewerId(request));
+    const viewer = await viewerId(request);
+    if (row === null || (viewer !== null && (await hasBlocked(prisma, viewer, row.authorId)))) {
+      throw notFound('This post does not exist');
+    }
+    const [post] = await toPosts(prisma, [row], viewer);
     return serialize(CommunityPostSchema, post);
   });
 
@@ -218,8 +229,12 @@ export function communityRoutes(
   app.get('/v1/community/posts/:id/comments', async (request) => {
     const { id } = parseInput(PostParamsSchema, request.params);
     const query = parseInput(CommentPageQuerySchema, cleanQuery(request.query));
-    await livePost(id);
+    const post = await livePost(id);
+    const viewer = await viewerId(request);
+    const blocked = await blockedIdsOf(prisma, viewer);
+    if (blocked.includes(post.authorId)) throw notFound('This post does not exist');
     const where: Prisma.CommentWhereInput = { postId: id, deletedAt: null };
+    if (blocked.length > 0) where.authorId = { notIn: blocked };
     if (query.cursor !== undefined) {
       const c = decodeCursor(query.cursor);
       where.OR = [{ createdAt: { gt: c.at } }, { createdAt: c.at, id: { gt: c.id } }];
@@ -232,7 +247,6 @@ export function communityRoutes(
     });
     const page = rows.slice(0, query.limit);
     const last = page[page.length - 1];
-    const viewer = await viewerId(request);
     return serialize(CommentPageSchema, {
       items: page.map((row) => toComment(row, viewer)),
       nextCursor:
@@ -262,7 +276,8 @@ export function communityRoutes(
         });
       });
 
-      if (post.authorId !== user.id) {
+      // No notification to an author who blocked the commenter.
+      if (post.authorId !== user.id && !(await hasBlocked(prisma, post.authorId, user.id))) {
         try {
           await notify(ctx, {
             to: [post.authorId],

@@ -18,6 +18,7 @@ import { AppShell } from '@/components/AppShell';
 import { IosInstallSteps } from '@/components/InstallGuide';
 import { NotificationsCard } from '@/components/NotificationsCard';
 import { MyPostsCard } from '@/components/community/MyPosts';
+import { BlockedUsersCard, DeleteAccountCard } from '@/components/AccountCards';
 import {
   BoltIcon,
   CheckIcon,
@@ -175,6 +176,7 @@ function ProfileInner() {
       </Card>
 
       <NotificationsCard />
+      <BlockedUsersCard />
       <RecoveryCard />
       <InstallCard />
 
@@ -209,6 +211,7 @@ function ProfileInner() {
           </Button>
         )}
       </Card>
+      <DeleteAccountCard />
       <p className="text-center text-xs text-muted">{fmt(t.profile.version, { v: APP_VERSION })}</p>
     </div>
   );

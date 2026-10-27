@@ -27,6 +27,7 @@ import { userRateLimitKey } from './community/guard.js';
 import { adminBroadcastRoutes } from './routes/adminBroadcast.js';
 import { adminCommunityRoutes } from './routes/adminCommunity.js';
 import { adminNewsRoutes } from './routes/adminNews.js';
+import { blockRoutes } from './routes/blocks.js';
 import { communityRoutes } from './routes/community.js';
 import { uploadRoutes } from './routes/uploads.js';
 import { integrationRoutes } from './routes/integrations.js';
@@ -200,8 +201,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.decorate('jobs', jobs);
 
   configRoutes(app, ctx);
+  meRoutes(app, ctx, auth, communityLimits.writes);
   authRoutes(app, ctx, auth, strictLimit);
-  meRoutes(app, ctx, auth);
   fplRoutes(app, ctx);
   leagueRoutes(app, ctx);
   captainBattleRoutes(app, ctx, auth);
@@ -211,6 +212,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   integrationRoutes(app, ctx, auth, jobs);
   adminNewsRoutes(app, ctx, auth);
   communityRoutes(app, ctx, auth, communityLimits);
+  blockRoutes(app, ctx, auth, communityLimits.writes);
   uploadRoutes(app, ctx, auth, uploadLimit);
   adminCommunityRoutes(app, ctx, auth);
   adminBroadcastRoutes(app, ctx, auth, broadcastLimit);

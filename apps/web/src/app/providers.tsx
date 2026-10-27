@@ -47,5 +47,13 @@ function PushSync() {
 /** App-wide one-shot toast (`flash()` in lib/flash.ts). */
 function FlashToast() {
   const f = useFlashMessage();
-  return <Toast key={f?.key} message={f?.message ?? null} tone={f?.tone ?? 'success'} ms={6000} onDone={clearFlash} />;
+  return (
+    <Toast
+      key={f?.key}
+      message={f?.message ?? null}
+      tone={f?.tone ?? 'success'}
+      ms={6000}
+      onDone={clearFlash}
+    />
+  );
 }
