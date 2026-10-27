@@ -1,0 +1,79 @@
+# Fantasyonerim API on Render (Blueprint). The web app is a static export hosted on Vercel (vercel.json).
+# Full walkthrough: docs/DEPLOY.md.
+#
+# * plan: the free plan sleeps after 15 min idle (~50 s cold start on the next request) and its in-process
+#   scheduler stops while asleep. The GitHub Actions workflow .github/workflows/jobs-tick.yml calls
+#   /internal/jobs/tick every 5 min, which wakes it and keeps content ingestion + deadline reminders running,
+#   but the first app open after a quiet period is still slow. `starter` (always on) is recommended for launch.
+# * Database: NOT defined here on purpose. Render's free Postgres is deleted after 30 days. Use a persistent
+#   database (Neon free tier, or a paid Render Postgres in Frankfurt) and paste its URL into DATABASE_URL.
+# * Migrations run once per deploy at the end of the build, never on boot.
+services:
+  - type: web
+    name: fantasyonerim-api
+    runtime: node
+    region: frankfurt # closest Render region to Israel; keep the database in the same region
+    plan: free # see the note above — switch to `starter` for always-on
+    healthCheckPath: /health
+    buildCommand: >-
+      npm ci --include=dev &&
+      npx tsc -b tsconfig.build.json &&
+      npm run prisma:deploy -w @fant/api
+    startCommand: npm run start -w @fant/api
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: '22'
+      - key: TRUST_PROXY
+        value: 'true'
+      - key: FPL_MODE
+        value: live
+      - key: FPL_USER_AGENT
+        value: 'Fantasyonerim/1.0 (+https://linktr.ee/Fantasyonerim)'
+      - key: JOBS_ENABLED
+        value: 'true'
+      - key: MEDIA_STORE
+        value: s3
+      - key: S3_REGION
+        value: auto
+      # Generated once by Render (256-bit, base64). SECRETS_KEY encrypts social tokens at rest — never rotate
+      # it without re-entering the integration secrets in the admin console.
+      - key: SECRETS_KEY
+        generateValue: true
+      # Copy this value into the GitHub repo secret CRON_SECRET (see docs/DEPLOY.md).
+      - key: CRON_SECRET
+        generateValue: true
+      # ---- set by hand in the Render dashboard (docs/DEPLOY.md lists where each value comes from) ----
+      - key: DATABASE_URL
+        sync: false
+      - key: API_PUBLIC_URL # e.g. https://fantasyonerim-api.onrender.com
+        sync: false
+      - key: WEB_APP_URL # e.g. https://fantasyonerim.vercel.app
+        sync: false
+      - key: CORS_ORIGINS # the web app origin(s), comma-separated; "*" is refused in production
+        sync: false
+      - key: ADMIN_BOOTSTRAP_USERNAME
+        sync: false
+      - key: ADMIN_BOOTSTRAP_PASSWORD
+        sync: false
+      - key: VAPID_PUBLIC_KEY # `npm run vapid -w @fant/api` prints a pair
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT # mailto:ashalim.fantasy@gmail.com
+        sync: false
+      - key: S3_ENDPOINT # Cloudflare R2: https://<account-id>.r2.cloudflarestorage.com
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_PUBLIC_BASE_URL # the bucket's public URL, e.g. https://media.fantasyonerim.app
+        sync: false
+      - key: META_APP_ID # optional until Instagram is connected
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
