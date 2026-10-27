@@ -28,8 +28,7 @@ const COMMENT_MAX = 500;
 export function Thread({ postId, onBack }: { postId: PostId; onBack(): void }) {
   const { t } = useI18n();
   const c = t.community;
-  const me = useMe();
-  const banned = useBanned(me.data?.id);
+  const banned = useBanned();
   const post = usePost(postId);
 
   useEffect(() => {
@@ -59,7 +58,7 @@ export function Thread({ postId, onBack }: { postId: PostId; onBack(): void }) {
         <>
           <PostCard post={post.data} inThread onDeleted={onBack} />
           <Comments postId={postId} />
-          <CommentBar postId={postId} />
+          <CommentBar postId={postId} disabled={banned} />
         </>
       )}
     </div>
@@ -121,6 +120,7 @@ function CommentItem({ comment }: { comment: Comment }) {
   const c = t.community;
   const me = useMe();
   const isAdmin = me.data?.role === 'admin';
+  const banned = useBanned();
   const remove = useDeleteComment(comment.postId);
   const notify = useNotify();
   return (
@@ -136,7 +136,7 @@ function CommentItem({ comment }: { comment: Comment }) {
           <ContentMenu
             target={{ kind: 'comment', id: comment.id }}
             canDelete={comment.mine || isAdmin}
-            canReport={!comment.mine}
+            canReport={!comment.mine && !banned}
             deleteTitle={c.deleteCommentTitle}
             deleting={remove.isPending}
             deleteError={remove.error}
@@ -179,7 +179,7 @@ function useKeyboardInset(): number {
   return inset;
 }
 
-function CommentBar({ postId }: { postId: PostId }) {
+function CommentBar({ postId, disabled }: { postId: PostId; disabled: boolean }) {
   const { t } = useI18n();
   const c = t.community;
   const create = useCreateComment(postId);
@@ -252,7 +252,8 @@ function CommentBar({ postId }: { postId: PostId }) {
             dir="auto"
             rows={1}
             value={text}
-            placeholder={c.commentPlaceholder}
+            disabled={disabled}
+            placeholder={disabled ? c.banned : c.commentPlaceholder}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -269,7 +270,7 @@ function CommentBar({ postId }: { postId: PostId }) {
           <button
             type="submit"
             aria-label={c.send}
-            disabled={!valid || create.isPending}
+            disabled={disabled || !valid || create.isPending}
             className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-opacity disabled:opacity-40"
             data-testid="comment-send"
           >

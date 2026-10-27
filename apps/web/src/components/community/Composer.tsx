@@ -38,8 +38,8 @@ type Upload =
 function uploadError(t: Messages, e: unknown): string {
   const c = t.community;
   if (!isApiError(e)) return c.uploadFailed;
-  if (e.status === 413) return c.photoTooBig;
-  if (e.status === 415) return c.photoBadType;
+  if (e.code === 'payload_too_large' || e.status === 413) return t.errors.tooLarge;
+  if (e.code === 'unsupported_media_type' || e.status === 415) return t.errors.unsupportedMedia;
   if (e.status === 429) return c.rateLimitedPost;
   if (isBannedError(e)) return c.banned;
   if (e.code === 'network') return t.errors.network;
@@ -90,7 +90,7 @@ function ComposerForm({ me, onDone }: { me: Me; onDone(): void }) {
   const [gwChoice, setGwChoice] = useState<Gameweek | null>(null);
   const gw = gwChoice ?? started.current;
   const canShareTeam = me.entryId !== null;
-  const banned = useBanned(me.id);
+  const banned = useBanned();
 
   // Revoke object URLs and cancel an in-flight upload when the sheet closes.
   const previewUrl = upload.status === 'uploading' || upload.status === 'done' ? upload.preview : null;
@@ -106,18 +106,18 @@ function ComposerForm({ me, onDone }: { me: Me; onDone(): void }) {
   const teamReady = shareTeam && canShareTeam && gw !== null;
   const hasContent = trimmed.length > 0 || upload.status === 'done' || teamReady;
   const uploading = upload.status === 'uploading';
-  const valid = hasContent && !tooLong && !uploading;
+  const valid = hasContent && !tooLong && !uploading && !banned;
 
   const pick = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
     if (!file.type.startsWith('image/') && !HEIC.test(file.name)) {
-      setUpload({ status: 'error', message: c.photoBadType });
+      setUpload({ status: 'error', message: t.errors.unsupportedMedia });
       return;
     }
     if (file.size > UPLOAD_MAX_BYTES) {
-      setUpload({ status: 'error', message: c.photoTooBig });
+      setUpload({ status: 'error', message: t.errors.tooLarge });
       return;
     }
     abortRef.current?.abort();
@@ -268,7 +268,7 @@ function ComposerForm({ me, onDone }: { me: Me; onDone(): void }) {
           onChange={pick}
           data-testid="composer-file"
         />
-        <Button variant="secondary" onClick={() => fileRef.current?.click()} disabled={uploading}>
+        <Button variant="secondary" onClick={() => fileRef.current?.click()} disabled={uploading || banned}>
           <ImageIcon size={20} />
           {upload.status === 'done' ? c.changePhoto : c.addPhoto}
         </Button>

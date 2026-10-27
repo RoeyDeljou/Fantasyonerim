@@ -41,6 +41,28 @@ e2e/run.mjs         Playwright end-to-end suite
   (status, last sync/success, items, last error, sync now, enable, settings + write-only secrets), Instagram
   OAuth connect/return (`/admin/?instagram=connected|error`), X paid-feature note, manual post + push-to-all.
 
+## Community (Phase 3)
+
+- **Feed** (`/community/`, `screens/Community.tsx`, `components/community/*`): composer entry → `ComposerSheet`,
+  infinite feed (cursor, IntersectionObserver), refetch on focus and a "new posts" pill (1-min head poll while
+  visible). `PostCard`: initials avatar (admins get the logo + "פנטזיונרים" badge), team name, relative time,
+  linkified text (`dir="auto"`, LTR-isolated URLs), photo → full-screen zoomable `ImageViewer` (pinch / wheel /
+  double-tap), shared team → compact `Pitch` (`compact` prop) → `SnapshotSheet` (per-player points from that GW's
+  live data), optimistic like with a reduced-motion-safe pop, comment count → thread, "⋯" `ContentMenu`
+  (delete own/admin with confirm · report others with reason + note).
+- **Composer**: 1000-char live counter, photo via `api.upload()` (XHR for progress; 10 MB / type pre-checks; 413 /
+  415 / 429 / 403 mapped to friendly copy), "share my team" with a GW picker limited to GWs whose deadline passed
+  (default = current) and a live preview; accounts without an FPL team can't share one.
+- **Thread** (`/community/?post=<id>`, `Thread.tsx`): post + comments oldest-first ("more comments" cursor), sticky
+  reply bar above the tab bar that follows the on-screen keyboard (`visualViewport`). Target of comment pushes.
+- **Banned** accounts (`Me.canPost === false`, `lib/banned.ts`): permanent notice on the feed / thread / composer;
+  composer, reply bar, like and report are disabled; deleting their own content still works. A 403 on any write
+  refetches `/v1/me`.
+- **Profile → הפוסטים שלי** (`MyPostsCard`): the `authorId`-filtered feed as rows linking to threads.
+- **Admin → קהילה** (`/admin/?view=community`, `screens/admin/Moderation.tsx`): open reports grouped by target
+  (preview, reasons, notes, count) → remove / dismiss with confirm; user search (name / team / Team ID) with ban
+  (reason required) / unban and post counts; hidden News items with "שחזור".
+
 Detail views and sub-tabs live in query params (`/my-team/?view=live&gw=7`, `/table/?entry=123`,
 `/live/?view=captains`) because a static export has no dynamic route segments.
 
@@ -65,7 +87,13 @@ Detail views and sub-tabs live in query params (`/my-team/?view=live&gw=7`, `/ta
    and a single-platform episode opens directly, the story ring goes unseen → seen through the viewer, the
    `?item=` deep link (and a missing item), notification state + a preference toggle that persists across a
    reload, admin Integrations with all five cards and the X paid note, the Instagram OAuth error return, and a
-   manual post that appears in News and is hidden again by the admin.
+   manual post that appears in News and is hidden again by the admin. Phase 3 adds: Community empty state → a text
+   post (linkified URL) → a photo post (generated PNG uploaded through `/v1/uploads`, preview, full-screen viewer) →
+   a shared demo team (default GW 9, compact pitch, snapshot sheet) → like / unlike (optimistic + persisted) →
+   comment and delete own comment → Profile "my posts" → a second fan reports the post (reason + note) → the admin
+   removes it from the reports queue → the admin bans the second fan (reason required) and their composer, reply
+   bar and like are blocked with the notice → unban and they can post again → the admin hides a News episode and
+   restores it from Admin → Community. Uploaded files go to a throwaway `MEDIA_DIR` that is deleted afterwards.
 
 The content jobs are disabled in e2e (`JOBS_ENABLED=false`, no network): three episodes and one story are seeded
 into the throwaway database, and a throwaway VAPID pair is generated. Headless Chromium contexts are incognito,

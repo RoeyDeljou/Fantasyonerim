@@ -11,18 +11,37 @@ export function firstGrapheme(s: string): string {
   return graphemes(s.trim())[0] ?? '';
 }
 
+const LETTER = /[\p{L}\p{N}]/u;
+
+/** First grapheme that is a letter or digit ("[Roy]" → "R"); falls back to the first grapheme (emoji names). */
+function firstLetter(word: string): string {
+  return graphemes(word).find((g) => LETTER.test(g)) ?? firstGrapheme(word);
+}
+
+function oneWord(word: string, n: number): string {
+  const gs = graphemes(word);
+  const start = Math.max(
+    0,
+    gs.findIndex((g) => LETTER.test(g)),
+  );
+  return gs
+    .slice(start)
+    .filter((g, i) => i === 0 || LETTER.test(g))
+    .slice(0, n)
+    .join('');
+}
+
 /**
  * Up to two initials: first letter of the first and last word ("Dor Cohen" → "DC"); a single word gives its
- * first two characters only when `pairFromOneWord` (badge fallbacks like "LI"), otherwise one.
+ * first two characters only when `pairFromOneWord` (badge fallbacks like "LI"), otherwise one. Punctuation-only
+ * words ("Roy [test]" → "RT", "Roy -" → "R") never produce a bracket or dash initial.
  */
 export function initials(name: string, { pairFromOneWord = false } = {}): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
+  const all = name.trim().split(/\s+/).filter(Boolean);
+  const lettered = all.filter((w) => LETTER.test(w));
+  const words = lettered.length > 0 ? lettered : all;
   const first = words[0] ?? '';
   const last = words.length > 1 ? (words[words.length - 1] ?? '') : '';
-  const out = last
-    ? firstGrapheme(first) + firstGrapheme(last)
-    : graphemes(first)
-        .slice(0, pairFromOneWord ? 2 : 1)
-        .join('');
+  const out = last ? firstLetter(first) + firstLetter(last) : oneWord(first, pairFromOneWord ? 2 : 1);
   return out.toLocaleUpperCase();
 }

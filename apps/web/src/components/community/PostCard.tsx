@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import type { CommunityPost } from '@fant/shared';
-import { fmt, useI18n } from '@/i18n';
+import { fmt, plural, useI18n } from '@/i18n';
+import { useBanned } from '@/lib/banned';
 import { useDeletePost, useLikePost, useMe } from '@/lib/queries';
 import { ChatIcon, HeartIcon } from '@/components/icons';
 import { ExpandableText, LinkifiedText, MediaImage } from '@/components/news/parts';
@@ -36,6 +37,7 @@ export function PostCard({
   const c = t.community;
   const me = useMe();
   const isAdmin = me.data?.role === 'admin';
+  const banned = useBanned();
   const remove = useDeletePost();
   const notify = useNotify();
   const [viewer, setViewer] = useState(false);
@@ -55,7 +57,7 @@ export function PostCard({
         <ContentMenu
           target={{ kind: 'post', id: post.id }}
           canDelete={post.mine || isAdmin}
-          canReport={!post.mine}
+          canReport={!post.mine && !banned}
           deleteTitle={c.deletePostTitle}
           deleteBody={c.deletePostBody}
           deleting={remove.isPending}
@@ -114,6 +116,7 @@ export function PostCard({
 function PostActions({ post, inThread }: { post: CommunityPost; inThread: boolean }) {
   const { t } = useI18n();
   const c = t.community;
+  const banned = useBanned();
   const like = useLikePost();
   const [pop, setPop] = useState(0);
 
@@ -144,8 +147,9 @@ function PostActions({ post, inThread }: { post: CommunityPost; inThread: boolea
       <button
         type="button"
         onClick={toggle}
+        disabled={banned}
         aria-pressed={post.likedByMe}
-        aria-label={`${post.likedByMe ? c.unlike : c.like} · ${fmt(c.likeCount, { n: post.likeCount })}`}
+        aria-label={`${post.likedByMe ? c.unlike : c.like} · ${plural(post.likeCount, c.likeCountOne, c.likeCount)}`}
         data-testid="like-button"
         className={cx(
           'inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-sm font-semibold transition-colors hover:bg-surface-2 disabled:opacity-50',
@@ -158,14 +162,17 @@ function PostActions({ post, inThread }: { post: CommunityPost; inThread: boolea
         <Num value={post.likeCount} />
       </button>
       {inThread ? (
-        <span className={commentCls} aria-label={fmt(c.commentCount, { n: post.commentCount })}>
+        <span
+          className={commentCls}
+          aria-label={plural(post.commentCount, c.commentCountOne, c.commentCount)}
+        >
           {comments}
         </span>
       ) : (
         <Link
           href={threadHref(post.id)}
           className={commentCls}
-          aria-label={`${c.openThread} · ${fmt(c.commentCount, { n: post.commentCount })}`}
+          aria-label={`${c.openThread} · ${plural(post.commentCount, c.commentCountOne, c.commentCount)}`}
           data-testid="comments-link"
         >
           {comments}

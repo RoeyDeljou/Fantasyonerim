@@ -22,6 +22,11 @@ export function fmt(template: string, values: Record<string, string | number>): 
   });
 }
 
+/** "{n} likes" with a separate singular string ("1 like" / "לייק אחד"). */
+export function plural(n: number, one: string, many: string): string {
+  return n === 1 ? one : fmt(many, { n });
+}
+
 export interface Formatters {
   num(n: number): string;
   rank(n: number | null | undefined): string;

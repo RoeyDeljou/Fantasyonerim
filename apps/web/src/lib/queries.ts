@@ -46,9 +46,8 @@ import type {
   AdminUser,
 } from '@fant/shared';
 import type { InfiniteData, QueryClient as QC } from '@tanstack/react-query';
-import { api, isApiError } from './api';
+import { api, isApiError, isBannedError } from './api';
 import type { CreateAdminBody, ResolveAction } from './api';
-import { isBannedError, setBanned } from './banned';
 
 export const LIVE_POLL_MS = 30_000;
 export const IDLE_POLL_MS = 5 * 60_000;
@@ -557,12 +556,9 @@ function findPost(qc: QC, id: PostId): CommunityPost | undefined {
   return undefined;
 }
 
-/** Remembers / forgets "banned" from the outcome of a Community write (see lib/banned.ts). */
+/** A 403 on a Community write = the account was banned (or unbanned) since `me` was fetched → refresh it. */
 function trackBan(qc: QC, error: unknown) {
-  const me = qc.getQueryData<Me>(qk.me);
-  if (!me || me.role === 'admin') return;
-  if (error === null) setBanned(me.id, false);
-  else if (isBannedError(error)) setBanned(me.id, true);
+  if (isBannedError(error)) void qc.invalidateQueries({ queryKey: qk.me, exact: true });
 }
 
 export function useCreatePost() {
@@ -571,7 +567,6 @@ export function useCreatePost() {
     mutationFn: (body: CreatePostBody) => api.community.create(body),
     onError: (e) => trackBan(qc, e),
     onSuccess: (post) => {
-      trackBan(qc, null);
       qc.setQueryData(qk.post(post.id), post);
       // Put it on top of the main feed right away, then reconcile.
       qc.setQueryData<FeedData>(qk.communityFeed(null), (data) =>
@@ -623,7 +618,6 @@ export function useLikePost() {
       if (prev) patchPost(qc, id, (p) => ({ ...p, likedByMe: prev.likedByMe, likeCount: prev.likeCount }));
     },
     onSuccess: (r, { id }) => {
-      trackBan(qc, null);
       patchPost(qc, id, (p) => ({ ...p, likedByMe: r.likedByMe, likeCount: r.likeCount }));
     },
   });
@@ -635,7 +629,6 @@ export function useCreateComment(postId: PostId) {
     mutationFn: (text: string) => api.community.comment(postId, { text }),
     onError: (e) => trackBan(qc, e),
     onSuccess: (comment: Comment) => {
-      trackBan(qc, null);
       patchPost(qc, postId, (p) => ({ ...p, commentCount: p.commentCount + 1 }));
       // Oldest first: a new comment belongs on the last page — append it if that page is loaded.
       qc.setQueryData<CommentsData>(qk.comments(postId), (data) => {
@@ -681,7 +674,6 @@ export function useReport() {
         ? api.community.reportPost(target.id, body)
         : api.community.reportComment(target.id, body),
     onError: (e) => trackBan(qc, e),
-    onSuccess: () => trackBan(qc, null),
   });
 }
 

@@ -756,15 +756,20 @@ async function journeys(browser) {
     await row.getByText('מושעה').waitFor();
 
     await fan2.goto(`${WEB}/community/`);
-    await openComposer(fan2);
-    await fan2.getByLabel('הטקסט של הפוסט').fill('אני מושעה?');
-    await fan2.getByTestId('composer-submit').click();
-    await fan2.locator('dialog[open]').getByText('החשבון שלך מושעה מפרסום כרגע').first().waitFor();
-    await fan2.keyboard.press('Escape');
+    await fan2.getByTestId('banned-notice').getByText('החשבון שלך מושעה מפרסום כרגע').waitFor();
+    assert(await fan2.getByTestId('composer-open').isDisabled(), 'composer must be blocked while banned');
+    await feedCard(fan2, 'צילום מסך של ההעברות e2e').getByTestId('comments-link').click();
+    await fan2.waitForURL('**/community/?post=*');
     await fan2.getByTestId('banned-notice').waitFor();
-    await fan2.reload();
-    await fan2.getByTestId('banned-notice').waitFor(); // remembered across reloads
-    assert((await feedCard(fan2, 'אני מושעה?').count()) === 0, 'banned post was published');
+    await fan2.getByTestId('comment-input').waitFor();
+    assert(
+      await fan2.getByTestId('comment-input').isDisabled(),
+      'comment input must be blocked while banned',
+    );
+    assert(
+      await fan2.locator('[data-testid=thread] [data-testid=like-button]').isDisabled(),
+      'like must be blocked while banned',
+    );
   });
 
   await step('admin lifts the ban → the second fan can post again and the notice goes away', async () => {
@@ -772,6 +777,7 @@ async function journeys(browser) {
     await row.getByRole('button', { name: 'ביטול השעיה' }).click();
     await mod.getByTestId('ban-confirm').click();
     await row.getByRole('button', { name: 'השעיה', exact: true }).waitFor();
+    await fan2.goto(`${WEB}/community/`);
     await openComposer(fan2);
     await fan2.getByLabel('הטקסט של הפוסט').fill('חזרתי לפרסם e2e');
     await fan2.getByTestId('composer-submit').click();

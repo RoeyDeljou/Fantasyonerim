@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from 'react';
 import { BanBodySchema } from '@fant/shared';
 import type { AdminUser, NewsItem, ReportGroup } from '@fant/shared';
-import { fmt, useI18n } from '@/i18n';
+import { fmt, plural, useI18n } from '@/i18n';
 import type { Messages } from '@/i18n';
 import type { ResolveAction } from '@/lib/api';
 import {
@@ -27,7 +27,7 @@ import {
   UndoIcon,
 } from '@/components/icons';
 import { AuthorAvatar, AuthorLine } from '@/components/community/parts';
-import { RelativeTime } from '@/components/news/parts';
+import { MediaImage, RelativeTime } from '@/components/news/parts';
 import {
   Badge,
   Button,
@@ -115,7 +115,7 @@ function ReportCard({ group, onDone }: { group: ReportGroup; onDone(msg: string)
         <Badge tone="neutral">{target.kind === 'post' ? m.kindPost : m.kindComment}</Badge>
         <Badge tone="live">
           <FlagIcon size={12} />
-          {fmt(m.reportCount, { n: group.reportCount })}
+          {plural(group.reportCount, m.reportCountOne, m.reportCount)}
         </Badge>
         <span className="text-xs text-muted">
           {m.firstReported} <RelativeTime iso={group.firstReportedAt} />
@@ -304,7 +304,8 @@ function UsersSection({ onDone }: { onDone(msg: string): void }) {
                       #{u.entryId}
                     </bdi>
                   )}
-                  <span>· {fmt(m.postCount, { n: u.postCount })}</span>
+                  {(u.teamName || u.entryId !== null) && <span aria-hidden="true">·</span>}
+                  <span>{plural(u.postCount, m.postCountOne, m.postCount)}</span>
                 </span>
                 {u.bannedAt && u.banReason && (
                   <span dir="auto" className="name-start mt-0.5 truncate text-xs text-live">
@@ -498,7 +499,12 @@ function HiddenNewsSection({ onDone }: { onDone(msg: string): void }) {
               <li key={item.id} className="flex items-center gap-3 px-3 py-2.5" data-testid="hidden-item">
                 <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface-2 text-muted">
                   {thumb ? (
-                    <img src={thumb} alt="" className="size-full object-cover" />
+                    <MediaImage
+                      src={thumb}
+                      alt=""
+                      className="size-full object-cover"
+                      fallback={<ImageIcon size={20} />}
+                    />
                   ) : (
                     <ImageIcon size={20} />
                   )}

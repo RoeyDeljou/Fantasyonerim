@@ -129,6 +129,11 @@ function nullable<T>(item: Parser<T>): Parser<T | null> {
   return { parse: (data) => (data === null ? null : item.parse(data)) };
 }
 
+/** A 403 on a Community write by a signed-in fan = suspended from posting. */
+export function isBannedError(e: unknown): boolean {
+  return isApiError(e) && e.status === 403;
+}
+
 const noContent: Parser<void> = { parse: () => undefined };
 
 let unauthorizedHandler: (() => void) | null = null;

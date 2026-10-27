@@ -12,12 +12,18 @@ import { Toast, cx } from '@/components/ui';
 
 /** Initials avatar (grapheme-safe: emoji / Hebrew never split). Fantasyonerim admins get the logo. */
 export function AuthorAvatar({ author, size = 40 }: { author: CommunityAuthor; size?: 32 | 40 }) {
-  if (author.role === 'admin') return <Logo size={size} />;
+  if (author.role === 'admin') {
+    return (
+      <span className="shrink-0 self-start">
+        <Logo size={size} />
+      </span>
+    );
+  }
   return (
     <span
       aria-hidden="true"
       className={cx(
-        'flex shrink-0 items-center justify-center rounded-full bg-accent font-bold text-on-accent',
+        'flex shrink-0 items-center self-start justify-center rounded-full bg-accent font-bold text-on-accent',
         size === 40 ? 'size-10 text-sm' : 'size-8 text-xs',
       )}
     >

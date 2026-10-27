@@ -57,14 +57,14 @@ function CommunityInner() {
 
 function FeedView() {
   const me = useMe();
-  const banned = useBanned(me.data?.id);
+  const banned = useBanned();
   const [composing, setComposing] = useState(false);
   return (
     <div className="flex flex-col gap-4">
       {banned && <BannedNotice />}
       {me.data && (
         <>
-          <ComposerEntry me={me.data} onOpen={() => setComposing(true)} />
+          <ComposerEntry me={me.data} disabled={banned} onOpen={() => setComposing(true)} />
           <ComposerSheet open={composing} onClose={() => setComposing(false)} me={me.data} />
         </>
       )}
@@ -73,11 +73,8 @@ function FeedView() {
   );
 }
 
-/**
- * Stays tappable for a (remembered) banned account: the API is the authority, and a successful post after an
- * unban is what clears the remembered state (see lib/banned.ts).
- */
-function ComposerEntry({ me, onOpen }: { me: Me; onOpen(): void }) {
+/** Disabled while `Me.canPost` is false (the banned notice above explains why). */
+function ComposerEntry({ me, disabled, onOpen }: { me: Me; disabled: boolean; onOpen(): void }) {
   const { t } = useI18n();
   const c = t.community;
   return (
@@ -88,6 +85,7 @@ function ComposerEntry({ me, onOpen }: { me: Me; onOpen(): void }) {
       <button
         type="button"
         onClick={onOpen}
+        disabled={disabled}
         aria-label={c.composerOpen}
         data-testid="composer-open"
         className="min-h-11 flex-1 truncate rounded-full bg-surface-2 px-4 text-start text-[15px] text-muted transition-colors hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-60"
