@@ -69,10 +69,9 @@ bar; no in-app audio — Listen hands off to Spotify/Apple (docs/CLIENT_ACCOUNTS
 
 ## Phase 4 — Live broadcasts, deployment, native readiness
 
-1. WhatsApp: admin links their account by scanning a QR in the admin console, picks the community group,
-   status/relink/logout. Risk notice shown.
-2. Broadcast composer (e.g. goal alert): text + optional image → WhatsApp group, X post, News feed item, push —
-   each target toggleable, per-target result shown.
+1. ~~WhatsApp linking~~ — **deferred by the client** (see docs/CLIENT_ACCOUNTS.md → WhatsApp). Not built now.
+2. Broadcast composer (e.g. goal alert): text + optional image → News feed item, push, X post — each target
+   toggleable, per-target result shown; targets are `Publisher`s so a WhatsApp target can be added later.
 3. Deployment: `render.yaml` (api + Postgres, Frankfurt), Vercel config for web, GitHub Actions cron hitting the
    tick endpoint, `docs/DEPLOY.md` + `docs/INTEGRATIONS.md` (step-by-step key setup for the client).
 4. Native readiness: Capacitor config + `docs/NATIVE.md` (iOS/Android build steps, FCM/APNs provider plan).
