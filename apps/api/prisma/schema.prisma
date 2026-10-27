@@ -153,6 +153,9 @@ model NewsItem {
   /// Stories only (publishedAt + 24 h).
   expiresAt   DateTime?
   hiddenAt    DateTime?
+  /// Dedupe-only placeholder (e.g. our own X post from a live broadcast): permanently hidden, never listed
+  /// among hidden items, never restorable. It only exists so a re-poll of that dedupeKey is a no-op.
+  suppressed  Boolean   @default(false)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

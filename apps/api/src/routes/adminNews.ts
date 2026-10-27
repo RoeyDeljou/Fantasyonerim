@@ -10,7 +10,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Auth } from '../auth/session.js';
 import type { AppContext } from '../context.js';
-import { notFound } from '../errors.js';
+import { badRequest, notFound } from '../errors.js';
 import { pushNewNewsItems, PUSH_ICON } from '../news/pushNews.js';
 import { createAdminUpdate } from '../news/adminUpdate.js';
 import { toNewsItem } from '../news/serialize.js';
@@ -62,6 +62,8 @@ export function adminNewsRoutes(app: FastifyInstance, ctx: AppContext, auth: Aut
       const rows = await prisma.newsItem.findMany({
         where: {
           hiddenAt: { not: null },
+          // Dedupe placeholders (our own X post from a broadcast) are not real hidden items.
+          suppressed: false,
           NOT: { source: 'instagram_story', expiresAt: { lte: now } },
         },
         orderBy: [{ hiddenAt: 'desc' }, { id: 'desc' }],
@@ -75,11 +77,19 @@ export function adminNewsRoutes(app: FastifyInstance, ctx: AppContext, auth: Aut
       });
     });
 
-    // Un-hide (idempotent). Not re-pushed: it was announced when it first arrived.
+    // Un-hide (idempotent). Not re-pushed: it was announced when it first arrived. Dedupe placeholders: 400.
     admin.post('/v1/admin/news/:id/restore', async (request, reply) => {
       const { id } = parseInput(ParamsSchema, request.params);
-      const result = await prisma.newsItem.updateMany({ where: { id }, data: { hiddenAt: null } });
-      if (result.count === 0) throw notFound('This news item does not exist');
+      const result = await prisma.newsItem.updateMany({
+        where: { id, suppressed: false },
+        data: { hiddenAt: null },
+      });
+      if (result.count === 0) {
+        if ((await prisma.newsItem.count({ where: { id } })) > 0) {
+          throw badRequest("This item can't be restored");
+        }
+        throw notFound('This news item does not exist');
+      }
       return reply.code(204).send();
     });
 

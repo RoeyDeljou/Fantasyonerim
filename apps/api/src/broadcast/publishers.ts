@@ -245,7 +245,7 @@ async function rememberOwnXPost(
   const now = ctx.clock.now();
   await ctx.prisma.newsItem.upsert({
     where: { dedupeKey: `x:${postId}` },
-    update: { hiddenAt: now },
+    update: { hiddenAt: now, suppressed: true },
     create: {
       dedupeKey: `x:${postId}`,
       source: 'x_post',
@@ -254,6 +254,7 @@ async function rememberOwnXPost(
       links: { ...EMPTY_LINKS, x: url },
       publishedAt: now,
       hiddenAt: now,
+      suppressed: true,
     },
   });
   if (newsItemId !== null && url !== null) {

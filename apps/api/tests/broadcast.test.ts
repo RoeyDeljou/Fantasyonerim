@@ -3,6 +3,7 @@ import {
   BroadcastHistorySchema,
   BroadcastResultSchema,
   BroadcastTargetsStatusSchema,
+  HiddenNewsListSchema,
   NewsPageSchema,
   type BroadcastResult,
 } from '@fant/shared';
@@ -362,7 +363,37 @@ describe('targets', () => {
       where: { dedupeKey: 'x:1850000000000000002' },
     });
     expect(placeholder.hiddenAt).not.toBeNull();
+    expect(placeholder.suppressed).toBe(true);
     expect(await newsFeed()).toHaveLength(0);
+
+    // It is not a "hidden item": absent from the hidden list (a really hidden item is listed) and not restorable.
+    const real = resultOf(await send({ text: 'real item', targets: ['news'] }), 'news');
+    const realId = new URL(real?.url ?? '', 'http://x').searchParams.get('item') ?? '';
+    const hide = await app.inject({
+      method: 'DELETE',
+      url: `/v1/admin/news/${realId}`,
+      headers: bearer(admin),
+    });
+    expect(hide.statusCode).toBe(204);
+    const hidden = await app.inject({ method: 'GET', url: '/v1/admin/news/hidden', headers: bearer(admin) });
+    expect(hidden.statusCode).toBe(200);
+    expect(HiddenNewsListSchema.parse(hidden.json()).items.map((i) => i.item.id)).toEqual([realId]);
+    const restore = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/news/${placeholder.id}/restore`,
+      headers: bearer(admin),
+    });
+    expect(restore.statusCode).toBe(400);
+    expect(restore.json().error.message).toBe("This item can't be restored");
+    const after = await prisma.newsItem.findUniqueOrThrow({ where: { id: placeholder.id } });
+    expect(after.hiddenAt).not.toBeNull();
+    expect(after.suppressed).toBe(true);
+    const missing = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/news/does-not-exist/restore',
+      headers: bearer(admin),
+    });
+    expect(missing.statusCode).toBe(404);
 
     // The X read job then sees that post on the timeline: no new News item, no notification.
     await prisma.integrationConfig.update({
@@ -375,7 +406,10 @@ describe('targets', () => {
     expect(await app.jobs.run('x', { force: true })).toBe('ok');
     expect(await newsFeed()).toHaveLength(0);
     expect(push.sent).toHaveLength(0);
-    expect(await prisma.newsItem.count()).toBe(1);
+    expect(await prisma.newsItem.count()).toBe(2); // placeholder + the hidden real item, no import
+    const stillSuppressed = await prisma.newsItem.findUniqueOrThrow({ where: { id: placeholder.id } });
+    expect(stillSuppressed).toMatchObject({ suppressed: true, source: 'x_post' });
+    expect(stillSuppressed.hiddenAt).not.toBeNull();
   });
 
   it('X configured + image upload → media upload then post with media_ids; News card has the image + X link', async () => {
