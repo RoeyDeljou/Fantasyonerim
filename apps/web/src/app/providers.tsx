@@ -9,6 +9,8 @@ import { SessionProvider, useSession } from '@/lib/session';
 import { resyncPush } from '@/lib/push';
 import { makeQueryClient } from '@/lib/queries';
 import { registerServiceWorker, wireInstallPrompt } from '@/lib/pwa';
+import { clearFlash, useFlashMessage } from '@/lib/flash';
+import { Toast } from '@/components/ui';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(makeQueryClient);
@@ -25,6 +27,7 @@ export function Providers({ children }: { children: ReactNode }) {
           <SessionProvider>
             <PushSync />
             {children}
+            <FlashToast />
           </SessionProvider>
         </ThemeProvider>
       </I18nProvider>
@@ -39,4 +42,10 @@ function PushSync() {
     if (status === 'signedIn') void resyncPush();
   }, [status]);
   return null;
+}
+
+/** App-wide one-shot toast (`flash()` in lib/flash.ts). */
+function FlashToast() {
+  const f = useFlashMessage();
+  return <Toast key={f?.key} message={f?.message ?? null} tone={f?.tone ?? 'success'} ms={6000} onDone={clearFlash} />;
 }

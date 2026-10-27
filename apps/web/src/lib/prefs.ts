@@ -20,6 +20,14 @@ export function writePref(key: string, value: string): void {
   }
 }
 
+export function removePref(key: string): void {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
 export function isLocale(v: unknown): v is Locale {
   return v === 'he' || v === 'en';
 }

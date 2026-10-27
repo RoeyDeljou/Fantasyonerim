@@ -17,6 +17,8 @@ interface SessionValue {
   /** `adoptLocale` (default true) switches the UI to the account's saved language. */
   signIn(auth: AuthResponse, opts?: { adoptLocale?: boolean }): Promise<void>;
   signOut(): Promise<void>;
+  /** Ends the session on this device only (the token is already dead, e.g. the account was deleted). */
+  forget(): Promise<void>;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -91,7 +93,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await afterSessionEnded();
   }, [afterSessionEnded]);
 
-  const value = useMemo(() => ({ status, signIn, signOut }), [status, signIn, signOut]);
+  const forget = useCallback(async () => {
+    await tokenStore.clear();
+    await afterSessionEnded();
+  }, [afterSessionEnded]);
+
+  const value = useMemo(() => ({ status, signIn, signOut, forget }), [status, signIn, signOut, forget]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

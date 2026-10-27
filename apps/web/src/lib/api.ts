@@ -36,6 +36,7 @@ import {
   BroadcastHistorySchema,
   BroadcastResultSchema,
   BroadcastTargetsStatusSchema,
+  BlockListSchema,
 } from '@fant/shared';
 import type { CreateAdminBodySchema } from '@fant/shared';
 import type {
@@ -91,6 +92,8 @@ import type {
   BroadcastResult,
   BroadcastTargetsStatus,
   ChangePasswordBody,
+  BlockedUser,
+  DeleteAccountBody,
 } from '@fant/shared';
 import { tokenStore } from './tokenStore';
 
@@ -262,6 +265,9 @@ export const api = {
 
   me: (o: Signal = {}): Promise<Me> => request('GET', '/v1/me', MeSchema, o),
   updateMe: (body: UpdateMeBody): Promise<Me> => request('PATCH', '/v1/me', MeSchema, { body }),
+  /** DELETE /v1/me — permanent. 204; the token stops working immediately. 409 = the last admin. */
+  deleteAccount: (body: DeleteAccountBody): Promise<void> =>
+    request('DELETE', '/v1/me', noContent, { body }),
   recoveryCode: (o: Signal = {}): Promise<string> =>
     request('GET', '/v1/me/recovery-code', RecoveryCodeResponseSchema, o).then((r) => r.recoveryCode),
 
@@ -394,6 +400,10 @@ export const api = {
       request('DELETE', `/v1/community/comments/${encodeURIComponent(id)}`, noContent),
     reportPost: (id: PostId, body: ReportBody): Promise<void> =>
       request('POST', `/v1/community/posts/${encodeURIComponent(id)}/report`, noContent, { body }),
+    blocks: (o: Signal = {}): Promise<BlockedUser[]> =>
+      request('GET', '/v1/community/blocks', BlockListSchema, o).then((r) => r.items),
+    block: (id: UserId, blocked: boolean): Promise<void> =>
+      request(blocked ? 'PUT' : 'DELETE', `/v1/community/blocks/${encodeURIComponent(id)}`, noContent),
     reportComment: (id: CommentId, body: ReportBody): Promise<void> =>
       request('POST', `/v1/community/comments/${encodeURIComponent(id)}/report`, noContent, { body }),
   },

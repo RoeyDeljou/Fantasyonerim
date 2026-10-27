@@ -86,6 +86,7 @@ export const qk = {
   hiddenNews: ['admin', 'news', 'hidden'] as const,
   broadcastTargets: ['admin', 'broadcast', 'targets'] as const,
   broadcasts: ['admin', 'broadcast', 'history'] as const,
+  blocks: ['community', 'blocks'] as const,
 };
 
 export const COMMUNITY_PAGE_SIZE = 20;
@@ -799,4 +800,46 @@ export function useSendBroadcast() {
 
 export function useChangePassword() {
   return useMutation({ mutationFn: (body: ChangePasswordBody) => api.admin.changePassword(body) });
+}
+
+// ---------- blocking (App Store 1.2) ----------
+
+export function useBlocks(enabled: boolean) {
+  return useQuery({ queryKey: qk.blocks, queryFn: ({ signal }) => api.community.blocks({ signal }), enabled });
+}
+
+/** Drops everything by `userId` from the cached feeds and threads right away, then refetches. */
+function dropAuthor(qc: QC, userId: UserId) {
+  qc.setQueriesData<FeedData>({ queryKey: qk.communityFeeds }, (data) =>
+    data
+      ? {
+          ...data,
+          pages: data.pages.map((pg) => ({ ...pg, items: pg.items.filter((p) => p.author.id !== userId) })),
+        }
+      : data,
+  );
+  qc.setQueriesData<CommentsData>({ queryKey: ['community', 'comments'] }, (data) =>
+    data
+      ? {
+          ...data,
+          pages: data.pages.map((pg) => ({ ...pg, items: pg.items.filter((c) => c.author.id !== userId) })),
+        }
+      : data,
+  );
+}
+
+export function useBlockUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, blocked }: { userId: UserId; blocked: boolean }) => api.community.block(userId, blocked),
+    onError: (e) => trackBan(qc, e),
+    onSuccess: (_v, { userId, blocked }) => {
+      if (blocked) dropAuthor(qc, userId);
+      void qc.invalidateQueries({ queryKey: qk.community });
+    },
+  });
+}
+
+export function useDeleteAccount() {
+  return useMutation({ mutationFn: () => api.deleteAccount({ confirm: 'DELETE' }) });
 }

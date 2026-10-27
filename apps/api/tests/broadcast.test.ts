@@ -280,7 +280,10 @@ describe('targets', () => {
     expect(resultOf(r, 'push')).toEqual({
       target: 'push',
       status: 'ok',
+      code: 'delivered',
       detail: 'Delivered to 2 of 2 devices',
+      delivered: 2,
+      recipients: 2,
       url: null,
     });
     expect(await prisma.newsItem.count()).toBe(0);
@@ -310,7 +313,13 @@ describe('targets', () => {
   it('push with no live subscribers → skipped with the reason', async () => {
     await fan(1001, { news: true, live: false });
     const r = await send({ text: 'hi', targets: ['push'] });
-    expect(resultOf(r, 'push')).toMatchObject({ status: 'skipped', detail: NO_LIVE_SUBSCRIBERS });
+    expect(resultOf(r, 'push')).toMatchObject({
+      status: 'skipped',
+      code: 'no_subscribers',
+      detail: NO_LIVE_SUBSCRIBERS,
+      delivered: 0,
+      recipients: 0,
+    });
     expect(push.sent).toHaveLength(0);
   });
 
@@ -318,7 +327,13 @@ describe('targets', () => {
     await fan(1101);
     push.results.set('https://push.test/1101', 'error');
     const r = await send({ text: 'hi', targets: ['news', 'push'] });
-    expect(resultOf(r, 'push')).toMatchObject({ status: 'error', detail: 'Delivered to 0 of 1 devices' });
+    expect(resultOf(r, 'push')).toMatchObject({
+      status: 'error',
+      code: 'failed',
+      detail: 'Delivered to 0 of 1 devices',
+      delivered: 0,
+      recipients: 1,
+    });
     expect(resultOf(r, 'news')?.status).toBe('ok');
   });
 
@@ -327,7 +342,12 @@ describe('targets', () => {
     await resetDb(prisma);
     await boot({ push: null, config: {} });
     const r = await send({ text: 'hi', targets: ['news', 'push'] });
-    expect(resultOf(r, 'push')).toMatchObject({ status: 'skipped', detail: PUSH_NOT_CONFIGURED });
+    expect(resultOf(r, 'push')).toMatchObject({
+      status: 'skipped',
+      code: 'not_configured',
+      detail: PUSH_NOT_CONFIGURED,
+      delivered: null,
+    });
     expect(resultOf(r, 'news')?.status).toBe('ok');
   });
 
@@ -335,7 +355,16 @@ describe('targets', () => {
     await fan(1201);
     const r = await send({ text: 'גול!', targets: ['news', 'push', 'x'] });
     expect(r.results.map((t) => t.target)).toEqual(['news', 'push', 'x']);
-    expect(resultOf(r, 'x')).toEqual({ target: 'x', status: 'skipped', detail: X_NOT_CONNECTED, url: null });
+    expect(resultOf(r, 'x')).toEqual({
+      target: 'x',
+      status: 'skipped',
+      code: 'not_configured',
+      detail: X_NOT_CONNECTED,
+      delivered: null,
+      recipients: null,
+      url: null,
+    });
+    expect(resultOf(r, 'news')).toMatchObject({ code: 'posted', delivered: null, recipients: null });
     expect(resultOf(r, 'news')?.status).toBe('ok');
     expect(resultOf(r, 'push')?.status).toBe('ok');
     expect(x.state.requests).toHaveLength(0);
@@ -353,6 +382,7 @@ describe('targets', () => {
     const r = await send({ text: ' ⚽ גול! האלאנד 1–0 ', targets: ['x'] });
     const xr = resultOf(r, 'x');
     expect(xr?.status).toBe('ok');
+    expect(xr?.code).toBe('posted');
     expect(xr?.url).toBe('https://x.com/Fantasyonerim/status/1850000000000000002');
     expect(x.state.requests.map((q) => q.url)).toEqual(['https://api.x.com/2/tweets']);
     const req = x.state.requests[0];
@@ -457,6 +487,7 @@ describe('targets', () => {
     expect(resultOf(r, 'push')?.status).toBe('ok');
     const xr = resultOf(r, 'x');
     expect(xr?.status).toBe('error');
+    expect(xr?.code).toBe('failed');
     expect(xr?.url).toBeNull();
     expect(xr?.detail.length).toBeGreaterThan(10);
     const everything = JSON.stringify(r) + JSON.stringify(await prisma.broadcast.findMany());

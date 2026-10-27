@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { WebPushSubscriptionBodySchema } from '@fant/shared';
 import { api, isApiError } from './api';
-import { readPref, writePref } from './prefs';
+import { readPref, removePref, writePref } from './prefs';
 import { isIos, isStandalone } from './pwa';
 import { isNativeShell } from './platform';
 
@@ -157,6 +157,20 @@ export async function disablePush(): Promise<PushState> {
     console.warn('push unsubscribe failed', e);
   }
   return readPushState();
+}
+
+/**
+ * The account is gone (DELETE /v1/me already removed its subscriptions server-side): drop the browser
+ * subscription too, so this device stops receiving pushes and the next account starts clean.
+ */
+export async function forgetPushLocally(): Promise<void> {
+  try {
+    const sub = await currentSubscription();
+    await sub?.unsubscribe();
+  } catch (e) {
+    console.warn('push unsubscribe failed', e);
+  }
+  removePref(OPT_OUT_KEY);
 }
 
 /**

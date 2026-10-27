@@ -8,7 +8,12 @@ import {
   xWeightedLength,
   type PublishInput,
 } from '@fant/integrations';
-import type { BroadcastTarget, BroadcastTargetResult, PushPayload } from '@fant/shared';
+import type {
+  BroadcastTarget,
+  BroadcastTargetResult,
+  BroadcastTargetsStatus,
+  PushPayload,
+} from '@fant/shared';
 import type { Upload } from '@prisma/client';
 import type { AppContext } from '../context.js';
 import { badRequest } from '../errors.js';
@@ -44,9 +49,13 @@ export interface BroadcastRunState {
   newsItemId: string | null;
 }
 
+/** Fields every non-push result shares (push fills the device counts). */
+const NO_COUNTS = { delivered: null, recipients: null } as const;
+
 export interface TargetAvailability {
   available: boolean;
   reason: string | null;
+  reasonCode: BroadcastTargetsStatus['targets'][number]['reasonCode'];
   paidFeature: boolean;
 }
 
@@ -64,13 +73,20 @@ const newsUrl = (id: string) => `/news/?item=${encodeURIComponent(id)}`;
 
 const newsPublisher: BroadcastPublisher = {
   target: 'news',
-  status: async () => ({ available: true, reason: null, paidFeature: false }),
+  status: async () => ({ available: true, reason: null, reasonCode: null, paidFeature: false }),
   async publish(ctx, input, state) {
     // Same shape as the manual POST /v1/admin/news item — but NOT pushed through the regular news push:
     // the broadcast's own `push` target (prefs.live) is the only notification for it.
     const item = await createAdminUpdate(ctx, { title: input.title, text: input.text, image: input.upload });
     state.newsItemId = item.id;
-    return { target: 'news', status: 'ok', detail: 'Posted to the News feed', url: newsUrl(item.id) };
+    return {
+      target: 'news',
+      status: 'ok',
+      code: 'posted',
+      detail: 'Posted to the News feed',
+      ...NO_COUNTS,
+      url: newsUrl(item.id),
+    };
   },
 };
 
@@ -88,13 +104,27 @@ async function liveSubscriberCount(ctx: AppContext): Promise<number> {
 const pushPublisher: BroadcastPublisher = {
   target: 'push',
   async status(ctx) {
-    if (ctx.push === null) return { available: false, reason: PUSH_NOT_CONFIGURED, paidFeature: false };
-    const count = await liveSubscriberCount(ctx);
-    return { available: true, reason: count === 0 ? NO_LIVE_SUBSCRIBERS : null, paidFeature: false };
+    if (ctx.push === null) {
+      return { available: false, reason: PUSH_NOT_CONFIGURED, reasonCode: 'not_configured', paidFeature: false };
+    }
+    const none = (await liveSubscriberCount(ctx)) === 0;
+    return {
+      available: true,
+      reason: none ? NO_LIVE_SUBSCRIBERS : null,
+      reasonCode: none ? 'no_subscribers' : null,
+      paidFeature: false,
+    };
   },
   async publish(ctx, input, state) {
     if (ctx.push === null) {
-      return { target: 'push', status: 'skipped', detail: PUSH_NOT_CONFIGURED, url: null };
+      return {
+        target: 'push',
+        status: 'skipped',
+        code: 'not_configured',
+        detail: PUSH_NOT_CONFIGURED,
+        ...NO_COUNTS,
+        url: null,
+      };
     }
     const url = state.newsItemId === null ? '/news/' : newsUrl(state.newsItemId);
     const result = await notify(ctx, {
@@ -116,12 +146,24 @@ const pushPublisher: BroadcastPublisher = {
       },
     });
     if (result.devices === 0) {
-      return { target: 'push', status: 'skipped', detail: NO_LIVE_SUBSCRIBERS, url: null };
+      return {
+        target: 'push',
+        status: 'skipped',
+        code: 'no_subscribers',
+        detail: NO_LIVE_SUBSCRIBERS,
+        delivered: 0,
+        recipients: 0,
+        url: null,
+      };
     }
+    const failed = result.devicesDelivered === 0;
     return {
       target: 'push',
-      status: result.devicesDelivered === 0 ? 'error' : 'ok',
+      status: failed ? 'error' : 'ok',
+      code: failed ? 'failed' : 'delivered',
       detail: `Delivered to ${result.devicesDelivered} of ${result.devices} devices`,
+      delivered: result.devicesDelivered,
+      recipients: result.devices,
       url: null,
     };
   },
@@ -186,7 +228,12 @@ const xPublisher: BroadcastPublisher = {
   target: 'x',
   async status(ctx) {
     const { ok } = await xWriteCredentials(ctx);
-    return { available: ok, reason: ok ? null : X_NOT_CONNECTED, paidFeature: true };
+    return {
+      available: ok,
+      reason: ok ? null : X_NOT_CONNECTED,
+      reasonCode: ok ? null : 'paid_feature',
+      paidFeature: true,
+    };
   },
   precheck({ text }) {
     const length = xWeightedLength(text);
@@ -198,7 +245,16 @@ const xPublisher: BroadcastPublisher = {
   },
   async publish(ctx, input, state) {
     const { x, ok } = await xWriteCredentials(ctx);
-    if (!ok) return { target: 'x', status: 'skipped', detail: X_NOT_CONNECTED, url: null };
+    if (!ok) {
+      return {
+        target: 'x',
+        status: 'skipped',
+        code: 'not_configured',
+        detail: X_NOT_CONNECTED,
+        ...NO_COUNTS,
+        url: null,
+      };
+    }
 
     let image: PublishInput['image'] = null;
     let imageNote = '';
@@ -220,13 +276,27 @@ const xPublisher: BroadcastPublisher = {
       );
       const posted = await publisher.publish({ text: input.text, image });
       await rememberOwnXPost(ctx, posted.externalId, posted.url, state.newsItemId);
-      return { target: 'x', status: 'ok', detail: `Posted to X${imageNote}`, url: posted.url };
+      return {
+        target: 'x',
+        status: 'ok',
+        code: 'posted',
+        detail: `Posted to X${imageNote}`,
+        ...NO_COUNTS,
+        url: posted.url,
+      };
     } catch (err) {
-      const detail =
-        err instanceof XPostTooLongError
-          ? `Too long for X (${err.weightedLength} of ${X_MAX_WEIGHTED_LENGTH} characters)`
-          : describeXPublishError(err, x.secrets);
-      return { target: 'x', status: 'error', detail, url: null };
+      const tooLong = err instanceof XPostTooLongError;
+      const detail = tooLong
+        ? `Too long for X (${err.weightedLength} of ${X_MAX_WEIGHTED_LENGTH} characters)`
+        : describeXPublishError(err, x.secrets);
+      return {
+        target: 'x',
+        status: 'error',
+        code: tooLong ? 'too_long' : 'failed',
+        detail,
+        ...NO_COUNTS,
+        url: null,
+      };
     }
   },
 };
@@ -294,7 +364,14 @@ export async function runBroadcast(
       return await PUBLISHERS[target].publish(ctx, input, state);
     } catch (err) {
       onUnexpected(target, err);
-      return { target, status: 'error', detail: 'Something went wrong on our side — not sent', url: null };
+      return {
+        target,
+        status: 'error',
+        code: 'failed',
+        detail: 'Something went wrong on our side — not sent',
+        ...NO_COUNTS,
+        url: null,
+      };
     }
   };
   const results = new Map<BroadcastTarget, BroadcastTargetResult>();

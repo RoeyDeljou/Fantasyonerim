@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import { BroadcastTargetSchema } from '@fant/shared';
 import type { BroadcastTarget } from '@fant/shared';
-import { readPref, writePref } from './prefs';
+import { readPref, removePref, writePref } from './prefs';
 
 /**
  * Small device-local UI state (seen stories, push-prompt dismissal, preferred podcast app, the live-update
@@ -114,4 +114,12 @@ export function readBroadcastTargets(): BroadcastTarget[] | null {
 
 export function writeBroadcastTargets(targets: readonly BroadcastTarget[]): void {
   writePref(KEYS.broadcastTargets, JSON.stringify(targets));
+}
+
+/** Account deleted: forget everything this device remembered about it (theme and language stay — they're the device's). */
+export function clearAccountLocalState(): void {
+  for (const key of Object.values(KEYS)) removePref(key);
+  seenCache = null;
+  seenListeners.forEach((l) => l());
+  listenListeners.forEach((l) => l());
 }
