@@ -83,3 +83,14 @@ Schemas: `packages/shared/src/community.ts`. Banned users get 403 on every write
 | POST/DELETE | `/v1/admin/users/:id/ban`             | 🛡                            | `BanBody` (POST)                              | 204 — admins can't be banned                                                                                    |
 | GET         | `/v1/admin/news/hidden`               | 🛡                            | –                                             | `HiddenNewsList`                                                                                                |
 | POST        | `/v1/admin/news/:id/restore`          | 🛡                            | –                                             | 204 — un-hides a News item                                                                                      |
+
+## Phase 4 — Live broadcasts, admin security
+
+Schemas: `packages/shared/src/broadcast.ts`.
+
+| Method | Path                          | Auth | Body / query         | Response                                                                                 |
+| ------ | ----------------------------- | ---- | -------------------- | ---------------------------------------------------------------------------------------- |
+| GET    | `/v1/admin/broadcast/targets` | 🛡    | –                    | `BroadcastTargetsStatus`                                                                 |
+| POST   | `/v1/admin/broadcast`         | 🛡    | `BroadcastBody`      | `BroadcastResult` (201) — per-target results; one target failing never blocks the others |
+| GET    | `/v1/admin/broadcasts`        | 🛡    | –                    | `BroadcastHistory`                                                                       |
+| POST   | `/v1/admin/me/password`       | 🛡    | `ChangePasswordBody` | 204 · 401 wrong current password — signs out the admin's other sessions                  |
