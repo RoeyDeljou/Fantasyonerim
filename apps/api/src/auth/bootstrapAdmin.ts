@@ -13,7 +13,8 @@ export async function bootstrapAdmin(
   if (!username || !password) return 'skipped';
   // Only bootstraps an EMPTY install: once any admin exists, the env vars never (re)create an account — so an
   // admin who deleted their account isn't resurrected on the next boot.
-  if ((await prisma.adminCredential.count()) > 0) return 'exists';
+  // Counts role-ADMIN users (incl. invite-made admins without a password), not credentials.
+  if ((await prisma.user.count({ where: { role: 'ADMIN' } })) > 0) return 'exists';
   const existing = await prisma.adminCredential.findUnique({ where: { username } });
   if (existing) return 'exists';
   try {

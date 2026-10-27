@@ -97,6 +97,7 @@ export async function buildTestApp(prisma: PrismaClient, options: TestAppOptions
         commentsPerHour: 10_000,
         uploadsPerHour: 10_000,
         broadcastsPerHour: 10_000,
+        invitesPerHour: 10_000,
         ...options.rateLimit,
       },
       ...options.config,

@@ -149,13 +149,15 @@ export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, p
     });
 
     admin.get('/v1/admin/admins', async () => {
-      const credentials = await prisma.adminCredential.findMany({
-        include: { user: true },
-        orderBy: { createdAt: 'asc' },
+      // Every role-ADMIN user: password admins (username) and invite-made admins (app account, username null).
+      const admins = await prisma.user.findMany({
+        where: { role: 'ADMIN' },
+        include: { adminCredential: true },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       });
       return serialize(
         z.array(AdminAccountSchema),
-        credentials.map((c) => ({ userId: c.userId, username: c.username, name: c.user.name })),
+        admins.map((u) => ({ userId: u.id, username: u.adminCredential?.username ?? null, name: u.name })),
         'AdminAccount[]',
       );
     });
@@ -165,7 +167,8 @@ export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, p
       const { user, session } = await auth.requireAdmin(request);
       const body = parseInput(ChangePasswordBodySchema, request.body);
       const credential = await prisma.adminCredential.findUnique({ where: { userId: user.id } });
-      if (credential === null) throw badRequest('This admin account has no password to change');
+      if (credential === null)
+        throw badRequest('This admin signs in with their app account and has no password');
       if (!(await verifySecret(credential.passwordHash, body.currentPassword))) {
         throw unauthorized('The current password is incorrect');
       }

@@ -57,6 +57,8 @@ model User {
   reports           Report[]
   blocking          UserBlock[]        @relation("blocker")
   blockedBy         UserBlock[]        @relation("blocked")
+  invitesCreated    AdminInvite[]      @relation("inviteCreatedBy")
+  invitesUsed       AdminInvite[]      @relation("inviteUsedBy")
 }
 
 model Session {
@@ -425,4 +427,26 @@ model UserBlock {
 model PendingMediaDelete {
   key       String   @id
   createdAt DateTime @default(now())
+}
+
+/// One-time link that makes whoever redeems it an admin (fan account + ADMIN role, no password). Only the SHA-256
+/// of the 32-byte base64url token is stored; the raw token is shown once, in the create response.
+model AdminInvite {
+  id            String    @id @default(cuid())
+  label         String
+  tokenHash     String    @unique
+  createdById   String?
+  /// Snapshot: the history outlives the creator's account.
+  createdByName String
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime
+  usedAt        DateTime?
+  usedById      String?
+  usedByName    String?
+  revokedAt     DateTime?
+
+  createdBy User? @relation("inviteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  usedBy    User? @relation("inviteUsedBy", fields: [usedById], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
 }

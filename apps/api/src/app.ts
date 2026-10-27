@@ -26,6 +26,7 @@ import { MAX_UPLOAD_BYTES } from './community/images.js';
 import { userRateLimitKey } from './community/guard.js';
 import { adminBroadcastRoutes } from './routes/adminBroadcast.js';
 import { adminCommunityRoutes } from './routes/adminCommunity.js';
+import { adminInviteRoutes } from './routes/adminInvites.js';
 import { adminNewsRoutes } from './routes/adminNews.js';
 import { blockRoutes } from './routes/blocks.js';
 import { communityRoutes } from './routes/community.js';
@@ -71,6 +72,7 @@ const DEFAULT_RATE_LIMIT: RateLimitConfig = {
   commentsPerHour: 60,
   uploadsPerHour: 30,
   broadcastsPerHour: 30,
+  invitesPerHour: 20,
 };
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -201,7 +203,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.decorate('jobs', jobs);
 
   configRoutes(app, ctx);
-  meRoutes(app, ctx, auth, communityLimits.writes);
+  meRoutes(app, ctx, auth, communityLimits.writes, strictLimit);
   authRoutes(app, ctx, auth, strictLimit);
   fplRoutes(app, ctx);
   leagueRoutes(app, ctx);
@@ -216,6 +218,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   uploadRoutes(app, ctx, auth, uploadLimit);
   adminCommunityRoutes(app, ctx, auth);
   adminBroadcastRoutes(app, ctx, auth, broadcastLimit);
+  adminInviteRoutes(app, ctx, auth, {
+    create: { max: limits.invitesPerHour, timeWindow: HOUR_MS, keyGenerator: perUser },
+    preview: strictLimit,
+  });
   internalRoutes(app, ctx, jobs);
 
   return app;

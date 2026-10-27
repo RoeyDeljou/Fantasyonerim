@@ -8,6 +8,7 @@ import {
 import { Prisma } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { hashSecret, verifyAgainstDummy, verifySecret } from '../auth/passwords.js';
+import { claimInvite } from '../auth/invites.js';
 import type { Auth } from '../auth/session.js';
 import { generateRecoveryCode, normalizeRecoveryCode } from '../auth/tokens.js';
 import type { AppContext } from '../context.js';
@@ -43,17 +44,26 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, st
     }
 
     const recoveryCode = generateRecoveryCode();
+    const recoveryCodeHash = await hashSecret(recoveryCode);
+    const inviteToken = body.inviteToken;
     let user;
     try {
-      user = await prisma.user.create({
-        data: {
-          name: body.name,
-          entryId: body.entryId,
-          teamName: entry.teamName,
-          locale: body.locale ?? 'he',
-          recoveryCodeHash: await hashSecret(recoveryCode),
-          recoveryCodeEnc: encryptSecret(ctx.config.secretsKey, recoveryCode),
-        },
+      // With an invite: the account is created as an admin and the invite claimed in ONE transaction — an
+      // invalid/used/expired/revoked invite rolls the whole thing back (never a silent fan account).
+      user = await prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: {
+            name: body.name,
+            entryId: body.entryId,
+            teamName: entry.teamName,
+            locale: body.locale ?? 'he',
+            role: inviteToken === undefined ? 'USER' : 'ADMIN',
+            recoveryCodeHash,
+            recoveryCodeEnc: encryptSecret(ctx.config.secretsKey, recoveryCode),
+          },
+        });
+        if (inviteToken !== undefined) await claimInvite(tx, inviteToken, created, ctx.clock.now());
+        return created;
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {

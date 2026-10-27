@@ -28,6 +28,8 @@ export interface RateLimitConfig {
   uploadsPerHour: number;
   /** Admin live broadcasts per admin per hour. */
   broadcastsPerHour: number;
+  /** Admin invite links created per admin per hour. */
+  invitesPerHour: number;
 }
 
 export interface MetaAppConfig {

@@ -201,7 +201,12 @@ export type AdminSettings = z.infer<typeof AdminSettingsSchema>;
 
 export const CreateAdminBodySchema = AdminLoginBodySchema.extend({ name: DisplayNameSchema });
 export type CreateAdminBody = z.infer<typeof CreateAdminBodySchema>;
-export const AdminAccountSchema = z.object({ userId: UserIdSchema, username: z.string(), name: z.string() });
+/** username is null for admins who joined via an invite link (they sign in with their app account). */
+export const AdminAccountSchema = z.object({
+  userId: UserIdSchema,
+  username: z.string().nullable(),
+  name: z.string(),
+});
 export type AdminAccount = z.infer<typeof AdminAccountSchema>;
 export const AdminAccountListSchema = z.array(AdminAccountSchema);
 
