@@ -4,7 +4,7 @@
 | ------------------------------------------ | --------------------------------------------------- | --------------------------------- |
 | API (`apps/api`)                           | Render web service, Frankfurt                       | `render.yaml` (Blueprint)         |
 | Database                                   | **Neon free tier** (persistent Postgres, Frankfurt) | `DATABASE_URL`                    |
-| Media (Instagram copies, community photos) | Cloudflare R2 (S3-compatible, 10 GB free)           | `S3_*`                            |
+| Media (Instagram copies, community photos) | **Backblaze B2** (S3-compatible, 10 GB free)        | `S3_*`                            |
 | Web app (`apps/web`, static export)        | Vercel                                              | `vercel.json`                     |
 | Scheduler wake-up                          | GitHub Actions every 5 min                          | `.github/workflows/jobs-tick.yml` |
 
@@ -19,16 +19,21 @@ Chosen by the owner: Neon's free tier keeps data indefinitely (Render's free Pos
    region as the API.
 2. Dashboard → Connection details → choose **Pooled connection** → copy the string
    (`postgresql://…-pooler.…neon.tech/neondb?sslmode=require`). That's `DATABASE_URL`.
-3. Free-tier limits that matter here: 0.5 GB storage (years of posts/news for this app — media lives in R2, not
+3. Free-tier limits that matter here: 0.5 GB storage (years of posts/news for this app — media lives in B2, not
    the DB) and compute that suspends when idle (the first query after a pause takes ~1 s).
 
-## 2. Media bucket (Cloudflare R2)
+## 2. Media bucket — Backblaze B2 (free 10 GB)
 
-1. Cloudflare dashboard → R2 → Create bucket `fantasyonerim-media`.
-2. Bucket → Settings → Public access → enable the `r2.dev` URL (or connect a custom domain such as
-   `media.fantasyonerim.app`). That URL is `S3_PUBLIC_BASE_URL`.
-3. R2 → Manage API tokens → Create token with _Object Read & Write_ on that bucket → note the Access Key ID,
-   Secret Access Key and the S3 endpoint `https://<account-id>.r2.cloudflarestorage.com`.
+1. backblaze.com → B2 Cloud Storage → sign up, region **EU Central**.
+2. Buckets → Create a Bucket `fantasyonerim-media`, Files in Bucket: **Public**. (If B2 refuses public buckets until
+   the account is verified, verify it — or ask for the API-proxy mode, a small code change.)
+3. Note the bucket's **Endpoint**, e.g. `s3.eu-central-003.backblazeb2.com`:
+   - `S3_ENDPOINT` = `https://s3.eu-central-003.backblazeb2.com`
+   - `S3_REGION` = `eu-central-003`
+   - `S3_BUCKET` = the bucket name
+   - `S3_PUBLIC_BASE_URL` = `https://f003.backblazeb2.com/file/<bucket>` (the number matches the endpoint's `003`)
+4. Application Keys → Add a New Application Key → only this bucket, **Read and Write** → `S3_ACCESS_KEY_ID` =
+   keyID, `S3_SECRET_ACCESS_KEY` = applicationKey (shown once).
 
 ## 3. API on Render
 

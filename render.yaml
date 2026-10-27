@@ -35,8 +35,6 @@ services:
         value: 'true'
       - key: MEDIA_STORE
         value: s3
-      - key: S3_REGION
-        value: auto
       # Generated once by Render (256-bit, base64). SECRETS_KEY encrypts social tokens at rest — never rotate
       # it without re-entering the integration secrets in the admin console.
       - key: SECRETS_KEY
@@ -63,7 +61,10 @@ services:
         sync: false
       - key: VAPID_SUBJECT # mailto:ashalim.fantasy@gmail.com
         sync: false
-      - key: S3_ENDPOINT # Cloudflare R2: https://<account-id>.r2.cloudflarestorage.com
+      # Backblaze B2 (owner's choice): endpoint/region from the bucket page, e.g. s3.eu-central-003.backblazeb2.com
+      - key: S3_ENDPOINT # https://s3.eu-central-003.backblazeb2.com
+        sync: false
+      - key: S3_REGION # eu-central-003 (the middle part of the endpoint host)
         sync: false
       - key: S3_BUCKET
         sync: false
@@ -71,7 +72,7 @@ services:
         sync: false
       - key: S3_SECRET_ACCESS_KEY
         sync: false
-      - key: S3_PUBLIC_BASE_URL # the bucket's public URL, e.g. https://media.fantasyonerim.app
+      - key: S3_PUBLIC_BASE_URL # https://f003.backblazeb2.com/file/<bucket> (public bucket's friendly URL)
         sync: false
       # Spotify app credentials (owner-approved). Seeded encrypted into the Spotify integration on first boot so
       # nobody re-types them; ignored once an admin saves keys in the console. Never commit these values.
