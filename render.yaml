@@ -5,8 +5,8 @@
 #   scheduler stops while asleep. The GitHub Actions workflow .github/workflows/jobs-tick.yml calls
 #   /internal/jobs/tick every 5 min, which wakes it and keeps content ingestion + deadline reminders running,
 #   but the first app open after a quiet period is still slow. `starter` (always on) is recommended for launch.
-# * Database: NOT defined here on purpose. Render's free Postgres is deleted after 30 days. Use a persistent
-#   database (Neon free tier, or a paid Render Postgres in Frankfurt) and paste its URL into DATABASE_URL.
+# * Database: Neon free tier (persistent, never auto-deleted), region Europe/Frankfurt — NOT Render's free
+#   Postgres, which is deleted after 30 days. Paste Neon's pooled connection string into DATABASE_URL.
 # * Migrations run once per deploy at the end of the build, never on boot.
 services:
   - type: web
@@ -72,6 +72,12 @@ services:
       - key: S3_SECRET_ACCESS_KEY
         sync: false
       - key: S3_PUBLIC_BASE_URL # the bucket's public URL, e.g. https://media.fantasyonerim.app
+        sync: false
+      # Spotify app credentials (owner-approved). Seeded encrypted into the Spotify integration on first boot so
+      # nobody re-types them; ignored once an admin saves keys in the console. Never commit these values.
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
         sync: false
       - key: META_APP_ID # optional until Instagram is connected
         sync: false

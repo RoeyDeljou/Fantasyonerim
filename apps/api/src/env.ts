@@ -59,6 +59,12 @@ export const EnvSchema = z
       .trim()
       .regex(/^(mailto:|https:\/\/)/, 'must start with mailto: or https://')
       .optional(),
+    /**
+     * Optional: Spotify app credentials seeded into the Spotify integration on first boot (encrypted in the DB).
+     * Ignored once an admin has saved Spotify keys in the console.
+     */
+    SPOTIFY_CLIENT_ID: z.string().trim().min(1).optional(),
+    SPOTIFY_CLIENT_SECRET: z.string().trim().min(1).optional(),
     /** Meta app (Instagram via Facebook Login for Business). */
     META_APP_ID: z.string().trim().min(1).optional(),
     META_APP_SECRET: z.string().trim().min(1).optional(),
@@ -109,6 +115,13 @@ export const EnvSchema = z
       for (const key of VAPID_VARS.filter((k) => env[k] === undefined)) {
         ctx.addIssue({ code: 'custom', path: [key], message: 'VAPID_* must be set together' });
       }
+    }
+    if (Boolean(env.SPOTIFY_CLIENT_ID) !== Boolean(env.SPOTIFY_CLIENT_SECRET)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SPOTIFY_CLIENT_SECRET'],
+        message: 'SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set together',
+      });
     }
     if (Boolean(env.META_APP_ID) !== Boolean(env.META_APP_SECRET)) {
       ctx.addIssue({

@@ -3,7 +3,7 @@ import { buildApp } from './app.js';
 import { bootstrapAdmin } from './auth/bootstrapAdmin.js';
 import { loadEnv, parseOrigins } from './env.js';
 import { createFplFromEnv } from './fpl.js';
-import { ensureIntegrationRows } from './integrations/store.js';
+import { ensureIntegrationRows, seedIntegrationSecrets } from './integrations/store.js';
 import { JobScheduler } from './jobs/runner.js';
 import { LocalDiskMediaStore, S3MediaStore, type MediaStore } from './media/store.js';
 import { WebPushProvider } from './push/provider.js';
@@ -76,6 +76,14 @@ function pushLog(statusCode: number | null, message: string): void {
 if (!vapid) app.log.warn('VAPID_* not set — push notifications are disabled');
 // Client defaults (podcast RSS + Apple enabled) exist from the first boot, so the feed fills by itself.
 await ensureIntegrationRows(prisma);
+// Deploy-time credentials (never committed) configure a fresh database without manual re-entry.
+const secretsKey = env.SECRETS_KEY ? parseSecretsKey(env.SECRETS_KEY) : devSecretsKey();
+const seeded = await seedIntegrationSecrets(prisma, secretsKey, {
+  ...(env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET
+    ? { spotify: { clientId: env.SPOTIFY_CLIENT_ID, clientSecret: env.SPOTIFY_CLIENT_SECRET } }
+    : {}),
+});
+if (seeded.length > 0) app.log.info({ seeded }, 'integration credentials seeded from env');
 
 if (!env.SECRETS_KEY) app.log.warn('SECRETS_KEY not set — using an insecure development key');
 

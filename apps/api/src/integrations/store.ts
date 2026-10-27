@@ -39,6 +39,31 @@ export async function ensureIntegrationRows(prisma: PrismaClient): Promise<void>
   });
 }
 
+/**
+ * Seeds integration secrets from deploy-time env (e.g. SPOTIFY_CLIENT_ID/SECRET on Render) so a fresh production
+ * database is configured without anyone re-typing keys. Only fills an integration that has NO stored secrets:
+ * once an admin saves keys in the console, the console wins and env is ignored. Returns the ids it seeded.
+ */
+export async function seedIntegrationSecrets(
+  prisma: PrismaClient,
+  key: Buffer,
+  seeds: Partial<Record<IntegrationId, Record<string, string>>>,
+): Promise<IntegrationId[]> {
+  const seeded: IntegrationId[] = [];
+  for (const id of INTEGRATION_IDS) {
+    const values = seeds[id];
+    if (!values || Object.keys(values).length === 0) continue;
+    const row = await prisma.integrationConfig.findUnique({ where: { id } });
+    if (row === null || Object.keys(readSecrets(key, row)).length > 0) continue;
+    await prisma.integrationConfig.update({
+      where: { id },
+      data: { secretsEnc: encryptSecrets(key, values), enabled: true },
+    });
+    seeded.push(id);
+  }
+  return seeded;
+}
+
 export function readSettings(row: IntegrationConfig): Record<string, string> {
   const parsed = StringRecordSchema.safeParse(row.settings);
   return parsed.success ? parsed.data : {};
