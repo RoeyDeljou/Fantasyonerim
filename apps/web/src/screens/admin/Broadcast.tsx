@@ -405,9 +405,10 @@ function TargetRow({
     ? b[`targetDesc_${target}`]
     : paid
       ? undefined
-      : info?.reason
-        ? fmt(b.unavailable, { reason: info.reason })
+      : info
+        ? fmt(b.unavailable, { reason: reasonText(b, info) })
         : b.unavailableNoReason;
+  const note = available && info ? reasonText(b, info, '') : '';
   return (
     <div data-testid="broadcast-target" data-target={target} data-available={available ? 'true' : 'false'}>
       <Switch
@@ -417,14 +418,14 @@ function TargetRow({
         disabled={!available}
         onChange={onChange}
       />
-      {available && info?.reason && (
+      {note && (
         <p
           dir="auto"
           className="-mt-1 mb-1 flex items-start gap-1.5 text-xs text-warning"
           data-testid="broadcast-target-note"
         >
           <InfoIcon size={14} className="mt-px shrink-0" />
-          <span>{info.reason}</span>
+          <span>{note}</span>
         </p>
       )}
       {paid && (
@@ -516,6 +517,55 @@ function ConfirmBody({
   );
 }
 
+// ---------- localized outcomes (the API's `code` / `reasonCode`; `detail` / `reason` are English, for logs) ----------
+
+type BroadcastCopy = Messages['broadcast'];
+
+function notConfigured(b: BroadcastCopy, target: BroadcastTarget): string {
+  return target === 'push'
+    ? b.out_not_configured_push
+    : target === 'x'
+      ? b.out_not_configured_x
+      : b.out_not_configured;
+}
+
+/** Why a target can't be used (or a heads-up for an available one, e.g. no push subscribers yet). */
+export function reasonText(b: BroadcastCopy, info: TargetInfo, fallback = b.unavailableNoReason): string {
+  switch (info.reasonCode) {
+    case 'no_subscribers':
+      return b.out_no_subscribers;
+    case 'not_configured':
+      return notConfigured(b, info.target);
+    case 'paid_feature':
+      return b.out_not_configured_x;
+    case null:
+      return info.reason ?? fallback;
+    default:
+      return info.reason ?? fallback;
+  }
+}
+
+export function outcomeText(b: BroadcastCopy, r: BroadcastTargetResult): string {
+  switch (r.code) {
+    case 'posted':
+      return r.target === 'news' ? b.out_posted_news : r.target === 'x' ? b.out_posted_x : b.out_posted;
+    case 'delivered':
+      return r.delivered !== null && r.recipients !== null
+        ? fmt(b.out_delivered, { delivered: r.delivered, recipients: r.recipients })
+        : r.detail;
+    case 'no_subscribers':
+      return b.out_no_subscribers;
+    case 'not_configured':
+      return notConfigured(b, r.target);
+    case 'too_long':
+      return b.out_too_long;
+    case 'failed':
+      return b.out_failed;
+    default:
+      return r.detail;
+  }
+}
+
 // ---------- results ----------
 
 function statusTone(s: BroadcastTargetResult['status']): 'success' | 'warning' | 'live' {
@@ -582,9 +632,12 @@ function ResultList({ results, compact = false }: { results: BroadcastTargetResu
                 {b[`status_${r.status}`]}
               </Badge>
             </div>
-            {r.detail && (
-              <p dir="auto" className="text-sm break-words text-muted">
-                {r.detail}
+            <p className="text-sm break-words text-muted" data-testid="broadcast-result-text">
+              {outcomeText(b, r)}
+            </p>
+            {r.code === 'failed' && r.detail && (
+              <p dir="auto" className="text-xs break-words text-muted">
+                {fmt(b.out_failedDetail, { detail: r.detail })}
               </p>
             )}
             {r.url && (

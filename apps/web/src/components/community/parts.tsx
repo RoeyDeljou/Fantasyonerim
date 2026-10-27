@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { CommunityAuthor } from '@fant/shared';
+import type { CommunityAuthor, UserId } from '@fant/shared';
 import { useI18n } from '@/i18n';
 import { initials } from '@/lib/text';
 import { Logo } from '@/components/AppShell';
@@ -127,4 +127,9 @@ export function CommunityToastProvider({ children }: { children: ReactNode }) {
 
 export function useNotify() {
   return useContext(ToastContext);
+}
+
+/** "Block user" applies to other fans only — never yourself, never an admin (the API answers 400). */
+export function canBlock(author: CommunityAuthor, mine: boolean, meId: UserId | undefined): boolean {
+  return !mine && author.role !== 'admin' && meId !== undefined && author.id !== meId;
 }

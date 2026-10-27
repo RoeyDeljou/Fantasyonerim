@@ -105,7 +105,12 @@ const pushPublisher: BroadcastPublisher = {
   target: 'push',
   async status(ctx) {
     if (ctx.push === null) {
-      return { available: false, reason: PUSH_NOT_CONFIGURED, reasonCode: 'not_configured', paidFeature: false };
+      return {
+        available: false,
+        reason: PUSH_NOT_CONFIGURED,
+        reasonCode: 'not_configured',
+        paidFeature: false,
+      };
     }
     const none = (await liveSubscriberCount(ctx)) === 0;
     return {

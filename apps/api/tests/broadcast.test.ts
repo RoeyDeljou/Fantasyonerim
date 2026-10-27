@@ -573,26 +573,49 @@ describe('history and targets status', () => {
       );
     };
     let t = await get();
-    expect(t['news']).toEqual({ target: 'news', available: true, reason: null, paidFeature: false });
+    expect(t['news']).toEqual({
+      target: 'news',
+      available: true,
+      reason: null,
+      reasonCode: null,
+      paidFeature: false,
+    });
     expect(t['push']).toEqual({
       target: 'push',
       available: true,
       reason: NO_LIVE_SUBSCRIBERS,
+      reasonCode: 'no_subscribers',
       paidFeature: false,
     });
-    expect(t['x']).toEqual({ target: 'x', available: false, reason: X_NOT_CONNECTED, paidFeature: true });
+    expect(t['x']).toEqual({
+      target: 'x',
+      available: false,
+      reason: X_NOT_CONNECTED,
+      reasonCode: 'paid_feature',
+      paidFeature: true,
+    });
 
     await fan(1601, { news: false, live: true });
     await setXKeys();
     t = await get();
-    expect(t['push']).toMatchObject({ available: true, reason: null });
-    expect(t['x']).toEqual({ target: 'x', available: true, reason: null, paidFeature: true });
+    expect(t['push']).toMatchObject({ available: true, reason: null, reasonCode: null });
+    expect(t['x']).toEqual({
+      target: 'x',
+      available: true,
+      reason: null,
+      reasonCode: null,
+      paidFeature: true,
+    });
 
     await app.close();
     await resetDb(prisma);
     await boot({ push: null, config: {} });
     t = await get();
-    expect(t['push']).toMatchObject({ available: false, reason: PUSH_NOT_CONFIGURED });
+    expect(t['push']).toMatchObject({
+      available: false,
+      reason: PUSH_NOT_CONFIGURED,
+      reasonCode: 'not_configured',
+    });
   });
 
   it('rate-limits broadcasts per admin', async () => {

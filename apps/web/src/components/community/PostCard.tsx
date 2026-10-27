@@ -11,7 +11,7 @@ import { ExpandableText, LinkifiedText, MediaImage } from '@/components/news/par
 import { Num, cx } from '@/components/ui';
 import { ContentMenu } from './ContentMenu';
 import { ImageViewer } from './ImageViewer';
-import { AuthorAvatar, AuthorLine, useNotify } from './parts';
+import { AuthorAvatar, AuthorLine, canBlock, useNotify } from './parts';
 import { SnapshotSheet, TeamPreview } from './TeamSnapshot';
 
 /** Uploaded photos keep their shape within sensible bounds (4:5 portrait … 1.91:1 landscape, like Instagram). */
@@ -62,6 +62,8 @@ export function PostCard({
           deleteBody={c.deletePostBody}
           deleting={remove.isPending}
           deleteError={remove.error}
+          blockAuthor={canBlock(post.author, post.mine, me.data?.id) ? post.author : null}
+          onBlocked={onDeleted}
           onDelete={(done) =>
             remove.mutate(post.id, {
               onSuccess: () => {

@@ -19,7 +19,7 @@ import {
   errorMessage,
 } from '@/components/ui';
 import { ContentMenu } from './ContentMenu';
-import { AuthorAvatar, AuthorLine, BannedNotice, useNotify } from './parts';
+import { AuthorAvatar, AuthorLine, BannedNotice, canBlock, useNotify } from './parts';
 import { PostCard, PostCardSkeleton } from './PostCard';
 
 const COMMENT_MAX = 500;
@@ -138,6 +138,7 @@ function CommentItem({ comment }: { comment: Comment }) {
             canDelete={comment.mine || isAdmin}
             canReport={!comment.mine && !banned}
             deleteTitle={c.deleteCommentTitle}
+            blockAuthor={canBlock(comment.author, comment.mine, me.data?.id) ? comment.author : null}
             deleting={remove.isPending}
             deleteError={remove.error}
             onDelete={(done) =>
