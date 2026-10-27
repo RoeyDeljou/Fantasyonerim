@@ -34,6 +34,12 @@ export {
 } from './spotify.js';
 export type { SpotifyLinkResolverConfig } from './spotify.js';
 export {
+  fetchSpotifyEpisodeThumbnail,
+  normalizeSpotifyEpisodeUrl,
+  SPOTIFY_OEMBED_URL,
+} from './spotify-oembed.js';
+export type { SpotifyEpisodeThumbnail } from './spotify-oembed.js';
+export {
   GRAPH_API_VERSION,
   GRAPH_BASE_URL,
   INSTAGRAM_SCOPES,

@@ -26,6 +26,12 @@ normalized title → episode number + date → unambiguous date). Spotify/Apple 
 RSS, so apps/api should periodically call `resolveEpisodeLinks(recentRefs, resolvers)` +
 `mergePodcastLinks` for recent episodes still missing a link (refs via `episodeRefFromDraft`).
 
+Episode thumbnails: the Spotify Web API, RSS and Apple only expose the square show cover. For video episodes,
+`fetchSpotifyEpisodeThumbnail(spotifyEpisodeUrl, ctx)` reads Spotify's public oEmbed (no auth) and returns the
+per-episode 16:9 `{ url, width, height }`, or null (not an open.spotify.com episode URL — no fetch; 404; no https
+thumbnail; or `type !== "video"` with a square thumbnail = the show cover). 429 → `IntegrationRateLimitError`,
+5xx/network/bad body → `IntegrationUnavailableError`. The URL is a Spotify CDN image: re-host it like other media.
+
 Instagram uses Facebook Login for Business on `graph.facebook.com` (`GRAPH_API_VERSION`): connect with
 `buildInstagramConnectUrl` → callback → `completeInstagramConnect` (returns the connectable accounts; Page tokens
 do not expire).
