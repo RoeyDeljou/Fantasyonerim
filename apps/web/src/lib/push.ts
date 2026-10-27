@@ -5,6 +5,7 @@ import { WebPushSubscriptionBodySchema } from '@fant/shared';
 import { api, isApiError } from './api';
 import { readPref, writePref } from './prefs';
 import { isIos, isStandalone } from './pwa';
+import { isNativeShell } from './platform';
 
 /**
  * Web push: support detection, subscribe/unsubscribe and the start-up re-sync. The native shells will
@@ -56,6 +57,8 @@ async function permission(): Promise<NotificationPermission> {
 /** Everything except "is there a subscription". */
 async function baseState(): Promise<Exclude<PushState, 'enabled' | 'loading'> | 'maybe'> {
   if (typeof window === 'undefined') return 'unsupported';
+  // The app-store builds use native push (FCM / APNs via POST /v1/push/devices) — not wired yet, docs/NATIVE.md.
+  if (isNativeShell()) return 'unsupported';
   if (isIos() && !isStandalone()) return 'needs-install';
   if (!pushSupported()) return 'unsupported';
   if ((await permission()) === 'denied') return 'denied';

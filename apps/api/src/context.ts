@@ -26,6 +26,8 @@ export interface RateLimitConfig {
   commentsPerHour: number;
   /** Image uploads per user per hour. */
   uploadsPerHour: number;
+  /** Admin live broadcasts per admin per hour. */
+  broadcastsPerHour: number;
 }
 
 export interface MetaAppConfig {

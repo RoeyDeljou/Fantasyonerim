@@ -1,6 +1,6 @@
 /* Fantasyonerim service worker — offline app shell + push notifications.
  * API calls (cross-origin, NEXT_PUBLIC_API_URL) are never intercepted or cached. */
-const VERSION = 'fant-v2';
+const VERSION = 'fant-v3';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 const SHELL_URLS = [
@@ -12,6 +12,7 @@ const SHELL_URLS = [
   '/table/',
   '/live/',
   '/profile/',
+  '/terms/',
   '/manifest.webmanifest',
   '/favicon.ico',
   '/brand/logo-320.png',

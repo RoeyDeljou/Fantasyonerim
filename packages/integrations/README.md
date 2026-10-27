@@ -33,5 +33,5 @@ do not expire).
 X is pay-per-use: reading uses `since_id` + small `max_results`; posting enforces the 280 weighted-char limit
 (`XPostTooLongError`). Images go through `POST /2/media/upload` (images only, ≤ 5 MB).
 
-Client-facing setup steps: see `SETUP_NOTES.md`. Tests: `npx vitest run packages/integrations` (offline,
+Client-facing setup steps: see `docs/INTEGRATIONS.md`. Tests: `npx vitest run packages/integrations` (offline,
 recorded payloads in `src/__fixtures__/`).

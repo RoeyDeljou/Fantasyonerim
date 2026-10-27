@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import {
   AdminNewsBodySchema,
   AdminPushBodySchema,
@@ -13,7 +12,8 @@ import type { Auth } from '../auth/session.js';
 import type { AppContext } from '../context.js';
 import { notFound } from '../errors.js';
 import { pushNewNewsItems, PUSH_ICON } from '../news/pushNews.js';
-import { EMPTY_LINKS, toNewsItem } from '../news/serialize.js';
+import { createAdminUpdate } from '../news/adminUpdate.js';
+import { toNewsItem } from '../news/serialize.js';
 import { notify } from '../push/notify.js';
 import { parseInput, serialize } from '../validate.js';
 
@@ -31,17 +31,10 @@ export function adminNewsRoutes(app: FastifyInstance, ctx: AppContext, auth: Aut
 
     admin.post('/v1/admin/news', async (request, reply) => {
       const body = parseInput(AdminNewsBodySchema, request.body);
-      const now = ctx.clock.now();
-      const created = await prisma.newsItem.create({
-        data: {
-          dedupeKey: `admin_update:${randomUUID()}`,
-          source: 'admin_update',
-          title: body.title,
-          text: body.text,
-          links: { ...EMPTY_LINKS, ...body.links },
-          publishedAt: now,
-        },
-        include: { media: true },
+      const created = await createAdminUpdate(ctx, {
+        title: body.title,
+        text: body.text,
+        links: body.links,
       });
       try {
         await pushNewNewsItems(ctx, [created]);

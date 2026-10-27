@@ -6,6 +6,7 @@ import {
   createInstagramStoriesSource,
   createPodcastSource,
   createSpotifyLinkResolver,
+  createXPublisher,
   createXSource,
   resolveEpisodeLinks,
   resolveXUser,
@@ -26,6 +27,7 @@ export interface IntegrationFactories {
   completeInstagramConnect: typeof completeInstagramConnect;
   createXSource: typeof createXSource;
   resolveXUser: typeof resolveXUser;
+  createXPublisher: typeof createXPublisher;
 }
 
 export const realIntegrations: IntegrationFactories = {
@@ -39,4 +41,5 @@ export const realIntegrations: IntegrationFactories = {
   completeInstagramConnect,
   createXSource,
   resolveXUser,
+  createXPublisher,
 };

@@ -44,6 +44,8 @@ import type {
   ReportGroup,
   UserId,
   AdminUser,
+  BroadcastBody,
+  ChangePasswordBody,
 } from '@fant/shared';
 import type { InfiniteData, QueryClient as QC } from '@tanstack/react-query';
 import { api, isApiError, isBannedError } from './api';
@@ -82,6 +84,8 @@ export const qk = {
   adminReports: ['admin', 'reports'] as const,
   adminUsers: (query: string) => ['admin', 'users', query] as const,
   hiddenNews: ['admin', 'news', 'hidden'] as const,
+  broadcastTargets: ['admin', 'broadcast', 'targets'] as const,
+  broadcasts: ['admin', 'broadcast', 'history'] as const,
 };
 
 export const COMMUNITY_PAGE_SIZE = 20;
@@ -759,4 +763,40 @@ export function useRestoreNews() {
       void qc.invalidateQueries({ queryKey: ['news'] });
     },
   });
+}
+
+// ---------- Phase 4: live updates (broadcast) + admin account ----------
+
+export function useBroadcastTargets(enabled: boolean) {
+  return useQuery({
+    queryKey: qk.broadcastTargets,
+    queryFn: ({ signal }) => api.admin.broadcastTargets({ signal }),
+    enabled,
+    // Availability changes rarely (keys set, first subscriber) — refresh when the admin comes back to the tab.
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useBroadcastHistory(enabled: boolean) {
+  return useQuery({
+    queryKey: qk.broadcasts,
+    queryFn: ({ signal }) => api.admin.broadcasts({ signal }),
+    enabled,
+  });
+}
+
+export function useSendBroadcast() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: BroadcastBody) => api.admin.broadcast(body),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: qk.broadcasts });
+      void qc.invalidateQueries({ queryKey: ['news'] });
+    },
+  });
+}
+
+export function useChangePassword() {
+  return useMutation({ mutationFn: (body: ChangePasswordBody) => api.admin.changePassword(body) });
 }

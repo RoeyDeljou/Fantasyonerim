@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { NewsItem } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
+import { openExternal } from '@/lib/external';
 import { markStorySeen } from '@/lib/localState';
 import { CameraIcon, CloseIcon, MuteIcon, VolumeIcon } from '@/components/icons';
 import { Logo } from '@/components/AppShell';
@@ -332,6 +333,10 @@ export function StoryViewer({
               href={instagramUrl}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={(e) => {
+                e.preventDefault();
+                openExternal(instagramUrl);
+              }}
               className="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-full bg-story-ink/15 px-4 text-sm font-semibold backdrop-blur"
             >
               <CameraIcon size={18} />

@@ -33,6 +33,9 @@ import {
   LikeResultSchema,
   ReportListSchema,
   UploadResponseSchema,
+  BroadcastHistorySchema,
+  BroadcastResultSchema,
+  BroadcastTargetsStatusSchema,
 } from '@fant/shared';
 import type { CreateAdminBodySchema } from '@fant/shared';
 import type {
@@ -83,6 +86,11 @@ import type {
   ReportGroup,
   UploadResponse,
   UserId,
+  BroadcastBody,
+  BroadcastHistory,
+  BroadcastResult,
+  BroadcastTargetsStatus,
+  ChangePasswordBody,
 } from '@fant/shared';
 import { tokenStore } from './tokenStore';
 
@@ -148,6 +156,11 @@ interface RequestOptions {
   body?: unknown;
   query?: Query;
   signal?: AbortSignal | undefined;
+  /**
+   * A 401 here means "wrong credentials in the body" (e.g. the current password), not "session ended" — don't
+   * clear the token or run the sign-out handler.
+   */
+  credentialCheck?: boolean;
 }
 
 async function request<T>(
@@ -195,7 +208,7 @@ async function request<T>(
     const err = parsed.success
       ? new ApiRequestError(parsed.data.error.code, res.status, parsed.data.error.message)
       : new ApiRequestError(statusToCode(res.status), res.status, res.statusText);
-    if (res.status === 401 && token) {
+    if (res.status === 401 && token && !opts.credentialCheck) {
       await tokenStore.clear();
       unauthorizedHandler?.();
     }
@@ -337,6 +350,16 @@ export const api = {
       request('GET', '/v1/admin/news/hidden', HiddenNewsListSchema, o),
     restoreNews: (id: NewsItemId): Promise<void> =>
       request('POST', `/v1/admin/news/${encodeURIComponent(id)}/restore`, noContent),
+
+    broadcastTargets: (o: Signal = {}): Promise<BroadcastTargetsStatus> =>
+      request('GET', '/v1/admin/broadcast/targets', BroadcastTargetsStatusSchema, o),
+    broadcast: (body: BroadcastBody): Promise<BroadcastResult> =>
+      request('POST', '/v1/admin/broadcast', BroadcastResultSchema, { body }),
+    broadcasts: (o: Signal = {}): Promise<BroadcastHistory> =>
+      request('GET', '/v1/admin/broadcasts', BroadcastHistorySchema, o),
+    /** 204 · 401 = the current password is wrong (the session itself stays valid). */
+    changePassword: (body: ChangePasswordBody): Promise<void> =>
+      request('POST', '/v1/admin/me/password', noContent, { body, credentialCheck: true }),
   },
 
   community: {

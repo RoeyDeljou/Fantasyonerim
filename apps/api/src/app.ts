@@ -24,6 +24,7 @@ import { LocalDiskMediaStore, type MediaStore } from './media/store.js';
 import type { PushProvider } from './push/provider.js';
 import { MAX_UPLOAD_BYTES } from './community/images.js';
 import { userRateLimitKey } from './community/guard.js';
+import { adminBroadcastRoutes } from './routes/adminBroadcast.js';
 import { adminCommunityRoutes } from './routes/adminCommunity.js';
 import { adminNewsRoutes } from './routes/adminNews.js';
 import { communityRoutes } from './routes/community.js';
@@ -68,6 +69,7 @@ const DEFAULT_RATE_LIMIT: RateLimitConfig = {
   postsPerHour: 10,
   commentsPerHour: 60,
   uploadsPerHour: 30,
+  broadcastsPerHour: 30,
 };
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -193,6 +195,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     writes: { ...writeLimit, keyGenerator: perUser },
   };
   const uploadLimit = { max: limits.uploadsPerHour, timeWindow: HOUR_MS, keyGenerator: perUser };
+  const broadcastLimit = { max: limits.broadcastsPerHour, timeWindow: HOUR_MS, keyGenerator: perUser };
   const jobs = new JobRunner(ctx, deps.jobs ?? JOBS, app.log);
   app.decorate('jobs', jobs);
 
@@ -202,7 +205,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   fplRoutes(app, ctx);
   leagueRoutes(app, ctx);
   captainBattleRoutes(app, ctx, auth);
-  adminRoutes(app, ctx, auth);
+  adminRoutes(app, ctx, auth, strictLimit);
   newsRoutes(app, ctx);
   pushRoutes(app, ctx, auth, writeLimit);
   integrationRoutes(app, ctx, auth, jobs);
@@ -210,6 +213,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   communityRoutes(app, ctx, auth, communityLimits);
   uploadRoutes(app, ctx, auth, uploadLimit);
   adminCommunityRoutes(app, ctx, auth);
+  adminBroadcastRoutes(app, ctx, auth, broadcastLimit);
   internalRoutes(app, ctx, jobs);
 
   return app;

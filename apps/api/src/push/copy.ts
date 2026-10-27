@@ -73,6 +73,14 @@ export function newsCopy(locale: Locale, source: NewsSource, items: readonly New
   }
 }
 
+/** Max characters of a live broadcast shown in the notification body. */
+export const BROADCAST_SNIPPET_CHARS = 180;
+
+/** Admin live update (e.g. a goal alert): the headline (or the brand) + the start of the message. */
+export function broadcastCopy(locale: Locale, title: string | null, text: string): PushText {
+  return { title: title ?? BRAND[locale], body: snippet(text, BROADCAST_SNIPPET_CHARS) };
+}
+
 /** "שעתיים" / "2 hours", "יום" / "1 day", "30 דקות" / "30 minutes". */
 export function formatOffset(locale: Locale, minutes: number): string {
   if (locale === 'he') {

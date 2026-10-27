@@ -6,6 +6,7 @@ import { AdminNewsBodySchema, AdminPushBodySchema } from '@fant/shared';
 import type { IntegrationId, IntegrationStatus } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import type { Messages } from '@/i18n';
+import { navigateExternal } from '@/lib/external';
 import { api, isApiError } from '@/lib/api';
 import { applePodcastId, expiresWithin, spotifyShowId, xUsername } from '@/lib/newsFormat';
 import {
@@ -505,7 +506,7 @@ function InstagramConnect({ status: s }: { status: IntegrationStatus }) {
     setError(null);
     try {
       const url = await api.admin.instagramConnectUrl();
-      window.location.href = url;
+      navigateExternal(url);
     } catch (e) {
       setStarting(false);
       setError(isApiError(e) && e.status === 503 ? it.igUnavailable : errorMessage(t, e));

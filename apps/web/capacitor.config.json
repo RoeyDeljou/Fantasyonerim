@@ -1,0 +1,29 @@
+{
+  "appId": "com.fantasyonerim.app",
+  "appName": "Fantasyonerim",
+  "webDir": "out",
+  "server": {
+    "androidScheme": "https"
+  },
+  "ios": {
+    "contentInset": "never",
+    "scheme": "Fantasyonerim"
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 800,
+      "launchAutoHide": true,
+      "backgroundColor": "#3D185B",
+      "showSpinner": false
+    },
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    },
+    "Preferences": {
+      "group": "FantasyonerimPrefs"
+    }
+  }
+}

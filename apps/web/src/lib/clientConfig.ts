@@ -7,3 +7,6 @@ export const CLIENT_HOSTS = {
   /** Itay Tebeka — "ShawMustGoOn!". */
   itay: { fplEntryId: '17754' },
 } as const;
+
+/** Contact for community questions, ban appeals and deletion requests (shown on /terms/). */
+export const CONTACT_EMAIL = 'ashalim.fantasy@gmail.com';

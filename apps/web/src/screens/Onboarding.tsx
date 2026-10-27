@@ -12,6 +12,7 @@ import { api, isApiError } from '@/lib/api';
 import { ROUTES, useSession } from '@/lib/session';
 import { qk } from '@/lib/queries';
 import { Logo } from '@/components/AppShell';
+import { TermsAgreeLine } from './Terms';
 import { ChevronDownIcon, ChevronStartIcon, InfoIcon, KeyIcon } from '@/components/icons';
 import {
   Button,
@@ -162,6 +163,7 @@ export function OnboardingScreen() {
               <KeyIcon size={18} className="shrink-0" />
               <span className="text-start">{t.onboarding.haveCode}</span>
             </button>
+            <TermsAgreeLine />
           </div>
         </div>
       )}
@@ -184,7 +186,8 @@ export function OnboardingScreen() {
           {teamIdField}
           <TeamIdHelp />
           {lookup.isError && !teamError && <InlineError>{errorMessage(t, lookup.error)}</InlineError>}
-          <div className="mt-auto pt-2">
+          <div className="mt-auto flex flex-col gap-2 pt-2">
+            <TermsAgreeLine />
             <Button type="submit" block disabled={lookup.isPending} className="min-h-12">
               {lookup.isPending && <Spinner />}
               {t.onboarding.findTeam}

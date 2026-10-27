@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { IntegrationsView } from './Integrations';
 import { ModerationView } from './Moderation';
+import { BroadcastView, LiveUpdateCard } from './Broadcast';
+import { AccountView } from './Account';
 import type { FormEvent, ReactNode } from 'react';
 import {
   AdminSettingsSchema,
@@ -81,7 +83,12 @@ export function AdminScreen() {
   );
 }
 
-type AdminView = 'settings' | 'integrations' | 'community';
+type AdminView = 'settings' | 'broadcast' | 'integrations' | 'community' | 'account';
+const VIEWS: readonly AdminView[] = ['settings', 'broadcast', 'integrations', 'community', 'account'];
+
+function isView(v: string | null): v is AdminView {
+  return v !== null && (VIEWS as readonly string[]).includes(v);
+}
 
 /**
  * `/admin/?view=integrations` — and the Instagram OAuth callback lands on `/admin/?instagram=connected` or
@@ -110,12 +117,7 @@ function AdminViews() {
     router.replace('/admin/?view=integrations', { scroll: false });
   }, [ig, reason, router, t]);
 
-  const view: AdminView =
-    viewParam === 'integrations' || ig
-      ? 'integrations'
-      : viewParam === 'community'
-        ? 'community'
-        : 'settings';
+  const view: AdminView = ig ? 'integrations' : isView(viewParam) ? viewParam : 'settings';
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-extrabold text-ink">{t.admin.title}</h1>
@@ -125,27 +127,74 @@ function AdminViews() {
         ms={notice?.ok ? 4000 : 8000}
         onDone={clearNotice}
       />
-      <Segmented<AdminView>
-        label={t.integrations.viewsLabel}
+      <AdminNav
         value={view}
         onChange={(v) => setView(v === 'settings' ? null : v)}
         options={[
           { value: 'settings', label: t.integrations.viewSettings },
+          { value: 'broadcast', label: t.broadcast.view },
           { value: 'integrations', label: t.integrations.viewIntegrations },
           { value: 'community', label: t.moderation.view },
+          { value: 'account', label: t.account.view },
         ]}
       />
       {view === 'settings' ? (
         <>
+          <LiveUpdateCard />
           <SettingsSection />
           <CaptainBattleEditor />
           <AdminsSection />
         </>
+      ) : view === 'broadcast' ? (
+        <BroadcastView />
       ) : view === 'integrations' ? (
         <IntegrationsView />
-      ) : (
+      ) : view === 'community' ? (
         <ModerationView />
+      ) : (
+        <AccountView />
       )}
+    </div>
+  );
+}
+
+/**
+ * The admin sections as two rows of pill tabs (3 + 2): five labels don't fit one row at 360 px, and a scrolling
+ * strip would hide some of them. Same tablist semantics as `Segmented`.
+ */
+function AdminNav({
+  value,
+  options,
+  onChange,
+}: {
+  value: AdminView;
+  options: ReadonlyArray<{ value: AdminView; label: string }>;
+  onChange(v: AdminView): void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div role="tablist" aria-label={t.integrations.viewsLabel} className="grid grid-cols-6 gap-1.5">
+      {options.map((o, i) => {
+        const active = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(o.value)}
+            className={cx(
+              'min-h-11 min-w-0 truncate rounded-full border px-2 text-sm font-semibold transition-colors',
+              i < 3 ? 'col-span-2' : 'col-span-3',
+              active
+                ? 'border-primary bg-primary text-on-primary'
+                : 'border-line bg-surface text-muted hover:bg-surface-2 hover:text-ink',
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

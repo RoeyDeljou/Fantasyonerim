@@ -1,16 +1,20 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
+import { BroadcastTargetSchema } from '@fant/shared';
+import type { BroadcastTarget } from '@fant/shared';
 import { readPref, writePref } from './prefs';
 
 /**
- * Small device-local UI state for News (seen stories, push-prompt dismissal, preferred podcast app). All of it is
- * cosmetic — losing it never breaks anything — so storage errors are swallowed by readPref/writePref.
+ * Small device-local UI state (seen stories, push-prompt dismissal, preferred podcast app, the live-update
+ * composer's last targets). All of it is cosmetic — losing it never breaks anything — so storage errors are
+ * swallowed by readPref/writePref.
  */
 const KEYS = {
   seenStories: 'fant.news.seenStories',
   pushPromptDismissedAt: 'fant.news.pushPromptDismissedAt',
   listenApp: 'fant.news.listenApp',
+  broadcastTargets: 'fant.admin.broadcastTargets',
 } as const;
 
 function readJson(key: string): unknown {
@@ -94,4 +98,20 @@ export function useListenPref(): ListenPref {
     readListen,
     () => 'ask',
   );
+}
+
+// ---------- live update composer: the last chosen targets ----------
+
+/** The targets the admin picked last time (null = never sent from this device). */
+export function readBroadcastTargets(): BroadcastTarget[] | null {
+  const v = readJson(KEYS.broadcastTargets);
+  if (!Array.isArray(v)) return null;
+  return v.flatMap((x: unknown) => {
+    const p = BroadcastTargetSchema.safeParse(x);
+    return p.success ? [p.data] : [];
+  });
+}
+
+export function writeBroadcastTargets(targets: readonly BroadcastTarget[]): void {
+  writePref(KEYS.broadcastTargets, JSON.stringify(targets));
 }

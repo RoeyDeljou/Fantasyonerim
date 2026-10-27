@@ -339,8 +339,9 @@ model Upload {
   /// Set when attached to a post (an upload can be used once).
   usedAt      DateTime?
 
-  owner User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  post  CommunityPost?
+  owner      User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  post       CommunityPost?
+  broadcasts Broadcast[]
 
   @@index([usedAt, createdAt])
 }
@@ -372,4 +373,28 @@ model Report {
 
   @@unique([targetKind, targetId, reporterId, isOpen])
   @@index([isOpen, targetKind, targetId])
+}
+
+// ---------- Phase 4: Live broadcasts ----------
+
+/// One admin "live update" (e.g. a goal alert) published to several targets at once. Audit trail: who sent
+/// what where, with every target's result. Never deleted.
+model Broadcast {
+  id         String   @id @default(cuid())
+  title      String?
+  text       String
+  /// The admin's claimed upload (News card image + X attachment).
+  uploadId   String?
+  /// BroadcastTarget values in the order requested (news | push | x).
+  targets    String[]
+  /// BroadcastTargetResult[] JSON (filled once every target has run).
+  results    Json     @default("[]")
+  /// The admin's user id (no FK: the history outlives an account) + their username at send time.
+  sentById   String
+  sentByName String
+  createdAt  DateTime @default(now())
+
+  upload Upload? @relation(fields: [uploadId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
 }

@@ -2,16 +2,17 @@ import {
   AdminAccountSchema,
   AdminSettingsSchema,
   CaptainBattleConfigSchema,
+  ChangePasswordBodySchema,
   CreateAdminBodySchema,
 } from '@fant/shared';
 import { mapWithConcurrency } from '@fant/fpl';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { hashSecret } from '../auth/passwords.js';
+import { hashSecret, verifySecret } from '../auth/passwords.js';
 import type { Auth } from '../auth/session.js';
 import type { AppContext } from '../context.js';
-import { badRequest, conflict, notFound } from '../errors.js';
+import { badRequest, conflict, notFound, unauthorized } from '../errors.js';
 import { isFplNotFound } from '../fplErrors.js';
 import { getLatestBattle, getSettings, toAdminSettings, toBattleConfig } from '../settings.js';
 import { parseInput, serialize } from '../validate.js';
@@ -46,8 +47,11 @@ export async function createAdmin(
   }
 }
 
-/** Every route in this scope re-checks the ADMIN role before anything else (incl. body parsing). */
-export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth): void {
+/**
+ * Every route in this scope re-checks the ADMIN role before anything else (incl. body parsing).
+ * `passwordLimit` is the login rate limit (per IP), applied to the password change too.
+ */
+export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, passwordLimit: object): void {
   const { prisma } = ctx;
 
   void app.register(async (admin) => {
@@ -154,6 +158,23 @@ export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth): 
         credentials.map((c) => ({ userId: c.userId, username: c.username, name: c.user.name })),
         'AdminAccount[]',
       );
+    });
+
+    // The signed-in admin changes their own password; every other session of theirs is signed out.
+    admin.post('/v1/admin/me/password', { config: { rateLimit: passwordLimit } }, async (request, reply) => {
+      const { user, session } = await auth.requireAdmin(request);
+      const body = parseInput(ChangePasswordBodySchema, request.body);
+      const credential = await prisma.adminCredential.findUnique({ where: { userId: user.id } });
+      if (credential === null) throw badRequest('This admin account has no password to change');
+      if (!(await verifySecret(credential.passwordHash, body.currentPassword))) {
+        throw unauthorized('The current password is incorrect');
+      }
+      const passwordHash = await hashSecret(body.newPassword);
+      await prisma.$transaction([
+        prisma.adminCredential.update({ where: { id: credential.id }, data: { passwordHash } }),
+        prisma.session.deleteMany({ where: { userId: user.id, id: { not: session.id } } }),
+      ]);
+      return reply.code(204).send();
     });
 
     admin.post('/v1/admin/admins', async (request, reply) => {

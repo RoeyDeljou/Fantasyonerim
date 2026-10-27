@@ -1,6 +1,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
+import { isNativeShell } from './platform';
 
 /** Chromium's install prompt event (not in lib.dom). */
 interface BeforeInstallPromptEvent extends Event {
@@ -50,6 +51,7 @@ export function isIos(): boolean {
 export type InstallState = 'installed' | 'promptable' | 'ios' | 'manual' | 'unknown';
 
 function snapshot(): InstallState {
+  if (isNativeShell()) return 'unknown'; // already an app — no install card
   if (installed || isStandalone()) return 'installed';
   if (deferred) return 'promptable';
   if (isIos()) return 'ios';
@@ -80,6 +82,7 @@ export async function promptInstall(): Promise<void> {
 export function registerServiceWorker(): void {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
   if (process.env.NODE_ENV !== 'production') return;
+  if (isNativeShell()) return;
   const register = () => {
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err: unknown) => {
       console.warn('service worker registration failed', err);

@@ -36,7 +36,13 @@ export interface NotifyResult {
   recipients: number;
   /** Of those, users with at least one device that accepted it. */
   delivered: number;
+  /** Push subscriptions (devices) the notification was sent to. */
+  devices: number;
+  /** Of those, devices whose push service accepted it. */
+  devicesDelivered: number;
 }
+
+const NOTHING_SENT: NotifyResult = { recipients: 0, delivered: 0, devices: 0, devicesDelivered: 0 };
 
 export interface NotifyDeps {
   prisma: PrismaClient;
@@ -46,8 +52,8 @@ export interface NotifyDeps {
 
 export async function notify(deps: NotifyDeps, request: NotifyRequest): Promise<NotifyResult> {
   const { prisma, push } = deps;
-  if (push === null) return { recipients: 0, delivered: 0 };
-  if (request.to !== 'all' && request.to.length === 0) return { recipients: 0, delivered: 0 };
+  if (push === null) return { ...NOTHING_SENT };
+  if (request.to !== 'all' && request.to.length === 0) return { ...NOTHING_SENT };
 
   const where: Prisma.UserWhereInput = { pushSubscriptions: { some: {} } };
   if (request.to !== 'all') where.id = { in: [...request.to] };
@@ -62,15 +68,16 @@ export async function notify(deps: NotifyDeps, request: NotifyRequest): Promise<
     const payload = request.build({ userId: user.id, locale: locale.success ? locale.data : 'he' });
     if (payload !== null) payloads.set(user.id, PushPayloadSchema.parse(payload));
   }
-  if (payloads.size === 0) return { recipients: 0, delivered: 0 };
+  if (payloads.size === 0) return { ...NOTHING_SENT };
 
   let recipientIds = [...payloads.keys()];
   const keys = request.dedupeKeys ?? [];
   if (keys.length > 0) recipientIds = await claim(prisma, recipientIds, keys);
-  if (recipientIds.length === 0) return { recipients: 0, delivered: 0 };
+  if (recipientIds.length === 0) return { ...NOTHING_SENT };
 
   const subscriptions = await prisma.pushSubscription.findMany({ where: { userId: { in: recipientIds } } });
   const deliveredTo = new Set<string>();
+  let devicesDelivered = 0;
   const options = request.options ?? DEFAULT_PUSH_OPTIONS;
   await mapWithConcurrency(subscriptions, PUSH_CONCURRENCY, async (sub) => {
     const payload = payloads.get(sub.userId);
@@ -78,6 +85,7 @@ export async function notify(deps: NotifyDeps, request: NotifyRequest): Promise<
     const result = await push.send(sub, payload, options);
     if (result === 'ok') {
       deliveredTo.add(sub.userId);
+      devicesDelivered += 1;
       await prisma.pushSubscription.updateMany({
         where: { id: sub.id },
         data: { lastSuccessAt: deps.clock.now(), failureCount: 0 },
@@ -94,7 +102,12 @@ export async function notify(deps: NotifyDeps, request: NotifyRequest): Promise<
       });
     }
   });
-  return { recipients: recipientIds.length, delivered: deliveredTo.size };
+  return {
+    recipients: recipientIds.length,
+    delivered: deliveredTo.size,
+    devices: subscriptions.length,
+    devicesDelivered,
+  };
 }
 
 /** Inserts (user, key) rows; returns the users for whom at least one key was new. */

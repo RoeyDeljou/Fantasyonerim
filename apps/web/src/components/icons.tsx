@@ -452,3 +452,24 @@ export const UndoIcon = (p: IconProps) => (
     <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
   </Svg>
 );
+
+export const EyeIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+    <circle cx="12" cy="12" r="3" />
+  </Svg>
+);
+
+/** Lightning bolt — the "live update" composer. */
+export const BoltIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12l1-8Z" />
+  </Svg>
+);
+
+export const DocIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M7 3h7l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+    <path d="M14 3v4h4M9 12h6M9 15.5h6M9 8.5h2" />
+  </Svg>
+);

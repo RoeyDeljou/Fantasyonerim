@@ -33,7 +33,7 @@ export async function pushNewNewsItems(
     if (!source.success) continue;
     bySource.set(source.data, [...(bySource.get(source.data) ?? []), item]);
   }
-  const total: NotifyResult = { recipients: 0, delivered: 0 };
+  const total: NotifyResult = { recipients: 0, delivered: 0, devices: 0, devicesDelivered: 0 };
   for (const [source, group] of bySource) {
     group.sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
     const newest = group[0];
@@ -57,6 +57,8 @@ export async function pushNewNewsItems(
     });
     total.recipients += result.recipients;
     total.delivered += result.delivered;
+    total.devices += result.devices;
+    total.devicesDelivered += result.devicesDelivered;
   }
   return total;
 }
