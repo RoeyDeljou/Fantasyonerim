@@ -31,6 +31,7 @@ jobs:
           if [ -z "$API_URL" ] || [ -z "$CRON_SECRET" ]; then
             echo "API_URL / CRON_SECRET secrets not set yet — skipping."; exit 0
           fi
+          BASE="${API_URL%/}" # tolerate a trailing slash in the secret
           # A sleeping free-tier service can take ~60 s to wake: allow it.
           curl --fail-with-body --silent --show-error --max-time 120 --retry 2 --retry-delay 10 \
-            -X POST "$API_URL/internal/jobs/tick" -H "x-cron-secret: $CRON_SECRET"
+            -X POST "$BASE/internal/jobs/tick" -H "x-cron-secret: $CRON_SECRET"
