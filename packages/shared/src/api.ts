@@ -51,7 +51,8 @@ export const DisplayNameSchema = z
 
 export const MeSchema = z.object({
   id: UserIdSchema,
-  name: DisplayNameSchema,
+  /** Output: any stored name (input rules may tighten over time); inputs use DisplayNameSchema. */
+  name: z.string().min(1).max(80),
   /** Null only for admin-only accounts that never linked an FPL team. */
   entryId: FplEntryIdSchema.nullable(),
   /** FPL team name, cached at registration and refreshed in the background. */

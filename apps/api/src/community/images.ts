@@ -33,7 +33,7 @@ export function sniffImage(bytes: Uint8Array): SniffedImage | null {
   return null;
 }
 
-export const unsupportedMedia = (message: string) => new ApiHttpError(415, 'bad_request', message);
+export const unsupportedMedia = (message: string) => new ApiHttpError(415, 'unsupported_media_type', message);
 
 export interface ProcessedImage {
   bytes: Uint8Array;

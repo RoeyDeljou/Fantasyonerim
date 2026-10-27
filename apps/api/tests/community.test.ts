@@ -144,6 +144,7 @@ describe('POST /v1/uploads', () => {
     const text = Buffer.from('<html><script>alert(1)</script></html> definitely not a photo');
     const res = await uploadRaw(fan.token, text, { filename: 'evil.jpg', contentType: 'image/jpeg' });
     expect(res.statusCode).toBe(415);
+    expect(res.json().error.code).toBe('unsupported_media_type');
     expect(errorOf(res).message).toMatch(/Unsupported image type/);
 
     const gif = Buffer.from('GIF89a\x01\x00\x01\x00\x00\x00\x00;', 'latin1');
@@ -165,6 +166,7 @@ describe('POST /v1/uploads', () => {
     const huge = Buffer.concat([jpeg, Buffer.alloc(10 * 1024 * 1024 + 1 - jpeg.length)]);
     const res = await uploadRaw(fan.token, huge);
     expect(res.statusCode).toBe(413);
+    expect(res.json().error.code).toBe('payload_too_large');
     expect(errorOf(res).message).toMatch(/10 MB/);
     expect(await prisma.upload.count()).toBe(0);
   });

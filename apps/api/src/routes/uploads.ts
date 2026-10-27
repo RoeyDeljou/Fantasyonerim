@@ -40,7 +40,7 @@ export function uploadRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, 
       bytes = await file.toBuffer();
     } catch (err) {
       if (isFileTooLarge(err)) {
-        throw new ApiHttpError(413, 'bad_request', 'The image is larger than 10 MB');
+        throw new ApiHttpError(413, 'payload_too_large', 'The image is larger than 10 MB');
       }
       throw err;
     }

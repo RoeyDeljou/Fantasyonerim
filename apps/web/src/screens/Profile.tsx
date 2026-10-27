@@ -83,7 +83,7 @@ function ProfileInner() {
   return (
     <div className="flex flex-col gap-3">
       <Card className="flex flex-col gap-1">
-        <NameEditor current={user.name} />
+        <NameEditor current={user.name} locked={!user.canPost} />
         <div className="mt-2 border-t border-line pt-2">
           <Row label={t.profile.team}>
             <bdi dir="auto">{user.teamName ?? '—'}</bdi>
@@ -181,7 +181,7 @@ function ProfileInner() {
   );
 }
 
-function NameEditor({ current }: { current: string }) {
+function NameEditor({ current, locked }: { current: string; locked: boolean }) {
   const { t } = useI18n();
   const update = useUpdateMe();
   const [editing, setEditing] = useState(false);
@@ -219,6 +219,7 @@ function NameEditor({ current }: { current: string }) {
           <span dir="auto" className="name-start truncate text-lg font-bold text-ink">
             {current}
           </span>
+          {locked && <span className="text-xs text-muted">{t.profile.nameLocked}</span>}
           {saved && (
             <span className="flex items-center gap-1 text-xs font-semibold text-success" role="status">
               <CheckIcon size={14} />
@@ -228,6 +229,7 @@ function NameEditor({ current }: { current: string }) {
         </div>
         <Button
           variant="secondary"
+          disabled={locked}
           onClick={() => {
             setName(current);
             setError(null);

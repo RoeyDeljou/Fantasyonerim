@@ -253,6 +253,7 @@ export const he = {
     kindCustom: 'רגיל',
   },
   profile: {
+    nameLocked: 'החשבון מושעה כרגע, אז אי אפשר לשנות את השם.',
     title: 'פרופיל',
     name: 'שם',
     editName: 'עריכת השם',

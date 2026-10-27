@@ -93,3 +93,12 @@ describe('deleted posts take their photo offline', () => {
     expect(media.objects.has(key)).toBe(true);
   });
 });
+
+describe('legacy names', () => {
+  it('a name stored before the direction-control rule still serializes on /v1/me', async () => {
+    const fan = await registerUser(app, fpl, 2101);
+    await prisma.user.update({ where: { id: fan.user.id }, data: { name: 'Legacy \u202Ename' } });
+    const me = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer(fan.token) });
+    expect(me.statusCode).toBe(200);
+  });
+});

@@ -251,6 +251,7 @@ export const en: Messages = {
     kindCustom: 'Standard',
   },
   profile: {
+    nameLocked: "Your account is suspended right now, so the name can't be changed.",
     title: 'Profile',
     name: 'Name',
     editName: 'Edit name',

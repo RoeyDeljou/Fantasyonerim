@@ -60,7 +60,10 @@ bar; no in-app audio — Listen hands off to Spotify/Apple (docs/CLIENT_ACCOUNTS
    push on every new News item, FPL deadline reminders at the admin-configured offsets, admin manual push.
    Each notification sent once per user per item. Dead subscriptions pruned.
 
-## Phase 3 — Community
+## Phase 3 — Community ✅
+
+_Passed `qa-verifier` on 2026-10-27 at ef1cc73 (second gate; the first failed on deleted-post photos staying
+public — fixed)._
 
 1. Posts (text ≤ 1000 chars, optional image upload, optional "share my team" snapshot of a GW), likes,
    threaded-flat comments, delete own post/comment, report.
