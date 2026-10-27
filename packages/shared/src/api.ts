@@ -70,6 +70,8 @@ export const RegisterBodySchema = z.object({
   name: DisplayNameSchema,
   entryId: FplEntryIdSchema,
   locale: LocaleSchema.optional(),
+  /** From an admin invite link (`/onboarding/?invite=<token>`): the new account is created as an admin. */
+  inviteToken: z.string().min(20).max(200).optional(),
 });
 export type RegisterBody = z.infer<typeof RegisterBodySchema>;
 
@@ -211,3 +213,48 @@ export const AdminAccountListSchema = z.array(AdminAccountSchema);
  */
 export const DeleteAccountBodySchema = z.object({ confirm: z.literal('DELETE') });
 export type DeleteAccountBody = z.infer<typeof DeleteAccountBodySchema>;
+
+// ---------- admin invites ----------
+/**
+ * One-time links that let a specific person (e.g. a podcast host) create their own account as an admin — no
+ * username/password: the fan session of the account that redeems the link gets the admin role. Single use,
+ * expire after 7 days, revocable. The raw token appears only once (in the create response's `url`).
+ */
+export const AdminInviteSchema = z.object({
+  id: z.string(),
+  /** Who it's for, e.g. "Dor". */
+  label: z.string(),
+  createdBy: z.string(),
+  createdAt: z.string().datetime({ offset: true }),
+  expiresAt: z.string().datetime({ offset: true }),
+  usedAt: z.string().datetime({ offset: true }).nullable(),
+  usedByName: z.string().nullable(),
+  revokedAt: z.string().datetime({ offset: true }).nullable(),
+  status: z.enum(['pending', 'used', 'expired', 'revoked']),
+});
+export type AdminInvite = z.infer<typeof AdminInviteSchema>;
+
+/** POST /v1/admin/invites */
+export const CreateAdminInviteBodySchema = z.object({ label: z.string().trim().min(1).max(40) });
+export type CreateAdminInviteBody = z.infer<typeof CreateAdminInviteBodySchema>;
+
+/** 201 — `url` = `${WEB_APP_URL}/onboarding/?invite=<token>`; the only time the token is visible. */
+export const AdminInviteCreatedSchema = z.object({ invite: AdminInviteSchema, url: z.string().url() });
+export type AdminInviteCreated = z.infer<typeof AdminInviteCreatedSchema>;
+
+/** GET /v1/admin/invites — newest first. DELETE /v1/admin/invites/:id → 204 (revoke a pending invite). */
+export const AdminInviteListSchema = z.object({ items: z.array(AdminInviteSchema) });
+
+/**
+ * GET /v1/admin-invites/:token (public) — lets onboarding show "You're invited as an admin" before signing up.
+ * 404 when the token is unknown, used, expired or revoked (one generic message — no oracle).
+ */
+export const AdminInvitePreviewSchema = z.object({
+  label: z.string(),
+  expiresAt: z.string().datetime({ offset: true }),
+});
+export type AdminInvitePreview = z.infer<typeof AdminInvitePreviewSchema>;
+
+/** POST /v1/me/admin-invite — an already-registered user redeems an invite; returns the upgraded Me. */
+export const RedeemAdminInviteBodySchema = z.object({ token: z.string().min(20).max(200) });
+export type RedeemAdminInviteBody = z.infer<typeof RedeemAdminInviteBodySchema>;

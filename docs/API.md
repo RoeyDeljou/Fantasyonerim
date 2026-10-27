@@ -97,3 +97,14 @@ Schemas: `packages/shared/src/broadcast.ts`.
 | GET        | `/v1/community/blocks`         | 👤   | –                                               | `BlockList`                                                                              |
 | PUT/DELETE | `/v1/community/blocks/:userId` | 👤   | –                                               | 204 — idempotent; 400 for yourself or an admin                                           |
 | DELETE     | `/v1/me`                       | 👤   | `DeleteAccountBody` (`{ "confirm": "DELETE" }`) | 204 — deletes everything about the account · 409 last admin                              |
+
+## Admin invites
+
+| Method | Path                       | Auth | Body / query                   | Response                                                                                                                                         |
+| ------ | -------------------------- | ---- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| POST   | `/v1/admin/invites`        | 🛡    | `CreateAdminInviteBody`        | `AdminInviteCreated` (201) — the only response containing the link                                                                               |
+| GET    | `/v1/admin/invites`        | 🛡    | –                              | `AdminInviteList`                                                                                                                                |
+| DELETE | `/v1/admin/invites/:id`    | 🛡    | –                              | 204 — revoke (pending only; 409 otherwise)                                                                                                       |
+| GET    | `/v1/admin-invites/:token` | 🌐   | –                              | `AdminInvitePreview` · 404 invalid/used/expired/revoked (generic)                                                                                |
+| POST   | `/v1/auth/register`        | 🌐   | `RegisterBody` + `inviteToken` | as before, the account is created with role admin when the token is valid; 400 "This invite link is no longer valid" otherwise (nothing created) |
+| POST   | `/v1/me/admin-invite`      | 👤   | `RedeemAdminInviteBody`        | `Me` (role admin) · 400 invalid · 409 already an admin                                                                                           |
