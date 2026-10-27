@@ -640,7 +640,10 @@ async function journeys(browser) {
     assert((await like.getAttribute('aria-pressed')) === 'false', 'not liked yet');
     const put = page.waitForResponse((r) => r.url().endsWith('/like') && r.request().method() === 'PUT');
     await like.click();
-    assert((await like.getAttribute('aria-pressed')) === 'true', 'optimistic like');
+    // Optimistic: pressed before the server answers (the PUT is still in flight or just landed).
+    await feedCard(page, 'פוסט בדיקה e2e')
+      .locator('[data-testid=like-button][aria-pressed=true]')
+      .waitFor({ timeout: 1500 });
     assert((await put).ok(), 'PUT like failed');
     await page.reload();
     const again = feedCard(page, 'פוסט בדיקה e2e').getByTestId('like-button');
@@ -650,7 +653,7 @@ async function journeys(browser) {
     const del = page.waitForResponse((r) => r.url().endsWith('/like') && r.request().method() === 'DELETE');
     await again.click();
     assert((await del).ok(), 'DELETE like failed');
-    assert((await again.getAttribute('aria-pressed')) === 'false', 'unliked');
+    await feedCard(page, 'פוסט בדיקה e2e').locator('[data-testid=like-button][aria-pressed=false]').waitFor();
   });
 
   let threadUrl = '';

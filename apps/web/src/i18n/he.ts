@@ -48,6 +48,8 @@ export const he = {
     generic: 'קרתה שגיאה לא צפויה. נסו שוב.',
     forbidden: 'אין לכם הרשאה לצפות בעמוד הזה.',
     invalid: 'קיבלנו תשובה לא תקינה מהשרת.',
+    tooLarge: 'הקובץ גדול מדי (עד 10MB).',
+    unsupportedMedia: 'סוג הקובץ לא נתמך. נסו תמונת JPG, PNG או WebP.',
   },
   tabs: {
     label: 'ניווט ראשי',

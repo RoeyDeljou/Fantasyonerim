@@ -45,6 +45,8 @@ export const en: Messages = {
     rateLimited: 'Too many requests. Wait a moment and try again.',
     generic: 'Something unexpected happened. Please try again.',
     forbidden: "You don't have access to this page.",
+    tooLarge: 'That file is too large (max 10 MB).',
+    unsupportedMedia: 'That file type isn’t supported. Try a JPG, PNG or WebP image.',
     invalid: 'The server sent an invalid response.',
   },
   tabs: {

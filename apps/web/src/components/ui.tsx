@@ -263,6 +263,10 @@ export function errorMessage(t: Messages, error: unknown, overrides: ErrorOverri
       return t.errors.notFound;
     case 'bad_request':
       return t.errors.badRequest;
+    case 'payload_too_large':
+      return t.errors.tooLarge;
+    case 'unsupported_media_type':
+      return t.errors.unsupportedMedia;
     case 'conflict':
       return t.errors.conflict;
     case 'unauthorized':
