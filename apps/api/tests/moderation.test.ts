@@ -111,11 +111,9 @@ describe('bans', () => {
     const jpeg = multipart({ bytes: await makeImage('jpeg', 10, 10) });
     const writes = [
       () => call('POST', '/v1/community/posts', bob.token, { text: 'let me in' }),
-      () => call('DELETE', `/v1/community/posts/${bobPost.id}`, bob.token),
       () => call('PUT', `/v1/community/posts/${alicePost.id}/like`, bob.token),
       () => call('DELETE', `/v1/community/posts/${alicePost.id}/like`, bob.token),
       () => call('POST', `/v1/community/posts/${alicePost.id}/comments`, bob.token, { text: 'hey' }),
-      () => call('DELETE', `/v1/community/comments/${bobComment.id}`, bob.token),
       () => call('POST', `/v1/community/posts/${alicePost.id}/report`, bob.token, { reason: 'spam' }),
       () => call('POST', `/v1/community/comments/${aliceComment.id}/report`, bob.token, { reason: 'spam' }),
       () =>
@@ -139,7 +137,13 @@ describe('bans', () => {
     expect((await call('GET', `/v1/community/posts/${alicePost.id}/comments`, bob.token)).statusCode).toBe(
       200,
     );
-    expect((await call('GET', '/v1/me', bob.token)).statusCode).toBe(200);
+    const me = await call('GET', '/v1/me', bob.token);
+    expect(me.statusCode).toBe(200);
+    expect(me.json().canPost).toBe(false);
+
+    // A banned user can still remove their own content.
+    expect((await call('DELETE', `/v1/community/comments/${bobComment.id}`, bob.token)).statusCode).toBe(204);
+    expect((await call('DELETE', `/v1/community/posts/${bobPost.id}`, bob.token)).statusCode).toBe(204);
 
     // Banning again keeps the original timestamp, updates the reason.
     clock.advance(60_000);

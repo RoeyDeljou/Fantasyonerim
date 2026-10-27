@@ -78,8 +78,8 @@ const STATUS_CODES: Record<number, ApiErrorCode> = {
   403: 'forbidden',
   404: 'not_found',
   409: 'conflict',
-  413: 'bad_request',
-  415: 'bad_request',
+  413: 'payload_too_large',
+  415: 'unsupported_media_type',
   429: 'rate_limited',
 };
 

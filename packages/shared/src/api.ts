@@ -17,6 +17,8 @@ import { PlayerLiveSchema } from './fpl.js';
 // ---------- errors ----------
 export const ApiErrorCodeSchema = z.enum([
   'bad_request',
+  'payload_too_large',
+  'unsupported_media_type',
   'unauthorized',
   'forbidden',
   'not_found',
@@ -54,6 +56,8 @@ export const MeSchema = z.object({
   teamName: z.string().nullable(),
   role: RoleSchema,
   locale: LocaleSchema,
+  /** False while banned: the user can read but not post, comment, like, report or upload. */
+  canPost: z.boolean(),
   createdAt: z.string().datetime({ offset: true }),
 });
 export type Me = z.infer<typeof MeSchema>;

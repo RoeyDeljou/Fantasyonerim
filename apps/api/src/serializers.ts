@@ -13,6 +13,7 @@ export function toMe(user: User): Me {
       teamName: user.teamName,
       role: user.role === 'ADMIN' ? 'admin' : 'user',
       locale: locale.success ? locale.data : 'he',
+      canPost: user.bannedAt === null,
       createdAt: user.createdAt.toISOString(),
     },
     'Me',

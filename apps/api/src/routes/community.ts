@@ -166,7 +166,7 @@ export function communityRoutes(
   });
 
   app.delete('/v1/community/posts/:id', { config: { rateLimit: limits.writes } }, async (request, reply) => {
-    const { user } = await requireWriter(auth, request);
+    const { user } = await auth.requireUser(request); // banned users may still remove their own content;
     const { id } = parseInput(PostParamsSchema, request.params);
     const post = await livePost(id);
     const own = post.authorId === user.id;
@@ -286,7 +286,7 @@ export function communityRoutes(
     '/v1/community/comments/:id',
     { config: { rateLimit: limits.writes } },
     async (request, reply) => {
-      const { user } = await requireWriter(auth, request);
+      const { user } = await auth.requireUser(request); // banned users may still remove their own content;
       const { id } = parseInput(CommentParamsSchema, request.params);
       const comment = await prisma.comment.findFirst({
         where: { id, deletedAt: null, post: { deletedAt: null } },
