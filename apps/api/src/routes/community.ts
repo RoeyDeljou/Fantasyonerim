@@ -20,7 +20,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Auth } from '../auth/session.js';
 import { requireWriter } from '../community/guard.js';
-import { softDeleteComment, softDeletePost } from '../community/moderation.js';
+import { purgeDeletedPostImages, softDeleteComment, softDeletePost } from '../community/moderation.js';
 import { COMMENT_INCLUDE, POST_INCLUDE, toComment, toPost, toPosts } from '../community/serialize.js';
 import { cleanPlainText } from '../community/text.js';
 import type { AppContext } from '../context.js';
@@ -173,6 +173,8 @@ export function communityRoutes(
     if (!own && user.role !== 'ADMIN') throw forbidden('You can only delete your own posts');
     const now = ctx.clock.now();
     await prisma.$transaction((tx) => softDeletePost(tx, id, user.id, own ? 'deleted' : 'removed', now));
+    // The photo must go offline with the post (privacy / moderation), not linger at its public URL.
+    await purgeDeletedPostImages(prisma, ctx.media, [id]);
     return reply.code(204).send();
   });
 

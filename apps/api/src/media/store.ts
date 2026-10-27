@@ -31,6 +31,14 @@ export function contentTypeForKey(key: string): string {
 }
 
 /** Only [a-z0-9_-./] segments, no "..": keys come from our own code, but never trust a URL path. */
+/**
+ * Instagram/X copies never change and are public anyway → cache for a year. Community uploads can be taken down
+ * (deleted post, moderation) → short cache so a removed photo disappears from browsers and the CDN within minutes.
+ */
+export function mediaCacheControl(key: string): string {
+  return key.startsWith('uploads/') ? 'public, max-age=300' : 'public, max-age=31536000, immutable';
+}
+
 export function isSafeKey(key: string): boolean {
   return (
     key.length > 0 &&
@@ -110,7 +118,7 @@ export class S3MediaStore implements MediaStore {
         Key: key,
         Body: bytes,
         ContentType: contentType,
-        CacheControl: 'public, max-age=31536000, immutable',
+        CacheControl: mediaCacheControl(key),
       }),
     );
     return `${this.config.publicBaseUrl.replace(/\/+$/, '')}/${key}`;

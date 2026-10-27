@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.js';
 import { ApiHttpError, notFound, unauthorized } from '../errors.js';
 import type { JobRunner } from '../jobs/runner.js';
-import { contentTypeForKey, isSafeKey } from '../media/store.js';
+import { contentTypeForKey, isSafeKey, mediaCacheControl } from '../media/store.js';
 import { serialize } from '../validate.js';
 
 /** Constant-time comparison (hashing first so lengths never leak). */
@@ -35,7 +35,8 @@ export function internalRoutes(app: FastifyInstance, ctx: AppContext, jobs: JobR
       if (file === null) throw notFound('No such media');
       return reply
         .header('content-type', contentTypeForKey(key))
-        .header('cache-control', 'public, max-age=31536000, immutable')
+        .header('cache-control', mediaCacheControl(key))
+        .header('x-content-type-options', 'nosniff')
         .header('cross-origin-resource-policy', 'cross-origin')
         .send(Buffer.from(file.bytes));
     });

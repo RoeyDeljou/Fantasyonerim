@@ -45,7 +45,9 @@ export const DisplayNameSchema = z
   .trim()
   .min(2)
   .max(40)
-  .regex(/^[^<>]*$/, 'no angle brackets');
+  .regex(/^[^<>]*$/, 'no angle brackets')
+  // Bidi overrides/isolates (U+202A–202E, U+2066–2069) can make a name render reversed or spoof another.
+  .regex(/^[^\u202A-\u202E\u2066-\u2069]*$/, 'no direction-control characters');
 
 export const MeSchema = z.object({
   id: UserIdSchema,

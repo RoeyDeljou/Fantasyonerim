@@ -17,6 +17,7 @@ import {
   resolveReports,
   softDeleteComment,
   softDeletePost,
+  purgeDeletedPostImages,
 } from '../community/moderation.js';
 import { COMMENT_INCLUDE, POST_INCLUDE, toComment, toPosts } from '../community/serialize.js';
 import { cleanPlainText } from '../community/text.js';
@@ -137,6 +138,9 @@ export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth
         return true;
       });
       if (!resolved) throw notFound('There are no open reports for this target');
+      if (action === 'remove' && target.kind === 'post') {
+        await purgeDeletedPostImages(prisma, ctx.media, [target.id]);
+      }
       return reply.code(204).send();
     });
 

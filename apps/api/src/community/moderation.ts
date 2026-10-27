@@ -1,4 +1,5 @@
-import type { Prisma, ReportTargetKind } from '@prisma/client';
+import type { Prisma, PrismaClient, ReportTargetKind } from '@prisma/client';
+import type { MediaStore } from '../media/store.js';
 import { z } from 'zod';
 import { badRequest } from '../errors.js';
 
@@ -94,4 +95,32 @@ export async function softDeleteComment(
   });
   await resolveReports(tx, [{ kind: 'comment', ids: [comment.id] }], resolution, by, now);
   return true;
+}
+
+/**
+ * Takes the images of deleted posts offline: deletes the Upload row (the post's imageUploadId becomes null) and
+ * the stored file. Called right after a post is deleted/removed, and by the hourly cleanup as a safety net.
+ * A failed file delete is retried on the next run because the row is only removed once the file is gone.
+ */
+export async function purgeDeletedPostImages(
+  prisma: PrismaClient,
+  media: MediaStore,
+  postIds?: readonly string[],
+): Promise<number> {
+  const uploads = await prisma.upload.findMany({
+    where: { post: { deletedAt: { not: null }, ...(postIds ? { id: { in: [...postIds] } } : {}) } },
+    select: { id: true, storageKey: true },
+    take: 500,
+  });
+  let purged = 0;
+  for (const upload of uploads) {
+    try {
+      await media.delete(upload.storageKey);
+    } catch {
+      continue;
+    }
+    await prisma.upload.deleteMany({ where: { id: upload.id } });
+    purged += 1;
+  }
+  return purged;
 }
