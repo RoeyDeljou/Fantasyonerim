@@ -202,3 +202,12 @@ export type CreateAdminBody = z.infer<typeof CreateAdminBodySchema>;
 export const AdminAccountSchema = z.object({ userId: UserIdSchema, username: z.string(), name: z.string() });
 export type AdminAccount = z.infer<typeof AdminAccountSchema>;
 export const AdminAccountListSchema = z.array(AdminAccountSchema);
+
+/**
+ * DELETE /v1/me — permanently deletes the signed-in account (App Store guideline 5.1.1(v)): the user, sessions,
+ * push subscriptions, posts, comments, likes, reports filed, uploads and their stored photos. Fans have no
+ * password, so the client must send this exact confirmation phrase. The last remaining admin can't delete itself
+ * (409). 204 on success; the token stops working immediately.
+ */
+export const DeleteAccountBodySchema = z.object({ confirm: z.literal('DELETE') });
+export type DeleteAccountBody = z.infer<typeof DeleteAccountBodySchema>;

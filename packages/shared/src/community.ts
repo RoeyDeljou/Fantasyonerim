@@ -166,3 +166,19 @@ export const AdminUserListSchema = z.object({ items: z.array(AdminUserSchema) })
 
 /** POST /v1/admin/users/:id/ban — banned users can read but not post/comment/like/report. DELETE unbans. */
 export const BanBodySchema = z.object({ reason: z.string().trim().min(1).max(200) });
+
+// ---------- blocking (App Store guideline 1.2: users must be able to block abusive users) ----------
+/**
+ * PUT /v1/community/blocks/:userId → 204 (idempotent), DELETE → 204. Blocking is one-way and private: the blocker
+ * no longer sees the blocked user's posts or comments anywhere, and gets no notifications from them. You can't
+ * block yourself or an admin (400).
+ */
+export const BlockedUserSchema = z.object({
+  id: UserIdSchema,
+  name: z.string(),
+  teamName: z.string().nullable(),
+  blockedAt: z.string().datetime({ offset: true }),
+});
+export type BlockedUser = z.infer<typeof BlockedUserSchema>;
+/** GET /v1/community/blocks */
+export const BlockListSchema = z.object({ items: z.array(BlockedUserSchema) });

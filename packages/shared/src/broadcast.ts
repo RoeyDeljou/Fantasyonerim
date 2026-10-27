@@ -29,8 +29,13 @@ export type BroadcastBody = z.infer<typeof BroadcastBodySchema>;
 export const BroadcastTargetResultSchema = z.object({
   target: BroadcastTargetSchema,
   status: z.enum(['ok', 'skipped', 'error']),
-  /** Human-readable outcome, e.g. "Posted", "X isn't configured", "Delivered to 312 of 340 devices". */
+  /** Human-readable outcome (English, for logs/history), e.g. "Delivered to 312 of 340 devices". */
   detail: z.string(),
+  /** Stable outcome code so the client can localize. */
+  code: z.enum(['posted', 'delivered', 'no_subscribers', 'not_configured', 'too_long', 'failed']),
+  /** Push only: devices that accepted / devices targeted. */
+  delivered: z.number().int().nonnegative().nullable(),
+  recipients: z.number().int().nonnegative().nullable(),
   /** Where the result lives: the News item deep link, or the X post URL. */
   url: z.string().nullable(),
 });
@@ -63,6 +68,8 @@ export const BroadcastTargetsStatusSchema = z.object({
       available: z.boolean(),
       /** Why not, e.g. "X API keys aren't set — paid feature" or "No push subscribers yet". */
       reason: z.string().nullable(),
+      /** Stable code for `reason` so the client can localize. */
+      reasonCode: z.enum(['not_configured', 'no_subscribers', 'paid_feature']).nullable(),
       /** X only: the paid-feature note applies. */
       paidFeature: z.boolean(),
     }),

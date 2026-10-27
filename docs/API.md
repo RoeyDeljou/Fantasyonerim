@@ -88,9 +88,12 @@ Schemas: `packages/shared/src/community.ts`. Banned users get 403 on every write
 
 Schemas: `packages/shared/src/broadcast.ts`.
 
-| Method | Path                          | Auth | Body / query         | Response                                                                                 |
-| ------ | ----------------------------- | ---- | -------------------- | ---------------------------------------------------------------------------------------- |
-| GET    | `/v1/admin/broadcast/targets` | 🛡    | –                    | `BroadcastTargetsStatus`                                                                 |
-| POST   | `/v1/admin/broadcast`         | 🛡    | `BroadcastBody`      | `BroadcastResult` (201) — per-target results; one target failing never blocks the others |
-| GET    | `/v1/admin/broadcasts`        | 🛡    | –                    | `BroadcastHistory`                                                                       |
-| POST   | `/v1/admin/me/password`       | 🛡    | `ChangePasswordBody` | 204 · 401 wrong current password — signs out the admin's other sessions                  |
+| Method     | Path                           | Auth | Body / query                                    | Response                                                                                 |
+| ---------- | ------------------------------ | ---- | ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| GET        | `/v1/admin/broadcast/targets`  | 🛡    | –                                               | `BroadcastTargetsStatus`                                                                 |
+| POST       | `/v1/admin/broadcast`          | 🛡    | `BroadcastBody`                                 | `BroadcastResult` (201) — per-target results; one target failing never blocks the others |
+| GET        | `/v1/admin/broadcasts`         | 🛡    | –                                               | `BroadcastHistory`                                                                       |
+| POST       | `/v1/admin/me/password`        | 🛡    | `ChangePasswordBody`                            | 204 · 401 wrong current password — signs out the admin's other sessions                  |
+| GET        | `/v1/community/blocks`         | 👤   | –                                               | `BlockList`                                                                              |
+| PUT/DELETE | `/v1/community/blocks/:userId` | 👤   | –                                               | 204 — idempotent; 400 for yourself or an admin                                           |
+| DELETE     | `/v1/me`                       | 👤   | `DeleteAccountBody` (`{ "confirm": "DELETE" }`) | 204 — deletes everything about the account · 409 last admin                              |
