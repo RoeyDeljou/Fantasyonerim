@@ -15,6 +15,7 @@ import { configRoutes } from './routes/config.js';
 import { fplRoutes } from './routes/fpl.js';
 import { leagueRoutes } from './routes/league.js';
 import { meRoutes } from './routes/me.js';
+import { redactUrl, withSafeLogging } from './logging.js';
 import { formatZodIssues } from './validate.js';
 import { realIntegrations, type IntegrationFactories } from './integrations/factories.js';
 import { JOBS } from './jobs/index.js';
@@ -118,7 +119,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const limits: RateLimitConfig = { ...DEFAULT_RATE_LIMIT, ...deps.config.rateLimit };
 
   const app = Fastify({
-    logger: deps.logger ?? false,
+    // Every logger gets the safe `req` serializer (no query strings, no invite tokens in URLs).
+    logger: withSafeLogging(deps.logger),
     trustProxy: deps.config.trustProxy ?? false,
     bodyLimit: 256 * 1024,
   });
@@ -163,7 +165,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   app.setNotFoundHandler((request, reply) => {
-    reply.code(404).send(body('not_found', `Route ${request.method} ${request.url.split('?')[0]} not found`));
+    reply.code(404).send(body('not_found', `Route ${request.method} ${redactUrl(request.url)} not found`));
   });
 
   const origins = deps.config.corsOrigins;

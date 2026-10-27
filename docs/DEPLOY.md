@@ -92,7 +92,8 @@ Trigger it once by hand (Actions → Jobs tick → Run workflow) and check it re
 4. **Captain Battle:** fill Dor's and Itay's Team IDs and pick the community captain.
 5. **Push:** on your phone, install the app to the Home Screen (iOS needs this for notifications) → Profile →
    enable notifications → admin console → "send a push to everyone" with a test message.
-6. Create the real admin accounts for Dor and Itay (admin console → Admins).
+6. Admins for Dor and Itay: admin console → Admins → create an invite link per person and send it to them. Each
+   link works once, for 7 days; opening it lets them sign up with name + Team ID and they are admins from the start.
 
 ## Local development
 

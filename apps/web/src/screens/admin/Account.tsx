@@ -6,11 +6,13 @@ import { fmt, useI18n } from '@/i18n';
 import { isApiError } from '@/lib/api';
 import { useChangePassword, useMe } from '@/lib/queries';
 import { EyeIcon, EyeOffIcon, KeyIcon } from '@/components/icons';
-import { Button, Card, InlineError, Spinner, Toast, cx, errorMessage } from '@/components/ui';
+import { Button, Card, InlineError, Skeleton, Spinner, Toast, cx, errorMessage } from '@/components/ui';
 
 /** Mirrors `ChangePasswordBodySchema` (packages/shared/src/broadcast.ts). */
 const NEW_MIN = 10;
 const NEW_MAX = 200;
+/** The API's 400 message for an admin without a password (apps/api/src/routes/admin.ts). */
+const NO_PASSWORD_MESSAGE = 'This admin signs in with their app account and has no password';
 
 type Field = 'current' | 'next' | 'confirm';
 
@@ -62,6 +64,34 @@ export function AccountView() {
     change.isError && !(isApiError(change.error) && change.error.status === 401)
       ? errorMessage(t, change.error)
       : null;
+
+  // Invited admins sign in with their app account (name + Team ID) and have no password. `Me` doesn't say so
+  // directly: password admins are admin-only accounts (no Team ID). The API's own 400 for it confirms it too —
+  // matched exactly, so ordinary validation 400s stay normal errors.
+  const noPassword =
+    (me.data?.role === 'admin' && me.data.entryId !== null) ||
+    (isApiError(change.error, 'bad_request') && change.error.message === NO_PASSWORD_MESSAGE);
+  if (me.isPending) return <Skeleton className="h-72" />;
+  if (noPassword) {
+    return (
+      <Card className="flex flex-col gap-2">
+        <div className="flex items-start gap-3" data-testid="no-password">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-on-primary-soft">
+            <KeyIcon size={20} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-lg font-extrabold text-ink">{a.noPassword}</h2>
+            {me.data && (
+              <p className="text-sm text-muted">
+                <bdi dir="auto">{fmt(a.signedInAs, { name: me.data.name })}</bdi>
+              </p>
+            )}
+          </div>
+        </div>
+        <p className="text-sm text-muted">{a.noPasswordBody}</p>
+      </Card>
+    );
+  }
 
   return (
     <>

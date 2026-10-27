@@ -7,6 +7,7 @@ import { IntegrationsView } from './Integrations';
 import { ModerationView } from './Moderation';
 import { BroadcastView, LiveUpdateCard } from './Broadcast';
 import { AccountView } from './Account';
+import { InvitesCard } from './Invites';
 import type { FormEvent, ReactNode } from 'react';
 import {
   AdminSettingsSchema,
@@ -46,6 +47,7 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   CheckIcon,
+  ChevronDownIcon,
   CloseIcon,
   PlusIcon,
   SearchIcon,
@@ -143,6 +145,7 @@ function AdminViews() {
           <LiveUpdateCard />
           <SettingsSection />
           <CaptainBattleEditor />
+          <InvitesCard />
           <AdminsSection />
         </>
       ) : view === 'broadcast' ? (
@@ -1004,9 +1007,13 @@ function AdminsSection() {
             <span dir="auto" className="name-start min-w-0 truncate font-semibold text-ink">
               {a.name}
             </span>
-            <span dir="ltr" className="text-sm text-muted">
-              @{a.username}
-            </span>
+            {a.username !== null ? (
+              <span dir="ltr" className="text-sm text-muted">
+                @{a.username}
+              </span>
+            ) : (
+              <Badge tone="neutral">{t.invites.viaInvite}</Badge>
+            )}
           </li>
         ))}
       </ul>
@@ -1016,45 +1023,51 @@ function AdminsSection() {
     <Card className="flex flex-col gap-3">
       <SectionTitle>{t.admin.adminsSection}</SectionTitle>
       {list}
-      <form onSubmit={submit} className="flex flex-col gap-3 border-t border-line pt-3" noValidate>
-        <h3 className="font-bold text-ink">{t.admin.createAdmin}</h3>
-        <TextField label={t.admin.adminName} value={name} onChange={(e) => setName(e.target.value)} />
-        <TextField
-          label={t.admin.username}
-          dir="ltr"
-          autoCapitalize="none"
-          autoComplete="off"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-        />
-        <TextField
-          label={t.admin.password}
-          type="password"
-          dir="ltr"
-          autoComplete="new-password"
-          hint={t.admin.passwordHint}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        {error && <InlineError>{error}</InlineError>}
-        {create.isError && (
-          <InlineError>
-            {isApiError(create.error, 'conflict') ? t.admin.usernameTaken : errorMessage(t, create.error)}
-          </InlineError>
-        )}
-        <div className="flex items-center gap-3">
-          <Button type="submit" disabled={create.isPending}>
-            {create.isPending && <Spinner />}
-            {t.admin.createAdmin}
-          </Button>
-          {flash && (
-            <span role="status" className="flex items-center gap-1 text-sm font-semibold text-success">
-              <CheckIcon size={16} />
-              {t.admin.adminCreated}
-            </span>
+      <details className="group border-t border-line pt-1">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-semibold text-muted [&::-webkit-details-marker]:hidden">
+          <span className="flex-1">{t.invites.passwordAdmins}</span>
+          <ChevronDownIcon size={18} className="transition-transform group-open:rotate-180" />
+        </summary>
+        <form onSubmit={submit} className="flex flex-col gap-3 pt-3" noValidate>
+          <p className="text-xs text-muted">{t.invites.passwordAdminsHint}</p>
+          <TextField label={t.admin.adminName} value={name} onChange={(e) => setName(e.target.value)} />
+          <TextField
+            label={t.admin.username}
+            dir="ltr"
+            autoCapitalize="none"
+            autoComplete="off"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+          <TextField
+            label={t.admin.password}
+            type="password"
+            dir="ltr"
+            autoComplete="new-password"
+            hint={t.admin.passwordHint}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          {error && <InlineError>{error}</InlineError>}
+          {create.isError && (
+            <InlineError>
+              {isApiError(create.error, 'conflict') ? t.admin.usernameTaken : errorMessage(t, create.error)}
+            </InlineError>
           )}
-        </div>
-      </form>
+          <div className="flex items-center gap-3">
+            <Button type="submit" variant="secondary" disabled={create.isPending}>
+              {create.isPending && <Spinner />}
+              {t.admin.createAdmin}
+            </Button>
+            {flash && (
+              <span role="status" className="flex items-center gap-1 text-sm font-semibold text-success">
+                <CheckIcon size={16} />
+                {t.admin.adminCreated}
+              </span>
+            )}
+          </div>
+        </form>
+      </details>
     </Card>
   );
 }

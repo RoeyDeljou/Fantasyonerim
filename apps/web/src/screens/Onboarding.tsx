@@ -10,7 +10,9 @@ import type { EntrySummary, FplEntryId } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import { api, isApiError } from '@/lib/api';
 import { ROUTES, useSession } from '@/lib/session';
-import { qk } from '@/lib/queries';
+import { qk, useMe, useRedeemInvite } from '@/lib/queries';
+import { flash } from '@/lib/flash';
+import { clearInviteToken, takeInviteToken } from '@/lib/invite';
 import { Logo } from '@/components/AppShell';
 import { TermsAgreeLine } from './Terms';
 import { ChevronDownIcon, ChevronStartIcon, InfoIcon, KeyIcon } from '@/components/icons';
@@ -25,7 +27,7 @@ import {
   errorMessage,
 } from '@/components/ui';
 
-type Step = 'welcome' | 'form' | 'preview' | 'conflict' | 'recover' | 'code';
+type Step = 'welcome' | 'form' | 'preview' | 'conflict' | 'recover' | 'code' | 'redeem';
 
 /** Formats free text into XXXX-XXXX as the user types. */
 function formatRecoveryCode(raw: string): string {
@@ -48,11 +50,16 @@ export function OnboardingScreen() {
   const [teamError, setTeamError] = useState<string | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [preview, setPreview] = useState<EntrySummary | null>(null);
+  const [becameAdmin, setBecameAdmin] = useState(false);
+  const invite = useInvite();
 
-  // Already signed in (e.g. opened /onboarding/ directly) → straight to the app.
+  // Already signed in (e.g. opened /onboarding/ directly) → straight to the app — unless an admin invite came
+  // with the link, then offer to upgrade this account instead.
   useEffect(() => {
-    if (status === 'signedIn' && step === 'welcome') router.replace(ROUTES.home);
-  }, [status, step, router]);
+    if (status !== 'signedIn' || step !== 'welcome' || invite.state === 'reading') return;
+    if (invite.state === 'none') router.replace(ROUTES.home);
+    else if (invite.state !== 'checking') setStep('redeem');
+  }, [status, step, router, invite.state]);
 
   const lookup = useMutation({
     mutationFn: (id: FplEntryId) => api.entry(id),
@@ -67,13 +74,28 @@ export function OnboardingScreen() {
 
   const register = useMutation({
     mutationFn: (entryId: FplEntryId) =>
-      api.register(RegisterBodySchema.parse({ name: name.trim(), entryId, locale })),
+      api.register(
+        RegisterBodySchema.parse({
+          name: name.trim(),
+          entryId,
+          locale,
+          ...((invite.state === 'valid' || invite.state === 'error') && invite.token
+            ? { inviteToken: invite.token }
+            : {}),
+        }),
+      ),
     onSuccess: async (auth) => {
+      invite.clear();
+      setBecameAdmin(auth.user.role === 'admin');
       await signIn(auth);
       setStep('code');
     },
     onError: (e) => {
-      if (isApiError(e, 'conflict')) setStep('conflict');
+      // With a token, a 400 means the invite died meanwhile (used / revoked / expired): nothing was created —
+      // show the notice and let them carry on as a fan (the next tap signs up without the token).
+      if ((invite.state === 'valid' || invite.state === 'error') && isApiError(e, 'bad_request'))
+        invite.reject();
+      else if (isApiError(e, 'conflict')) setStep('conflict');
       else if (isApiError(e, 'not_found')) {
         setTeamError(t.onboarding.teamNotFound);
         setStep('form');
@@ -85,7 +107,9 @@ export function OnboardingScreen() {
     mutationFn: () => api.recover(RecoverBodySchema.parse({ entryId: teamId, recoveryCode: code })),
     onSuccess: async (auth) => {
       await signIn(auth);
-      router.replace(ROUTES.home);
+      // Recovered on this device with an invite in hand → offer the upgrade.
+      if (invite.state === 'valid' && auth.user.role !== 'admin') setStep('redeem');
+      else router.replace(ROUTES.home);
     },
     onError: (e) => {
       if (isApiError(e, 'unauthorized') || isApiError(e, 'not_found')) setCodeError(t.onboarding.wrongCode);
@@ -142,6 +166,8 @@ export function OnboardingScreen() {
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4 pt-[calc(1.5rem+env(safe-area-inset-top))] pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+      {step !== 'code' && step !== 'redeem' && <InviteBanner invite={invite} />}
+      {step === 'redeem' && <RedeemStep invite={invite} />}
       {step === 'welcome' && (
         <div className="flex flex-1 flex-col">
           <div className="flex flex-1 flex-col items-center justify-center gap-5 text-center">
@@ -216,9 +242,12 @@ export function OnboardingScreen() {
               })}
             </p>
           </Card>
-          {register.isError && !isApiError(register.error, 'conflict') && (
-            <InlineError>{errorMessage(t, register.error)}</InlineError>
-          )}
+          {register.isError &&
+            !isApiError(register.error, 'conflict') &&
+            // A 400 with an invite = the link died; the invite banner above already says so clearly.
+            !(isApiError(register.error, 'bad_request') && invite.state === 'invalid') && (
+              <InlineError>{errorMessage(t, register.error)}</InlineError>
+            )}
           <div className="mt-auto flex flex-col gap-2">
             <Button
               block
@@ -309,7 +338,16 @@ export function OnboardingScreen() {
             </Card>
           )}
           <div className="mt-auto">
-            <Button block className="min-h-12" onClick={() => router.replace(ROUTES.home)}>
+            <Button
+              block
+              className="min-h-12"
+              onClick={() => {
+                if (becameAdmin) {
+                  flash(fmt(t.invites.welcome, { name: name.trim() }));
+                  router.replace(ROUTES.admin);
+                } else router.replace(ROUTES.home);
+              }}
+            >
               {t.onboarding.savedCodeConfirm}
             </Button>
           </div>
@@ -367,5 +405,209 @@ function TeamIdHelp() {
         </div>
       </div>
     </details>
+  );
+}
+
+// ---------- admin invite (`/onboarding/?invite=<token>`) ----------
+
+/** `error` = couldn't check (offline / rate-limited): the token is kept and still sent — the API decides. */
+type InviteState = 'reading' | 'none' | 'checking' | 'valid' | 'invalid' | 'error';
+
+interface InviteApi {
+  state: InviteState;
+  token: string | null;
+  label: string | null;
+  /** The token was used up (registered / redeemed) — forget it. */
+  clear(): void;
+  /** The API said the link is dead after all. */
+  reject(): void;
+  retry(): void;
+  error: unknown;
+}
+
+function useInvite(): InviteApi {
+  const [token, setToken] = useState<string | null>(null);
+  const [read, setRead] = useState(false);
+  const [dead, setDead] = useState(false);
+  useEffect(() => {
+    setToken(takeInviteToken());
+    setRead(true);
+  }, []);
+  // The token is deliberately not part of the query key (keys show up in devtools / error reports).
+  const preview = useQuery({
+    queryKey: ['admin-invite', 'preview'],
+    queryFn: ({ signal }) =>
+      token ? api.adminInvitePreview(token, { signal }) : Promise.reject(new Error('no token')),
+    enabled: token !== null && !dead,
+    retry: false,
+    staleTime: Infinity,
+    gcTime: 0,
+  });
+  // Only "unknown / used / expired / revoked" (404, or 400) kills the link; a network error or 429 doesn't.
+  const invalid =
+    dead ||
+    (preview.isError && (isApiError(preview.error, 'not_found') || isApiError(preview.error, 'bad_request')));
+  useEffect(() => {
+    if (invalid) clearInviteToken();
+  }, [invalid]);
+
+  const state: InviteState = !read
+    ? 'reading'
+    : token === null && !dead
+      ? 'none'
+      : invalid
+        ? 'invalid'
+        : preview.isSuccess
+          ? 'valid'
+          : preview.isError
+            ? 'error'
+            : 'checking';
+  return {
+    state,
+    token,
+    label: preview.data?.label ?? null,
+    clear: () => {
+      clearInviteToken();
+      setToken(null);
+    },
+    reject: () => setDead(true),
+    retry: () => void preview.refetch(),
+    error: preview.error,
+  };
+}
+
+function InviteBanner({ invite }: { invite: InviteApi }) {
+  const { t } = useI18n();
+  const v = t.invites;
+  if (invite.state === 'checking')
+    return (
+      <p
+        role="status"
+        className="mb-4 flex items-center gap-2 rounded-2xl bg-surface-2 p-3 text-sm text-muted"
+      >
+        <Spinner className="size-4" />
+        {v.checking}
+      </p>
+    );
+  if (invite.state === 'valid')
+    return (
+      <div
+        className="mb-4 flex flex-col gap-1 rounded-2xl bg-primary p-4 text-on-primary shadow-card"
+        data-testid="invite-banner"
+      >
+        <p className="text-base font-extrabold">{v.bannerTitle}</p>
+        <p className="text-sm opacity-90">
+          <bdi dir="auto">{fmt(v.bannerBody, { label: invite.label ?? '' })}</bdi>
+        </p>
+      </div>
+    );
+  if (invite.state === 'error')
+    return (
+      <div
+        role="alert"
+        className="mb-4 flex flex-col gap-2 rounded-2xl bg-surface-2 p-3"
+        data-testid="invite-error"
+      >
+        <p className="text-sm font-bold text-ink">{v.checkFailed}</p>
+        <p className="text-sm text-muted">{errorMessage(t, invite.error)}</p>
+        <Button variant="secondary" className="self-start" onClick={invite.retry}>
+          {t.common.retry}
+        </Button>
+      </div>
+    );
+  if (invite.state === 'invalid')
+    return (
+      <div
+        role="alert"
+        className="mb-4 flex items-start gap-2 rounded-2xl border border-live/30 bg-live-soft p-3"
+        data-testid="invite-invalid"
+      >
+        <InfoIcon size={20} className="mt-px shrink-0 text-live" />
+        <div>
+          <p className="text-sm font-bold text-live">{v.invalid}</p>
+          <p className="text-sm text-ink">{v.invalidBody}</p>
+        </div>
+      </div>
+    );
+  return null;
+}
+
+/** Already signed in on this device and opened an invite → upgrade this account (POST /v1/me/admin-invite). */
+function RedeemStep({ invite }: { invite: InviteApi }) {
+  const { t } = useI18n();
+  const v = t.invites;
+  const router = useRouter();
+  const me = useMe();
+  const redeem = useRedeemInvite();
+  const already = isApiError(redeem.error, 'conflict') || me.data?.role === 'admin';
+
+  if (invite.state !== 'valid' && !redeem.isPending)
+    return (
+      <div className="flex flex-1 flex-col gap-5">
+        <InviteBanner invite={invite} />
+        <div className="mt-auto">
+          <Button block className="min-h-12" onClick={() => router.replace(ROUTES.home)}>
+            {t.admin.toApp}
+          </Button>
+        </div>
+      </div>
+    );
+
+  return (
+    <div className="flex flex-1 flex-col gap-5" data-testid="invite-redeem">
+      <InviteBanner invite={invite} />
+      <Card className="flex flex-col gap-2">
+        <h1 className="text-xl font-extrabold text-ink">{v.redeemTitle}</h1>
+        <p className="text-base leading-relaxed text-muted">
+          <bdi dir="auto">{fmt(v.redeemBody, { name: me.data?.name ?? '', label: invite.label ?? '' })}</bdi>
+        </p>
+      </Card>
+      {already && <InlineError>{v.redeemAlready}</InlineError>}
+      {redeem.isError && !already && (
+        <InlineError>
+          {isApiError(redeem.error, 'bad_request') ? v.invalid : errorMessage(t, redeem.error)}
+        </InlineError>
+      )}
+      <div className="mt-auto flex flex-col gap-2">
+        {already ? (
+          <Button block className="min-h-12" onClick={() => router.replace(ROUTES.admin)}>
+            {t.profile.adminConsole}
+          </Button>
+        ) : (
+          <Button
+            block
+            className="min-h-12"
+            disabled={redeem.isPending || !invite.token}
+            data-testid="invite-redeem-confirm"
+            onClick={() => {
+              if (!invite.token) return;
+              redeem.mutate(invite.token, {
+                onSuccess: (upgraded) => {
+                  invite.clear();
+                  flash(fmt(v.welcome, { name: upgraded.name }));
+                  router.replace(ROUTES.admin);
+                },
+                onError: (e) => {
+                  if (isApiError(e, 'bad_request')) invite.reject();
+                },
+              });
+            }}
+          >
+            {redeem.isPending && <Spinner />}
+            {v.redeemYes}
+          </Button>
+        )}
+        <Button
+          block
+          variant="ghost"
+          onClick={() => {
+            invite.clear();
+            router.replace(ROUTES.home);
+          }}
+        >
+          {v.redeemNo}
+        </Button>
+      </div>
+    </div>
   );
 }

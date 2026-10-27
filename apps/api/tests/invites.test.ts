@@ -51,7 +51,7 @@ async function createInvite(label = 'Dor', token = admin) {
   });
   expect(res.statusCode, res.body).toBe(201);
   const created = AdminInviteCreatedSchema.parse(res.json());
-  const inviteToken = new URL(created.url).searchParams.get('invite') ?? '';
+  const inviteToken = new URLSearchParams(new URL(created.url).hash.slice(1)).get('invite') ?? '';
   return { ...created, token: inviteToken };
 }
 
@@ -61,7 +61,8 @@ async function list() {
   return AdminInviteListSchema.parse(res.json()).items;
 }
 
-const preview = (token: string) => app.inject({ method: 'GET', url: `/v1/admin-invites/${token}` });
+const preview = (token: string) =>
+  app.inject({ method: 'POST', url: '/v1/admin-invites/preview', payload: { token } });
 
 function register(entryId: number, inviteToken?: string, name = `Host ${entryId}`) {
   if (!fpl.entries.has(entryId)) fpl.addEntry(entryId);
@@ -108,7 +109,7 @@ describe('admin invites — admin routes', () => {
 
   it('creates a one-time link (token shown once, stored hashed), lists newest first, revokes pending only', async () => {
     const dor = await createInvite('Dor');
-    expect(dor.url).toMatch(new RegExp(`^${WEB}/onboarding/\\?invite=[A-Za-z0-9_-]{43}$`));
+    expect(dor.url).toMatch(new RegExp(`^${WEB}/onboarding/#invite=[A-Za-z0-9_-]{43}$`));
     expect(dor.invite).toMatchObject({
       label: 'Dor',
       createdBy: 'admin',
@@ -156,7 +157,7 @@ describe('admin invites — admin routes', () => {
     ({ app, fpl, clock } = await buildTestApp(prisma, { rateLimit: { invitesPerHour: 2 } }));
     admin = await adminToken(app, prisma);
     const one = await createInvite('a');
-    expect(one.url).toMatch(/^http:\/\/localhost:3000\/onboarding\/\?invite=/); // dev default
+    expect(one.url).toMatch(/^http:\/\/localhost:3000\/onboarding\/#invite=/); // dev default
     await createInvite('b');
     const third = await app.inject({
       method: 'POST',
@@ -168,7 +169,7 @@ describe('admin invites — admin routes', () => {
   });
 });
 
-describe('GET /v1/admin-invites/:token (public preview)', () => {
+describe('POST /v1/admin-invites/preview (public)', () => {
   it('pending → label + expiry; unknown/used/expired/revoked → the same generic 404', async () => {
     const ok = await createInvite('Dor');
     const res = await preview(ok.token);
@@ -189,12 +190,62 @@ describe('GET /v1/admin-invites/:token (public preview)', () => {
     });
 
     const bodies = new Set<string>();
-    for (const token of ['x'.repeat(43), 'short', used.token, revoked.token, expired.token]) {
+    for (const token of [
+      'x'.repeat(43),
+      'short',
+      '',
+      'x'.repeat(5000),
+      used.token,
+      revoked.token,
+      expired.token,
+    ]) {
       const r = await preview(token);
       expect(r.statusCode, token).toBe(404);
       bodies.add(r.body);
     }
     expect(bodies.size).toBe(1);
+  });
+
+  it('400 when there is no token string at all; the old GET path no longer exists', async () => {
+    for (const payload of [undefined, {}, { token: 42 }]) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/admin-invites/preview',
+        ...(payload === undefined ? {} : { payload }),
+      });
+      expect(res.statusCode, JSON.stringify(payload)).toBe(400);
+    }
+    const ok = await createInvite();
+    const old = await app.inject({ method: 'GET', url: `/v1/admin-invites/${ok.token}` });
+    expect(old.statusCode).toBe(404);
+    expect(old.json().error.message).not.toContain(ok.token);
+  });
+});
+
+describe('request logging never contains invite tokens or query strings', () => {
+  it('redacts /v1/admin-invites/* and strips query strings from logged URLs', async () => {
+    const lines: string[] = [];
+    const stream = { write: (line: string) => void lines.push(line) };
+    const { app: logged } = await buildTestApp(prisma, { logger: { level: 'info', stream } });
+    const secret = 'RAWINVITETOKEN0123456789abcdefghijklmnopq';
+    await logged.inject({ method: 'GET', url: `/v1/admin-invites/${secret}` });
+    await logged.inject({ method: 'GET', url: `/v1/admin-invites/${secret}?again=${secret}` });
+    await logged.inject({ method: 'POST', url: '/v1/admin-invites/preview', payload: { token: secret } });
+    await logged.inject({ method: 'GET', url: `/v1/news?invite=${secret}` });
+    await logged.close();
+
+    const output = lines.join('');
+    expect(lines.length).toBeGreaterThan(0);
+    expect(output).not.toContain(secret);
+    const urls = lines
+      .map((l) => JSON.parse(l) as { req?: { url?: string } })
+      .flatMap((l) => (l.req?.url === undefined ? [] : [l.req.url]));
+    expect(urls).toEqual([
+      '/v1/admin-invites/[redacted]',
+      '/v1/admin-invites/[redacted]',
+      '/v1/admin-invites/[redacted]',
+      '/v1/news',
+    ]);
   });
 });
 

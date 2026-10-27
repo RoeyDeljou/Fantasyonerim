@@ -4,6 +4,7 @@ import {
   AdminInvitePreviewSchema,
   AdminInviteSchema,
   CreateAdminInviteBodySchema,
+  RedeemAdminInviteBodySchema,
 } from '@fant/shared';
 import type { AdminInvite } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
@@ -22,7 +23,6 @@ import { parseInput, serialize } from '../validate.js';
 
 export const DEFAULT_WEB_APP_URL = 'http://localhost:3000';
 const IdParamsSchema = z.object({ id: z.string().min(1).max(100) });
-const TokenParamsSchema = z.object({ token: z.string().max(300) });
 const INVITE_NOT_FOUND = 'This invite link is no longer valid';
 
 export interface InviteLimits {
@@ -78,7 +78,8 @@ export function adminInviteRoutes(app: FastifyInstance, ctx: AppContext, auth: A
       return reply.code(201).send(
         serialize(AdminInviteCreatedSchema, {
           invite: toDto(invite),
-          url: `${base}/onboarding/?invite=${encodeURIComponent(token)}`,
+          // A fragment: never sent to the web host, so its access logs never see the token.
+          url: `${base}/onboarding/#invite=${encodeURIComponent(token)}`,
         }),
       );
     });
@@ -106,9 +107,18 @@ export function adminInviteRoutes(app: FastifyInstance, ctx: AppContext, auth: A
     });
   });
 
-  // Public: onboarding shows "You're invited as an admin" before signing up. One generic 404 (no oracle).
-  app.get('/v1/admin-invites/:token', { config: { rateLimit: limits.preview } }, async (request, reply) => {
-    const { token } = parseInput(TokenParamsSchema, request.params);
+  // Public: onboarding shows "You're invited as an admin" before signing up. The token travels in the body (a
+  // path/query would land in access logs). One generic 404 for every invalid token, whatever its length.
+  app.post('/v1/admin-invites/preview', { config: { rateLimit: limits.preview } }, async (request, reply) => {
+    const parsed = RedeemAdminInviteBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      const raw: unknown = request.body;
+      const hasStringToken =
+        typeof raw === 'object' && raw !== null && typeof (raw as { token?: unknown }).token === 'string';
+      if (hasStringToken) throw notFound(INVITE_NOT_FOUND);
+      parseInput(RedeemAdminInviteBodySchema, raw); // → 400 for a missing/non-string token
+    }
+    const token = parsed.data?.token ?? '';
     const invite = await prisma.adminInvite.findFirst({
       where: { tokenHash: hashToken(token), ...pendingInviteWhere(ctx.clock.now()) },
     });

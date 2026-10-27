@@ -87,6 +87,7 @@ export const qk = {
   broadcastTargets: ['admin', 'broadcast', 'targets'] as const,
   broadcasts: ['admin', 'broadcast', 'history'] as const,
   blocks: ['community', 'blocks'] as const,
+  invites: ['admin', 'invites'] as const,
 };
 
 export const COMMUNITY_PAGE_SIZE = 20;
@@ -847,4 +848,37 @@ export function useBlockUser() {
 
 export function useDeleteAccount() {
   return useMutation({ mutationFn: () => api.deleteAccount({ confirm: 'DELETE' }) });
+}
+
+// ---------- admin invites ----------
+
+export function useAdminInvites(enabled: boolean) {
+  return useQuery({ queryKey: qk.invites, queryFn: ({ signal }) => api.admin.invites({ signal }), enabled });
+}
+
+export function useCreateInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (label: string) => api.admin.createInvite({ label }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.invites }),
+  });
+}
+
+export function useRevokeInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.admin.revokeInvite(id),
+    onSettled: () => void qc.invalidateQueries({ queryKey: qk.invites }),
+  });
+}
+
+export function useRedeemInvite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (token: string) => api.redeemAdminInvite(token),
+    onSuccess: (me) => {
+      qc.setQueryData(qk.me, me);
+      void qc.invalidateQueries({ queryKey: ['admin'] });
+    },
+  });
 }

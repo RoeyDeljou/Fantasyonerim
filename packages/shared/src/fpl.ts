@@ -16,7 +16,7 @@ import {
 export const PositionSchema = z.enum(['GKP', 'DEF', 'MID', 'FWD']);
 export type Position = z.infer<typeof PositionSchema>;
 
-export const ChipSchema = z.enum(['wildcard', 'freehit', 'bboost', '3xc', 'manager']);
+export const ChipSchema = z.enum(['wildcard', 'freehit', 'bboost', '3xc']);
 export type Chip = z.infer<typeof ChipSchema>;
 
 export const GameweekInfoSchema = z.object({
@@ -187,6 +187,8 @@ export const LeagueStandingRowSchema = z.object({
   managerName: z.string(),
   total: z.number().int(),
   eventTotal: z.number().int(),
+  /** Chip played in the current/last started GW (shown as an icon in the Table). null = none or unknown. */
+  activeChip: ChipSchema.nullable().default(null),
 });
 export type LeagueStandingRow = z.infer<typeof LeagueStandingRowSchema>;
 

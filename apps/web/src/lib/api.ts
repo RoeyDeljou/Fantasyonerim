@@ -37,6 +37,9 @@ import {
   BroadcastResultSchema,
   BroadcastTargetsStatusSchema,
   BlockListSchema,
+  AdminInviteCreatedSchema,
+  AdminInviteListSchema,
+  AdminInvitePreviewSchema,
 } from '@fant/shared';
 import type { CreateAdminBodySchema } from '@fant/shared';
 import type {
@@ -94,6 +97,10 @@ import type {
   ChangePasswordBody,
   BlockedUser,
   DeleteAccountBody,
+  AdminInvite,
+  AdminInviteCreated,
+  AdminInvitePreview,
+  CreateAdminInviteBody,
 } from '@fant/shared';
 import { tokenStore } from './tokenStore';
 
@@ -267,6 +274,13 @@ export const api = {
   updateMe: (body: UpdateMeBody): Promise<Me> => request('PATCH', '/v1/me', MeSchema, { body }),
   /** DELETE /v1/me — permanent. 204; the token stops working immediately. 409 = the last admin. */
   deleteAccount: (body: DeleteAccountBody): Promise<void> => request('DELETE', '/v1/me', noContent, { body }),
+  /** Public: who an admin invite is for (POST /v1/admin-invites/preview). 404 = unknown / used / expired / revoked. */
+  adminInvitePreview: (token: string, o: Signal = {}): Promise<AdminInvitePreview> =>
+    // POST with the token in the body, so it never lands in a URL / access log.
+    request('POST', '/v1/admin-invites/preview', AdminInvitePreviewSchema, { ...o, body: { token } }),
+  /** A signed-in user redeems an invite → the upgraded Me. 400 invalid · 409 already an admin. */
+  redeemAdminInvite: (token: string): Promise<Me> =>
+    request('POST', '/v1/me/admin-invite', MeSchema, { body: { token } }),
   recoveryCode: (o: Signal = {}): Promise<string> =>
     request('GET', '/v1/me/recovery-code', RecoveryCodeResponseSchema, o).then((r) => r.recoveryCode),
 
@@ -355,6 +369,13 @@ export const api = {
       request('GET', '/v1/admin/news/hidden', HiddenNewsListSchema, o),
     restoreNews: (id: NewsItemId): Promise<void> =>
       request('POST', `/v1/admin/news/${encodeURIComponent(id)}/restore`, noContent),
+
+    invites: (o: Signal = {}): Promise<AdminInvite[]> =>
+      request('GET', '/v1/admin/invites', AdminInviteListSchema, o).then((r) => r.items),
+    createInvite: (body: CreateAdminInviteBody): Promise<AdminInviteCreated> =>
+      request('POST', '/v1/admin/invites', AdminInviteCreatedSchema, { body }),
+    revokeInvite: (id: string): Promise<void> =>
+      request('DELETE', `/v1/admin/invites/${encodeURIComponent(id)}`, noContent),
 
     broadcastTargets: (o: Signal = {}): Promise<BroadcastTargetsStatus> =>
       request('GET', '/v1/admin/broadcast/targets', BroadcastTargetsStatusSchema, o),

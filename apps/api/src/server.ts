@@ -15,6 +15,7 @@ const logger =
   env.NODE_ENV === 'development'
     ? { level: env.LOG_LEVEL, transport: { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss' } } }
     : { level: env.LOG_LEVEL, redact: ['req.headers.authorization'] };
+// buildApp adds the safe `req` serializer (src/logging.ts): no query strings, no invite tokens in logged URLs.
 
 const prisma = new PrismaClient({ datasourceUrl: env.DATABASE_URL });
 const fpl = createFplFromEnv(env);

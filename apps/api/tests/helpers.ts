@@ -5,7 +5,7 @@ import { AuthResponseSchema, type AuthResponse } from '@fant/shared';
 import { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { vi } from 'vitest';
-import { buildApp } from '../src/app.js';
+import { buildApp, type AppDeps } from '../src/app.js';
 import type { AppConfig, Clock, RateLimitConfig } from '../src/context.js';
 import type { IntegrationFactories } from '../src/integrations/factories.js';
 import type { MediaStore } from '../src/media/store.js';
@@ -73,6 +73,7 @@ export interface TestAppOptions {
   media?: MediaStore;
   fetch?: typeof fetch;
   config?: Partial<AppConfig>;
+  logger?: AppDeps['logger'];
 }
 
 export async function buildTestApp(prisma: PrismaClient, options: TestAppOptions = {}) {
@@ -86,6 +87,7 @@ export async function buildTestApp(prisma: PrismaClient, options: TestAppOptions
     ...(options.push !== undefined ? { push: options.push } : {}),
     ...(options.media ? { media: options.media } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
+    ...(options.logger !== undefined ? { logger: options.logger } : {}),
     config: {
       corsOrigins: options.corsOrigins ?? ['http://localhost:3000'],
       secretsKey: devSecretsKey(),

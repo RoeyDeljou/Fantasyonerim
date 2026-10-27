@@ -38,7 +38,17 @@ const WEB = `http://localhost:${WEB_PORT}`;
 const DB_NAME = 'fantasyonerim_e2e';
 const DATABASE_URL = process.env.E2E_DATABASE_URL ?? `postgresql://fant:fant@localhost:5432/${DB_NAME}`;
 const ADMIN = { username: 'e2e-admin', password: 'e2e-admin-password' };
-const DEMO = { tripleCaptain: '1000003', normal: '1000001', vice: '1000002', league: '314159' };
+const DEMO = {
+  tripleCaptain: '1000003',
+  normal: '1000001',
+  vice: '1000002',
+  league: '314159',
+  // fresh fans for the admin-invite journeys
+  host: '1000004',
+  reuser: '1000005',
+  redeemer: '1000006',
+  lateInvitee: '1000007',
+};
 
 const log = (...a) => console.warn('[e2e]', ...a);
 
@@ -205,6 +215,7 @@ function startApi() {
       VAPID_PRIVATE_KEY: VAPID.privateKey,
       VAPID_SUBJECT: 'mailto:e2e@example.com',
       API_PUBLIC_URL: API,
+      WEB_APP_URL: WEB, // admin invite links point at the e2e web app
       MEDIA_STORE: 'local',
       MEDIA_DIR,
       LOG_LEVEL: 'warn',
@@ -1100,6 +1111,166 @@ async function journeys(browser) {
       await ctx.close();
     },
   );
+
+  // ---------- admin invites (one-time links → the hosts' own accounts become admins) ----------
+  /** Registers a fan from the onboarding screen (whatever banner is showing) and confirms the recovery code. */
+  const signUp = async (p, name, teamId) => {
+    await p.getByRole('button', { name: 'בואו נתחיל' }).click();
+    await p.getByLabel('איך לקרוא לכם?').fill(name);
+    await p.getByLabel('Team ID של FPL').fill(teamId);
+    await p.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
+    await p.getByRole('button', { name: 'כן, זו הקבוצה שלי' }).click();
+    await p.getByRole('button', { name: 'שמרתי, יאללה' }).click();
+  };
+  /** Creates an invite in the admin console and returns its link (shown once). */
+  const createInvite = async (label) => {
+    await admin.goto(`${WEB}/admin/`);
+    const form = admin.getByTestId('invite-form');
+    await form.getByLabel('למי ההזמנה?').fill(label);
+    await form.getByTestId('invite-create').click();
+    const sheet = admin.locator('dialog[open] [data-testid=invite-created]');
+    await sheet.waitFor();
+    const url = ((await sheet.getByTestId('invite-url').textContent()) ?? '').trim();
+    assert(/^.+\/onboarding\/[?#]invite=.{20,}$/.test(url), `invite url: ${url}`);
+    return { sheet, url };
+  };
+  /** The same link in the other form: `#invite=` (current) ↔ `?invite=` (links sent before the switch). */
+  const otherForm = (url) =>
+    url.includes('#invite=') ? url.replace('#invite=', '?invite=') : url.replace('?invite=', '#invite=');
+  const inviteRow = (label) => admin.locator(`[data-testid=invite-row][data-label="${label}"]`);
+  let hostInvite = '';
+
+  await step('admin creates an invite: the link is shown once with copy and the 7-day note', async () => {
+    const { sheet, url } = await createInvite('דור e2e');
+    hostInvite = url;
+    await sheet.getByText('הקישור עובד פעם אחת ותקף ל־7 ימים').waitFor();
+    await sheet.getByTestId('invite-copy').waitFor();
+    await noHorizontalScroll(admin, 'invite created sheet');
+    await sheet.getByRole('button', { name: 'סיום' }).click();
+    await admin.locator('dialog[open]').waitFor({ state: 'detached' });
+    await inviteRow('דור e2e').getByText('ממתין').waitFor();
+    assert((await admin.getByText(url).count()) === 0, 'the link is not shown again after closing');
+  });
+
+  await step(
+    'a fresh visitor opens the invite, registers and lands in the admin console as an admin',
+    async () => {
+      const ctx = await newContext(browser);
+      const host = await ctx.newPage();
+      watch(host, 'host');
+      const token = hostInvite.split('invite=')[1];
+      const previewUrls = [];
+      host.on('request', (r) => {
+        if (r.url().startsWith(API) && r.url().includes('admin-invites')) previewUrls.push(r.url());
+      });
+      await host.goto(hostInvite);
+      const banner = host.getByTestId('invite-banner');
+      await banner.getByText('הוזמנת להיות מנהל/ת בפנטזיונרים 🎙️').waitFor();
+      await banner.getByText('דור e2e', { exact: false }).waitFor();
+      assert(!host.url().includes('invite='), `the token must leave the address bar: ${host.url()}`);
+      assert(!previewUrls.some((u) => u.includes(token)), 'the token never travels in a URL');
+      assert(
+        previewUrls.some((u) => u.endsWith('/v1/admin-invites/preview')),
+        'preview via POST',
+      );
+      await noHorizontalScroll(host, 'onboarding with invite');
+      await signUp(host, 'E2E Host', DEMO.host);
+      await host.waitForURL('**/admin/');
+      await host.getByText('ברוכים הבאים לניהול, E2E Host!', { exact: false }).waitFor();
+      await host.getByTestId('live-update-card').waitFor();
+      await host.goto(`${WEB}/admin/?view=account`);
+      await host
+        .getByTestId('no-password')
+        .getByText('את/ה מחובר/ת עם חשבון האפליקציה — אין סיסמה')
+        .waitFor();
+      await host.goto(`${WEB}/profile/`);
+      await host.getByRole('link', { name: 'קונסולת ניהול' }).waitFor();
+      await ctx.close();
+      await admin.goto(`${WEB}/admin/`);
+      await inviteRow('דור e2e').getByText('נוצל ע״י E2E Host').waitFor();
+    },
+  );
+
+  const reuserCtx = await newContext(browser);
+  const reuser = await reuserCtx.newPage();
+  watch(reuser, 'reuser');
+  await step('reusing a used invite link: "no longer valid", then a normal fan sign-up', async () => {
+    await reuser.goto(otherForm(hostInvite)); // both link forms are read
+    await reuser.getByTestId('invite-invalid').getByText('הקישור כבר לא בתוקף — בקשו קישור חדש').waitFor();
+    assert(!reuser.url().includes('invite='), `stripped from the address bar: ${reuser.url()}`);
+    assert((await reuser.getByTestId('invite-banner').count()) === 0, 'no admin banner');
+    await signUp(reuser, 'E2E Reuser', DEMO.reuser);
+    await reuser.waitForURL('**/news/');
+    await reuser.goto(`${WEB}/profile/`);
+    await reuser.getByText('E2E Reuser').first().waitFor();
+    assert((await reuser.getByRole('link', { name: 'קונסולת ניהול' }).count()) === 0, 'stays a fan');
+  });
+
+  await step('revoking a pending invite makes its link invalid', async () => {
+    const { sheet, url } = await createInvite('לביטול e2e');
+    await sheet.getByRole('button', { name: 'סיום' }).click();
+    const row = inviteRow('לביטול e2e');
+    await row.getByTestId('invite-revoke').click();
+    await row.getByTestId('invite-revoke-confirm').click();
+    await row.getByText('בוטל').waitFor();
+    const ctx = await newContext(browser);
+    const p = await ctx.newPage();
+    watch(p, 'revoked-visitor');
+    await p.goto(otherForm(url));
+    await p.getByTestId('invite-invalid').waitFor();
+    await ctx.close();
+  });
+
+  await step(
+    'an invite revoked mid-signup: only the clear "no longer valid" banner, then a fan sign-up',
+    async () => {
+      const { sheet, url } = await createInvite('באמצע e2e');
+      await sheet.getByRole('button', { name: 'סיום' }).click();
+      const ctx = await newContext(browser);
+      const p = await ctx.newPage();
+      watch(p, 'late-invitee');
+      await p.goto(url);
+      await p.getByTestId('invite-banner').waitFor();
+      await p.getByRole('button', { name: 'בואו נתחיל' }).click();
+      await p.getByLabel('איך לקרוא לכם?').fill('E2E Late');
+      await p.getByLabel('Team ID של FPL').fill(DEMO.lateInvitee);
+      await p.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
+      await p.getByText('זו הקבוצה שלכם?').waitFor();
+      // The admin revokes it while the visitor is on the confirm step.
+      const row = inviteRow('באמצע e2e');
+      await row.getByTestId('invite-revoke').click();
+      await row.getByTestId('invite-revoke-confirm').click();
+      await admin.locator('[data-testid=invite-row][data-label="באמצע e2e"][data-status=revoked]').waitFor();
+      await p.getByRole('button', { name: 'כן, זו הקבוצה שלי' }).click();
+      await p.getByTestId('invite-invalid').getByText('הקישור כבר לא בתוקף — בקשו קישור חדש').waitFor();
+      assert(
+        (await p.locator('main [role=alert]').count()) === 1,
+        'only the invite notice — no generic error',
+      );
+      await p.getByRole('button', { name: 'כן, זו הקבוצה שלי' }).click(); // now as a normal fan
+      await p.getByRole('button', { name: 'שמרתי, יאללה' }).click();
+      await p.waitForURL('**/news/');
+      await ctx.close();
+    },
+  );
+
+  await step(
+    'an existing signed-in fan opens an invite and upgrades their own account to admin',
+    async () => {
+      const { sheet, url } = await createInvite('איתי e2e');
+      await sheet.getByRole('button', { name: 'סיום' }).click();
+      await reuser.goto(url);
+      const redeem = reuser.getByTestId('invite-redeem');
+      await redeem.getByText('להפוך את החשבון שלך למנהל?').waitFor();
+      await redeem.getByText('E2E Reuser', { exact: false }).waitFor();
+      await redeem.getByTestId('invite-redeem-confirm').click();
+      await reuser.waitForURL('**/admin/');
+      await reuser.getByTestId('live-update-card').waitFor();
+      await admin.goto(`${WEB}/admin/`);
+      await inviteRow('איתי e2e').getByText('נוצל ע״י E2E Reuser').waitFor();
+    },
+  );
+  await reuserCtx.close();
 
   await step('/terms/ renders and is linked from Profile and onboarding', async () => {
     await page.goto(`${WEB}/profile/`);

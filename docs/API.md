@@ -100,11 +100,11 @@ Schemas: `packages/shared/src/broadcast.ts`.
 
 ## Admin invites
 
-| Method | Path                       | Auth | Body / query                   | Response                                                                                                                                         |
-| ------ | -------------------------- | ---- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| POST   | `/v1/admin/invites`        | 🛡    | `CreateAdminInviteBody`        | `AdminInviteCreated` (201) — the only response containing the link                                                                               |
-| GET    | `/v1/admin/invites`        | 🛡    | –                              | `AdminInviteList`                                                                                                                                |
-| DELETE | `/v1/admin/invites/:id`    | 🛡    | –                              | 204 — revoke (pending only; 409 otherwise)                                                                                                       |
-| GET    | `/v1/admin-invites/:token` | 🌐   | –                              | `AdminInvitePreview` · 404 invalid/used/expired/revoked (generic)                                                                                |
-| POST   | `/v1/auth/register`        | 🌐   | `RegisterBody` + `inviteToken` | as before, the account is created with role admin when the token is valid; 400 "This invite link is no longer valid" otherwise (nothing created) |
-| POST   | `/v1/me/admin-invite`      | 👤   | `RedeemAdminInviteBody`        | `Me` (role admin) · 400 invalid · 409 already an admin                                                                                           |
+| Method | Path                        | Auth | Body / query                          | Response                                                                                                                                                       |
+| ------ | --------------------------- | ---- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/v1/admin/invites`         | 🛡    | `CreateAdminInviteBody`               | `AdminInviteCreated` (201) — the only response containing the link; `url` = `${WEB_APP_URL}/onboarding/#invite=<token>` (fragment: never reaches a server log) |
+| GET    | `/v1/admin/invites`         | 🛡    | –                                     | `AdminInviteList`                                                                                                                                              |
+| DELETE | `/v1/admin/invites/:id`     | 🛡    | –                                     | 204 — revoke (pending only; 409 otherwise)                                                                                                                     |
+| POST   | `/v1/admin-invites/preview` | 🌐   | `RedeemAdminInviteBody` (`{ token }`) | `AdminInvitePreview` · 404 invalid/used/expired/revoked/malformed (generic) — token in the body, never in a URL                                                |
+| POST   | `/v1/auth/register`         | 🌐   | `RegisterBody` + `inviteToken`        | as before, the account is created with role admin when the token is valid; 400 "This invite link is no longer valid" otherwise (nothing created)               |
+| POST   | `/v1/me/admin-invite`       | 👤   | `RedeemAdminInviteBody`               | `Me` (role admin) · 400 invalid · 409 already an admin                                                                                                         |
