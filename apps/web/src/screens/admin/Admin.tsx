@@ -65,6 +65,7 @@ import {
   cx,
   errorMessage,
 } from '@/components/ui';
+import { CLIENT_HOSTS } from '@/lib/clientConfig';
 import { AdminFrame, AdminGuard } from './AdminShell';
 
 export function AdminScreen() {
@@ -497,7 +498,7 @@ function defaultRows(t: Messages): BattleRowDraft[] {
       kind: 'custom',
       source: 'entry',
       playerId: null,
-      entryId: '',
+      entryId: CLIENT_HOSTS.dor.fplEntryId,
     },
     {
       uid: nextUid(),
@@ -505,7 +506,7 @@ function defaultRows(t: Messages): BattleRowDraft[] {
       kind: 'custom',
       source: 'entry',
       playerId: null,
-      entryId: '',
+      entryId: CLIENT_HOSTS.itay.fplEntryId,
     },
     {
       uid: nextUid(),

@@ -23,7 +23,8 @@ Default rows, in this order:
 3. **קפטן הקהילה** — player chosen manually by an admin each GW (kind `community`).
 
 Admins can add more rows and name them freely (either linked to a Team ID or a hand-picked player).
-Dor's and Itay's Team IDs: _pending — the client will provide them with the admin accounts._
+Team IDs (client, 2026-10-27; verified against FPL): **Dor Dabush → 11597 "Dorsenal"**, **Itay Tebeka → 17754
+"ShawMustGoOn!"**. The admin editor prefills them (`apps/web/src/lib/clientConfig.ts`).
 
 ## Podcast listening (client decision, 2026-10-26)
 
