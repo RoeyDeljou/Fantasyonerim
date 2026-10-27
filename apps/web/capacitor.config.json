@@ -6,8 +6,7 @@
     "androidScheme": "https"
   },
   "ios": {
-    "contentInset": "never",
-    "scheme": "Fantasyonerim"
+    "contentInset": "never"
   },
   "android": {
     "allowMixedContent": false

@@ -269,6 +269,9 @@ describe('admin login + bootstrap', () => {
   it('bootstrap creates the admin once (idempotent) and login works', async () => {
     expect(await bootstrapAdmin(prisma, 'boss', 'super-secret-pw')).toBe('created');
     expect(await bootstrapAdmin(prisma, 'boss', 'another-password')).toBe('exists');
+    // A different bootstrap username never creates a second admin once one exists (no resurrection).
+    expect(await bootstrapAdmin(prisma, 'other-boss', 'another-password')).toBe('exists');
+    expect(await prisma.adminCredential.count()).toBe(1);
     expect(await bootstrapAdmin(prisma, undefined, undefined)).toBe('skipped');
     expect(await prisma.adminCredential.count()).toBe(1);
     const user = await prisma.user.findFirstOrThrow({ where: { role: 'ADMIN' } });

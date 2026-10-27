@@ -70,11 +70,14 @@ public — fixed)._
 2. Admin moderation: report queue, delete any post/comment, ban/unban user (banned users can read, not write).
 3. Rate limits and basic content validation; infinite scroll; optional push on replies to your post.
 
-## Phase 4 — Live broadcasts, deployment, native readiness
+## Phase 4 — Live broadcasts, deployment, native readiness ✅
+
+_Passed `qa-verifier` on 2026-10-27 at 111352a (incl. App Store prerequisites: account deletion, user blocking,
+community rules page). Production deployment is being brought up on Render + Vercel + Neon + Backblaze B2._
 
 1. ~~WhatsApp linking~~ — **deferred by the client** (see docs/CLIENT_ACCOUNTS.md → WhatsApp). Not built now.
 2. Broadcast composer (e.g. goal alert): text + optional image → News feed item, push, X post — each target
    toggleable, per-target result shown; targets are `Publisher`s so a WhatsApp target can be added later.
-3. Deployment: `render.yaml` (api + Postgres, Frankfurt), Vercel config for web, GitHub Actions cron hitting the
+3. Deployment: `render.yaml` (api on Render free, Frankfurt; Neon Postgres; Backblaze B2 media), Vercel config for web, GitHub Actions cron hitting the
    tick endpoint, `docs/DEPLOY.md` + `docs/INTEGRATIONS.md` (step-by-step key setup for the client).
 4. Native readiness: Capacitor config + `docs/NATIVE.md` (iOS/Android build steps, FCM/APNs provider plan).

@@ -7,7 +7,10 @@
 export const X_MAX_WEIGHTED_LENGTH = 280;
 export const X_URL_WEIGHT = 23;
 
-const URL_RE = /\bhttps?:\/\/[^\s<>"]+/giu;
+// http(s)://… or a bare www.… / domain.tld[/path] (common TLDs) — X auto-links these too, counting each as 23.
+// Kept identical to apps/web/src/lib/xLength.ts so the composer's counter and the server agree.
+const URL_RE =
+  /\bhttps?:\/\/[^\s]+|\bwww\.[^\s]+|\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|co|il|uk|me|ly|fm|tv|app|dev|gg|link)\b(?:\/[^\s]*)?/gi;
 const EMOJI_RE = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 

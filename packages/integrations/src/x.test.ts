@@ -290,3 +290,11 @@ describe('createXPublisher', () => {
     expect((err as Error).message).toMatch(/Read and write/);
   });
 });
+
+describe('xWeightedLength bare domains', () => {
+  it('counts bare domains and www links as 23, like X and the web composer', async () => {
+    const { xWeightedLength } = await import('./x-text.js');
+    expect(xWeightedLength('x.com and www.google.com')).toBe(23 + 5 + 23);
+    expect(xWeightedLength('https://example.com/a')).toBe(23);
+  });
+});
