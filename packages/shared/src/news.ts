@@ -163,6 +163,40 @@ export type AdminPushBody = z.infer<typeof AdminPushBodySchema>;
 export const AdminPushResultSchema = z.object({ recipients: z.number().int(), delivered: z.number().int() });
 export type AdminPushResult = z.infer<typeof AdminPushResultSchema>;
 
+/** Per-device outcome of one send: accepted by the push service, dead (404/410 → removed), or failed. */
+export const PushDeliveryStatsSchema = z.object({
+  devices: z.number().int().nonnegative(),
+  delivered: z.number().int().nonnegative(),
+  gone: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+});
+export type PushDeliveryStats = z.infer<typeof PushDeliveryStatsSchema>;
+
+/** POST /v1/push/test — sends a test notification to the caller's own devices only (rate-limited). */
+export const PushTestResultSchema = PushDeliveryStatsSchema;
+export type PushTestResult = z.infer<typeof PushTestResultSchema>;
+
+export const PushServiceSchema = z.enum(['apple', 'google', 'mozilla', 'microsoft', 'other']);
+export type PushService = z.infer<typeof PushServiceSchema>;
+
+/** GET /v1/admin/push/health — no endpoints or user data, counts only. */
+export const AdminPushHealthSchema = z.object({
+  /** Users with at least one subscribed device. */
+  users: z.number().int().nonnegative(),
+  devices: z.array(z.object({ service: PushServiceSchema, count: z.number().int().nonnegative() })),
+  /** Most recent notification batches, newest first (at most 10). */
+  recent: z.array(
+    PushDeliveryStatsSchema.extend({
+      at: z.string().datetime({ offset: true }),
+      /** e.g. "news", "deadline", "admin", "test", "live". */
+      kind: z.string(),
+      /** HTTP status codes of failures, e.g. [403], for diagnosis. */
+      failureCodes: z.array(z.number().int()),
+    }),
+  ),
+});
+export type AdminPushHealth = z.infer<typeof AdminPushHealthSchema>;
+
 // ---------- admin: integrations ----------
 export const IntegrationIdSchema = z.enum(['podcast_rss', 'spotify', 'apple', 'instagram', 'x', 'youtube']);
 export type IntegrationId = z.infer<typeof IntegrationIdSchema>;
