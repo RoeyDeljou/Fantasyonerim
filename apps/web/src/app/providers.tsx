@@ -6,7 +6,8 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { I18nProvider } from '@/i18n';
 import { ThemeProvider } from '@/lib/theme';
 import { SessionProvider, useSession } from '@/lib/session';
-import { resyncPush } from '@/lib/push';
+import { resyncPush, shareWithWorker } from '@/lib/push';
+import { onResume } from '@/lib/resume';
 import { makeQueryClient } from '@/lib/queries';
 import { isPersistedKey, persistOptions, wirePersistFlush } from '@/lib/persist';
 import { wireWarmUp } from '@/lib/warmup';
@@ -60,11 +61,17 @@ export function Providers({ children }: { children: ReactNode }) {
   );
 }
 
-/** Re-syncs the push subscription once per signed-in session (see `resyncPush`). */
+/**
+ * Keeps this device's push subscription alive (see `ensurePushSubscription`): on start and on every resume while
+ * signed in. Signing out tells the service worker to forget the token.
+ */
 function PushSync() {
   const { status } = useSession();
   useEffect(() => {
-    if (status === 'signedIn') void resyncPush();
+    if (status === 'signedOut') void shareWithWorker();
+    if (status !== 'signedIn') return;
+    void resyncPush();
+    return onResume(() => void resyncPush());
   }, [status]);
   return null;
 }

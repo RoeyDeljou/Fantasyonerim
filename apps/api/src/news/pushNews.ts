@@ -34,23 +34,35 @@ export async function pushNewNewsItems(
     if (!source.success) continue;
     bySource.set(source.data, [...(bySource.get(source.data) ?? []), item]);
   }
-  const total: NotifyResult = { recipients: 0, delivered: 0, devices: 0, devicesDelivered: 0 };
+  const total: NotifyResult = {
+    recipients: 0,
+    delivered: 0,
+    devices: 0,
+    devicesDelivered: 0,
+    gone: 0,
+    failed: 0,
+    failureCodes: [],
+  };
   for (const [source, group] of bySource) {
     group.sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
     const newest = group[0];
     if (newest === undefined) continue;
     const result = await notify(deps, {
+      kind: 'news',
       to: 'all',
       pref: 'news',
       dedupeKeys: group.map((i) => `news:${i.id}`),
-      options: { ttlSec: NEWS_PUSH_TTL_SEC, urgency: 'normal' },
+      // 'high': iOS/Android may hold back 'normal' pushes (Low Power, Doze) — news should show promptly.
+      options: { ttlSec: NEWS_PUSH_TTL_SEC, urgency: 'high' },
       build: ({ locale }): PushPayload => {
         const text = newsCopy(locale, source, group);
         return {
           title: text.title,
           body: text.body,
           url: `/news/?item=${encodeURIComponent(newest.id)}`,
-          tag: `news-${source}`,
+          // Unique per batch: the service worker only sets `renotify` for deadline tags, so a reused tag
+          // ("news-podcast") would silently replace a still-visible notification — no banner, no sound.
+          tag: `news-${source}-${newest.id}`,
           icon: PUSH_ICON,
           image: group.map((i) => imageOf(i, deps.mediaUrl)).find((u) => u !== null) ?? null,
         };
@@ -60,6 +72,9 @@ export async function pushNewNewsItems(
     total.delivered += result.delivered;
     total.devices += result.devices;
     total.devicesDelivered += result.devicesDelivered;
+    total.gone += result.gone;
+    total.failed += result.failed;
+    total.failureCodes = [...new Set([...total.failureCodes, ...result.failureCodes])].sort((a, b) => a - b);
   }
   return total;
 }

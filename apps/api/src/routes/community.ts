@@ -280,6 +280,7 @@ export function communityRoutes(
       if (post.authorId !== user.id && !(await hasBlocked(prisma, post.authorId, user.id))) {
         try {
           await notify(ctx, {
+            kind: 'comment',
             to: [post.authorId],
             pref: 'community',
             dedupeKeys: [`comment:${comment.id}`],

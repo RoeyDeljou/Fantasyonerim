@@ -11,6 +11,7 @@ import { api, isApiError } from '@/lib/api';
 import { applePodcastId, expiresWithin, spotifyShowId, xUsername, youtubeChannel } from '@/lib/newsFormat';
 import {
   useAdminPush,
+  useAdminPushHealth,
   useDisconnectInstagram,
   useIntegrations,
   usePostNews,
@@ -629,6 +630,7 @@ function AdminPushCard() {
         info={it.pushNote}
         saveError={push.isError ? apiText(t, push.error) : null}
       >
+        <PushHealth />
         <TextField
           label={it.pushTitleField}
           value={title}
@@ -690,6 +692,82 @@ function AdminPushCard() {
         </div>
       </BottomSheet>
     </form>
+  );
+}
+
+/** Counts only (no endpoints, no users): who can receive pushes and how the latest sends went. */
+function PushHealth() {
+  const { t } = useI18n();
+  const it = t.integrations;
+  const health = useAdminPushHealth(true);
+  const kindLabel = (k: string): string =>
+    ({
+      news: it.kind_news,
+      deadline: it.kind_deadline,
+      admin: it.kind_admin,
+      test: it.kind_test,
+      live: it.kind_live,
+    })[k] ?? k;
+  if (health.isPending) return <Skeleton className="h-24" />;
+  if (health.isError) return <ErrorState error={health.error} onRetry={() => health.refetch()} />;
+  const h = health.data;
+  return (
+    <section className="flex flex-col gap-2 rounded-2xl bg-surface-2/60 p-3" data-testid="push-health">
+      <h4 className="text-sm font-bold text-ink">{it.healthTitle}</h4>
+      <dl className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        <div className="flex gap-1">
+          <dt className="text-muted">{it.healthUsers}:</dt>
+          <dd className="font-semibold text-ink">
+            <Num value={h.users} />
+          </dd>
+        </div>
+        <div className="flex min-w-0 flex-wrap gap-1">
+          <dt className="text-muted">{it.healthDevices}:</dt>
+          <dd className="flex flex-wrap gap-x-2 font-semibold text-ink" data-testid="push-health-devices">
+            {h.devices.length === 0 ? (
+              <Num value={0} />
+            ) : (
+              h.devices.map((d) => (
+                <span key={d.service}>
+                  {it[`service_${d.service}`]} <Num value={d.count} />
+                </span>
+              ))
+            )}
+          </dd>
+        </div>
+      </dl>
+      <h5 className="text-xs font-bold text-muted">{it.healthRecent}</h5>
+      {h.recent.length === 0 ? (
+        <p className="text-sm text-muted">{it.healthNone}</p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-line text-xs" data-testid="push-health-recent">
+          {h.recent.map((b) => (
+            <li key={`${b.at}-${b.kind}`} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 py-1.5">
+              <RelativeTime iso={b.at} className="text-muted" />
+              <span className="font-semibold text-ink">{kindLabel(b.kind)}</span>
+              <span aria-hidden="true" className="text-muted">
+                ·
+              </span>
+              <span className={b.delivered === b.devices ? 'text-success' : 'text-ink'}>
+                {fmt(it.healthDelivered, { delivered: b.delivered, devices: b.devices })}
+              </span>
+              {b.gone > 0 && <span className="text-warning">· {fmt(it.healthGone, { n: b.gone })}</span>}
+              {b.failed > 0 && (
+                <span className="text-live">
+                  · {fmt(it.healthFailed, { n: b.failed })}
+                  {b.failureCodes.length > 0 && (
+                    <>
+                      {' '}
+                      (<bdi dir="auto">{fmt(it.healthCodes, { codes: b.failureCodes.join(', ') })}</bdi>)
+                    </>
+                  )}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

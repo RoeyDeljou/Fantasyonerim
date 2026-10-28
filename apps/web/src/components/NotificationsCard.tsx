@@ -1,13 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { NotificationPrefs } from '@fant/shared';
 import { useI18n } from '@/i18n';
 import type { Messages } from '@/i18n';
-import { disablePush, enablePush, usePushState } from '@/lib/push';
+import { api } from '@/lib/api';
+import {
+  disablePush,
+  enablePush,
+  ensurePushSubscription,
+  renewPushSubscription,
+  usePushState,
+} from '@/lib/push';
+import { isIos } from '@/lib/pwa';
 import type { PushError, PushState } from '@/lib/push';
 import { useNotificationPrefs, useSaveNotificationPrefs } from '@/lib/queries';
-import { BellIcon, BellOffIcon, InfoIcon } from './icons';
+import { BellIcon, BellOffIcon, CheckIcon, InfoIcon, SendIcon } from './icons';
 import { IosInstallSteps } from './InstallGuide';
 import { Badge, Button, Card, ErrorState, InlineError, Skeleton, Spinner, Switch, errorMessage } from './ui';
 
@@ -40,6 +48,90 @@ function StateLine({ state }: { state: PushState }) {
   }
 }
 
+type TestState =
+  | { kind: 'idle' }
+  | { kind: 'sending' }
+  | { kind: 'renewing' }
+  | { kind: 'sent' }
+  | { kind: 'none' }
+  | { kind: 'renewFailed' }
+  | { kind: 'error'; error: unknown };
+
+/**
+ * "Send a test notification": makes sure this device is registered, asks the API to push to the caller's own
+ * devices and explains the outcome. A dead subscription (the push service answered 404/410) is replaced and the
+ * test retried once.
+ */
+function TestPush({ onEnable }: { onEnable(): void }) {
+  const { t } = useI18n();
+  const [test, setTest] = useState<TestState>({ kind: 'idle' });
+  const busy = test.kind === 'sending' || test.kind === 'renewing';
+
+  const run = async () => {
+    setTest({ kind: 'sending' });
+    await ensurePushSubscription(true).catch(() => undefined);
+    try {
+      let r = await api.testPush();
+      if (r.devices === 0) return setTest({ kind: 'none' });
+      if (r.delivered === 0 && r.gone > 0) {
+        setTest({ kind: 'renewing' });
+        if (!(await renewPushSubscription())) return setTest({ kind: 'renewFailed' });
+        r = await api.testPush();
+      }
+      setTest(r.delivered > 0 ? { kind: 'sent' } : { kind: 'error', error: null });
+    } catch (e) {
+      setTest({ kind: 'error', error: e });
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Button variant="secondary" onClick={() => void run()} disabled={busy} className="self-start">
+        {busy ? <Spinner /> : <SendIcon size={18} />}
+        {test.kind === 'sending' ? t.push.testSending : t.push.testButton}
+      </Button>
+      {test.kind !== 'idle' && test.kind !== 'sending' && (
+        <div
+          role="status"
+          data-testid="push-test-result"
+          data-result={test.kind}
+          className="flex flex-col gap-2"
+        >
+          {test.kind === 'sent' && (
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-success">
+              <CheckIcon size={16} className="shrink-0" />
+              {t.push.testSent}
+            </p>
+          )}
+          {test.kind === 'renewing' && (
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-warning">
+              <Spinner />
+              {t.push.testRenewing}
+            </p>
+          )}
+          {test.kind === 'none' && (
+            <>
+              <p className="text-sm text-ink">
+                <span className="font-semibold">{t.push.testNoDevice}</span> · {t.push.testNoDeviceHelp}
+              </p>
+              <Button onClick={onEnable} className="self-start">
+                <BellIcon size={18} />
+                {t.push.enable}
+              </Button>
+            </>
+          )}
+          {test.kind === 'renewFailed' && <InlineError>{t.push.testRenewFailed}</InlineError>}
+          {test.kind === 'error' && (
+            <InlineError>
+              {test.error ? errorMessage(t, test.error, { internal: t.push.testFailed }) : t.push.testFailed}
+            </InlineError>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Profile → Notifications: device push state + account-wide preference toggles. */
 export function NotificationsCard() {
   const { t } = useI18n();
@@ -48,6 +140,8 @@ export function NotificationsCard() {
   const save = useSaveNotificationPrefs();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<PushError | null>(null);
+  const [ios, setIos] = useState(false);
+  useEffect(() => setIos(isIos()), []);
 
   const turnOn = async () => {
     setBusy(true);
@@ -83,13 +177,18 @@ export function NotificationsCard() {
         </Button>
       )}
       {push.state === 'enabled' && (
-        <Button variant="ghost" onClick={() => void turnOff()} disabled={busy} className="self-start">
-          {busy ? <Spinner /> : <BellOffIcon size={18} />}
-          {t.push.disable}
-        </Button>
+        <>
+          <TestPush onEnable={() => void turnOn()} />
+          <Button variant="ghost" onClick={() => void turnOff()} disabled={busy} className="self-start">
+            {busy ? <Spinner /> : <BellOffIcon size={18} />}
+            {t.push.disable}
+          </Button>
+        </>
       )}
-      {push.state === 'denied' && <Help>{t.push.deniedHelp}</Help>}
-      {push.state === 'unsupported' && <Help>{t.push.unsupportedHelp}</Help>}
+      {push.state === 'denied' && <Help>{ios ? t.push.deniedHelpIos : t.push.deniedHelp}</Help>}
+      {push.state === 'unsupported' && (
+        <Help>{ios ? t.push.unsupportedHelpIos : t.push.unsupportedHelp}</Help>
+      )}
       {push.state === 'needs-install' && (
         <>
           <Help>{t.push.needsInstallHelp}</Help>

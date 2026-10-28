@@ -7,13 +7,17 @@ import {
 } from '../integrations/store.js';
 import { ingestDrafts, type IngestResult } from '../news/ingest.js';
 import { pushNewNewsItems } from '../news/pushNews.js';
+import type { NotifyResult } from '../push/notify.js';
 import type { JobRunContext } from './types.js';
 
 export interface ContentRunResult {
   ok: boolean;
   fetched: SourceResult | null;
   ingest: IngestResult | null;
+  /** Users notified (recipients). */
   pushed: number;
+  /** The push's device accounting (null when nothing was pushed). */
+  push: NotifyResult | null;
   /** The admin-facing note stored as lastError (null = all good). */
   note: string | null;
 }
@@ -66,14 +70,16 @@ export async function runContentSource(
     const note = describeIntegrationError(id, err);
     ctx.log.warn({ integration: id, error: note }, 'integration poll failed');
     await recordIntegrationRun(app.prisma, id, app.clock.now(), { ok: false, error: note });
-    return { ok: false, fetched: null, ingest: null, pushed: 0, note, state };
+    return { ok: false, fetched: null, ingest: null, pushed: 0, push: null, note, state };
   }
 
   const ingest = await ingestDrafts(app, fetched.items, { rehost: options.rehost });
   let pushed = 0;
+  let push: NotifyResult | null = null;
   if (!firstSync && ingest.created.length > 0) {
     try {
-      pushed = (await pushNewNewsItems(app, ingest.created)).recipients;
+      push = await pushNewNewsItems(app, ingest.created);
+      pushed = push.recipients;
     } catch (err) {
       ctx.log.error({ integration: id, err }, 'news push failed');
     }
@@ -90,7 +96,7 @@ export async function runContentSource(
     initialSyncDone: true,
   });
   state[options.stateKey] = true;
-  return { ok: true, fetched, ingest, pushed, note, state };
+  return { ok: true, fetched, ingest, pushed, push, note, state };
 }
 
 export function runSummary(result: ContentRunResult): string {
@@ -99,5 +105,14 @@ export function runSummary(result: ContentRunResult): string {
   const i = result.ingest;
   return i === null
     ? 'ok'
-    : `${i.created.length} new, ${i.updated} updated, ${i.failed.length} failed, pushed to ${result.pushed}`;
+    : `${i.created.length} new, ${i.updated} updated, ${i.failed.length} failed, ${pushSummary(result.push)}`;
+}
+
+/** "pushed to N users (D/T devices delivered, G gone, F failed)". */
+export function pushSummary(push: NotifyResult | null): string {
+  if (push === null) return 'pushed to 0 users';
+  return (
+    `pushed to ${push.recipients} users (${push.devicesDelivered}/${push.devices} devices delivered, ` +
+    `${push.gone} gone, ${push.failed} failed)`
+  );
 }

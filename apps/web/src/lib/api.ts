@@ -20,6 +20,8 @@ import {
   IntegrationStatusSchema,
   NewsItemSchema,
   NewsFiltersSchema,
+  PushTestResultSchema,
+  AdminPushHealthSchema,
   NewsPageSchema,
   NotificationPrefsSchema,
   OAuthStartSchema,
@@ -69,6 +71,8 @@ import type {
   AdminPushResult,
   NewsFilter,
   NewsFilters,
+  PushTestResult,
+  AdminPushHealth,
   IntegrationId,
   IntegrationList,
   IntegrationStatus,
@@ -327,6 +331,9 @@ export const api = {
     request('POST', '/v1/push/subscriptions', noContent, { body }),
   deletePushSubscription: (endpoint: string): Promise<void> =>
     request('DELETE', '/v1/push/subscriptions', noContent, { body: { endpoint } }),
+  /** A test notification to the caller's own devices. */
+  testPush: (): Promise<PushTestResult> =>
+    request('POST', '/v1/push/test', PushTestResultSchema, { body: {} }),
   notificationPrefs: (o: Signal = {}): Promise<NotificationPrefs> =>
     request('GET', '/v1/me/notification-prefs', NotificationPrefsSchema, o),
   saveNotificationPrefs: (body: NotificationPrefs): Promise<NotificationPrefs> =>
@@ -349,6 +356,8 @@ export const api = {
       request('DELETE', `/v1/admin/news/${encodeURIComponent(id)}`, noContent),
     push: (body: AdminPushBody): Promise<AdminPushResult> =>
       request('POST', '/v1/admin/push', AdminPushResultSchema, { body }),
+    pushHealth: (o: Signal = {}): Promise<AdminPushHealth> =>
+      request('GET', '/v1/admin/push/health', AdminPushHealthSchema, o),
     settings: (o: Signal = {}): Promise<AdminSettings> =>
       request('GET', '/v1/admin/settings', AdminSettingsSchema, o),
     saveSettings: (body: AdminSettings): Promise<AdminSettings> =>

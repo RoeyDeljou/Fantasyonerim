@@ -99,6 +99,7 @@ export function adminNewsRoutes(app: FastifyInstance, ctx: AppContext, auth: Aut
       const body = parseInput(AdminPushBodySchema, request.body);
       // Explicit broadcast by an admin: every subscribed user, no preference filter, not deduped.
       const result = await notify(ctx, {
+        kind: 'admin',
         to: 'all',
         pref: null,
         options: { ttlSec: 24 * 3600, urgency: 'high' },

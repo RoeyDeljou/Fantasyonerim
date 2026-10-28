@@ -551,6 +551,7 @@ describe('likes, comments and counters', () => {
     const again = await notify(
       { prisma, push, clock },
       {
+        kind: 'comment',
         to: [author.user.id],
         pref: 'community',
         dedupeKeys: [`comment:${c.id}`],

@@ -132,7 +132,7 @@ describe('podcast job', () => {
     expect(push.sent[0]?.payload).toMatchObject({
       title: '🎙️ פרק חדש: פרק 3 - כותרת',
       url: `/news/?item=${ep3.id}`,
-      tag: 'news-podcast',
+      tag: `news-podcast-${ep3.id}`,
       image: 'https://cdn.anchor.test/art.jpg',
     });
     expect(push.sent[0]?.options).toMatchObject({ ttlSec: 86_400 });
@@ -292,7 +292,7 @@ describe('instagram jobs', () => {
     await app.jobs.run('instagram_stories', { force: true });
     expect(push.sent).toHaveLength(1);
     expect(push.sent[0]?.payload.title).toBe('3 סטוריז חדשים מפנטזיונרים');
-    expect(push.sent[0]?.payload.tag).toBe('news-instagram_story');
+    expect(push.sent[0]?.payload.tag).toMatch(/^news-instagram_story-/); // unique per batch (no silent replace)
     expect(push.sent[0]?.payload.image).toMatch(/^https:\/\/media\.test\/instagram\//);
     expect(await prisma.notificationLog.count()).toBe(3);
 

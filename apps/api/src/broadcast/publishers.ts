@@ -133,6 +133,7 @@ const pushPublisher: BroadcastPublisher = {
     }
     const url = state.newsItemId === null ? '/news/' : newsUrl(state.newsItemId);
     const result = await notify(ctx, {
+      kind: 'live',
       to: 'all',
       // Live updates follow the "live" preference; the "news" preference is irrelevant here.
       pref: 'live',

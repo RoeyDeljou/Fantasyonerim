@@ -41,6 +41,7 @@ self.addEventListener('install', (event) => {
 // only evaluates it once: if the old worker was busy right then, the new one can stay "waiting" for good.
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data && event.data.type === 'PUSH_CONTEXT') event.waitUntil(savePushContext(event.data));
 });
 
 self.addEventListener('activate', (event) => {
@@ -189,9 +190,11 @@ function parsePayload(event) {
   }
 }
 
-self.addEventListener('push', (event) => {
+const FALLBACK_TITLE = 'Fantasyonerim · פנטזיונרים';
+
+function notificationFor(event) {
   const data = parsePayload(event);
-  const title = str(data.title, 120) || 'Fantasyonerim · פנטזיונרים';
+  const title = str(data.title, 120) || FALLBACK_TITLE;
   const body = str(data.body, 400) || '';
   const tag = str(data.tag, 100);
   const text = title + ' ' + body;
@@ -208,10 +211,31 @@ self.addEventListener('push', (event) => {
   if (image) options.image = image;
   if (tag) {
     options.tag = tag;
-    // A new deadline reminder replaces the previous one but must still alert.
-    options.renotify = tag.startsWith('deadline');
+    // Always alert again: a same-tag notification still on screen must not be replaced silently.
+    options.renotify = true;
   }
-  event.waitUntil(self.registration.showNotification(title, options));
+  return { title, options };
+}
+
+// Every push MUST show a notification inside waitUntil: iOS (and Chrome's budget) revoke the subscription after
+// "silent" pushes. So nothing here may throw before showNotification, and a rejected showNotification (bad
+// image/icon/option on some platform) falls back to a plain one.
+self.addEventListener('push', (event) => {
+  let n;
+  try {
+    n = notificationFor(event);
+  } catch {
+    n = { title: FALLBACK_TITLE, options: { body: '', icon: DEFAULT_ICON, data: { url: '/news/' } } };
+  }
+  event.waitUntil(
+    self.registration.showNotification(n.title, n.options).catch(() =>
+      self.registration.showNotification(n.title, {
+        body: n.options.body || '',
+        icon: DEFAULT_ICON,
+        data: { url: (n.options.data && n.options.data.url) || '/news/' },
+      }),
+    ),
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {
@@ -241,5 +265,69 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// `pushsubscriptionchange` is deliberately not handled here: the worker has no bearer token. The app re-syncs
-// the subscription on every start (lib/push.ts → resyncPush), which re-POSTs the new endpoint.
+// ---------- pushsubscriptionchange ----------
+// The browser replaced (or dropped) the subscription while no page may be open. The page keeps the API base URL,
+// the bearer token and the VAPID key here via postMessage({ type: 'PUSH_CONTEXT' }) (lib/push.ts →
+// shareWithWorker); they live in IndexedDB because a worker's memory is gone whenever it is stopped. The token
+// is never part of this script. If anything fails here (signed out, offline, API asleep) nothing is lost: the
+// page compares the current endpoint with the last one it registered on every start/resume and re-POSTs it.
+
+const DB_NAME = 'fant-sw';
+const STORE = 'kv';
+const CONTEXT_KEY = 'pushContext';
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function kv(mode, fn) {
+  const db = await openDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, mode);
+      const req = fn(tx.objectStore(STORE));
+      tx.oncomplete = () => resolve(req && req.result);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+function savePushContext(data) {
+  const ctx = {
+    apiBase: typeof data.apiBase === 'string' ? data.apiBase : null,
+    token: typeof data.token === 'string' && data.token ? data.token : null,
+    vapidKey: Array.isArray(data.vapidKey) ? data.vapidKey : null,
+  };
+  return kv('readwrite', (store) => store.put(ctx, CONTEXT_KEY)).catch(() => undefined);
+}
+
+async function resubscribe(event) {
+  const ctx = await kv('readonly', (store) => store.get(CONTEXT_KEY)).catch(() => null);
+  const old = event.oldSubscription;
+  let sub = event.newSubscription || (await self.registration.pushManager.getSubscription());
+  if (!sub) {
+    const key =
+      (old && old.options && old.options.applicationServerKey) ||
+      (ctx && ctx.vapidKey ? new Uint8Array(ctx.vapidKey) : null);
+    if (!key) return;
+    sub = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  }
+  if (!ctx || !ctx.apiBase || !ctx.token) return; // signed out: the page registers it after the next sign-in
+  await fetch(`${ctx.apiBase}/v1/push/subscriptions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${ctx.token}` },
+    body: JSON.stringify(sub.toJSON()),
+  });
+}
+
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil(resubscribe(event).catch(() => undefined));
+});

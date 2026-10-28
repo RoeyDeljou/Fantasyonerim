@@ -361,6 +361,15 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
+/** Polls a Node-side condition (e.g. recorded requests) until it holds. */
+async function waitUntil(cond, what, ms = 15_000) {
+  const until = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > until) throw new Error(`timed out waiting for ${what}`);
+    await sleep(100);
+  }
+}
+
 /** Console errors we provoke on purpose (wrong code, denied admin…) are expected 4xx resource loads. */
 function watch(page, tag) {
   page.on('console', (m) => {
@@ -375,8 +384,86 @@ function watch(page, tag) {
   page.on('pageerror', (e) => consoleErrors.push(`${tag}: ${e.message}`));
 }
 
-async function newContext(browser) {
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'he-IL' });
+// ---------- push mock ----------
+// Headless Chromium has no push service, so PushManager is replaced in-page: getSubscription()/subscribe() return a
+// fake subscription that `globalThis.__push` controls (set `.sub = null` to simulate the browser dropping it).
+// Options: permission ('granted' | 'denied' | 'default'), standalone (navigator.standalone for iOS UAs).
+function pushMock({ permission = 'granted', standalone } = {}) {
+  const state = { sub: null, subscribes: 0, unsubscribes: 0, n: 0 };
+  globalThis.__push = state;
+  const make = (key) => {
+    state.n += 1;
+    const endpoint = `https://push.example.test/sub/${state.n}-${Math.random().toString(36).slice(2)}`;
+    const sub = {
+      endpoint,
+      expirationTime: null,
+      options: { userVisibleOnly: true, applicationServerKey: key },
+      toJSON: () => ({
+        endpoint,
+        expirationTime: null,
+        keys: { p256dh: 'BPmockp256dhKeyForE2eTests000000', auth: 'mockAuth1234' },
+      }),
+      unsubscribe: async () => {
+        state.unsubscribes += 1;
+        if (state.sub === sub) state.sub = null;
+        return true;
+      },
+      getKey: () => null,
+    };
+    return sub;
+  };
+  if (globalThis.PushManager) {
+    globalThis.PushManager.prototype.getSubscription = async function () {
+      return state.sub;
+    };
+    globalThis.PushManager.prototype.subscribe = async function (opts) {
+      state.subscribes += 1;
+      const k = opts.applicationServerKey;
+      const buf = k instanceof ArrayBuffer ? k.slice(0) : new Uint8Array(k).buffer.slice(0);
+      state.sub = make(buf);
+      return state.sub;
+    };
+    globalThis.PushManager.prototype.permissionState = async () => permission;
+  }
+  if (globalThis.Notification) {
+    Object.defineProperty(globalThis.Notification, 'permission', { get: () => permission });
+    globalThis.Notification.requestPermission = async () => permission;
+  }
+  const query = globalThis.navigator.permissions.query.bind(globalThis.navigator.permissions);
+  globalThis.navigator.permissions.query = (d) =>
+    d && d.name === 'notifications'
+      ? Promise.resolve({ state: permission === 'default' ? 'prompt' : permission })
+      : query(d);
+  if (standalone !== undefined)
+    Object.defineProperty(globalThis.navigator, 'standalone', { get: () => standalone });
+}
+
+const IPHONE_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+
+/** A context signed in with `token`, the push mock installed, and POST /v1/push/subscriptions recorded. */
+async function pushContext(browser, token, mock, opts = {}) {
+  const ctx = await newContext(browser, opts);
+  await ctx.addInitScript((tok) => globalThis.localStorage.setItem('fant.token', tok), token);
+  await ctx.addInitScript(pushMock, mock);
+  const posted = [];
+  await ctx.route(`${API}/v1/push/subscriptions`, async (r) => {
+    if (r.request().method() !== 'POST') return r.continue();
+    posted.push(JSON.parse(r.request().postData() ?? '{}').endpoint);
+    await r.fulfill({ status: 204, headers: { 'access-control-allow-origin': WEB } });
+  });
+  return { ctx, posted };
+}
+
+const json = (body, status = 200) => ({
+  status,
+  contentType: 'application/json',
+  headers: { 'access-control-allow-origin': WEB },
+  body: JSON.stringify(body),
+});
+
+async function newContext(browser, opts = {}) {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'he-IL', ...opts });
   // Image CDNs are irrelevant to behaviour and may be unreachable in CI.
   await ctx.route(/premierleague\.com/, (r) => r.abort());
   // Listening happens on Spotify / Apple: their pages are never loaded in e2e, only the navigation is checked.
@@ -774,6 +861,134 @@ async function journeys(browser) {
     );
   });
 
+  await step('push self-heals: a dropped subscription is re-created and registered on resume', async () => {
+    const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+    const { ctx, posted } = await pushContext(browser, token, { permission: 'granted' });
+    const p = await ctx.newPage();
+    watch(p, 'push');
+    await p.goto(`${WEB}/news/`);
+    await p.waitForFunction(() => globalThis.__push && globalThis.__push.subscribes === 1);
+    await waitUntil(() => posted.length === 1, 'first registration POST');
+    const first = await p.evaluate(() => globalThis.__push.sub.endpoint);
+    assert(posted[0] === first, 'registered the current endpoint');
+    // Resume with the subscription still there and registered moments ago: nothing to do.
+    await sleep(1_200);
+    await p.evaluate(() => globalThis.dispatchEvent(new Event('focus')));
+    await sleep(800);
+    assert(posted.length === 1, `no re-POST within 12 h (got ${posted.length})`);
+    // The browser dropped it (iOS does this): the next resume subscribes again and registers the new endpoint.
+    await p.evaluate(() => {
+      globalThis.__push.sub = null;
+    });
+    await sleep(1_200);
+    await p.evaluate(() => globalThis.dispatchEvent(new Event('focus')));
+    await p.waitForFunction(() => globalThis.__push.subscribes === 2);
+    await waitUntil(() => posted.length === 2, 're-registration POST');
+    const second = await p.evaluate(() => globalThis.__push.sub.endpoint);
+    assert(posted[1] === second && second !== first, 'registered the new endpoint');
+    await ctx.close();
+  });
+
+  await step('Profile → "Send a test notification" explains every outcome', async () => {
+    const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+    const { ctx } = await pushContext(browser, token, { permission: 'granted' });
+    const p = await ctx.newPage();
+    watch(p, 'push-test');
+    const replies = [];
+    let tests = 0;
+    await ctx.route(`${API}/v1/push/test`, async (r) => {
+      tests += 1;
+      const next = replies.shift() ?? { body: { devices: 1, delivered: 1, gone: 0, failed: 0 } };
+      if (next.delay) await sleep(next.delay);
+      await r.fulfill(json(next.body, next.status ?? 200));
+    });
+    await p.goto(`${WEB}/profile/`);
+    await p.locator('[data-testid=push-state][data-state=enabled]').waitFor();
+    const button = p.getByRole('button', { name: 'שליחת התראת בדיקה' });
+    const result = p.getByTestId('push-test-result');
+
+    replies.push({ body: { devices: 1, delivered: 1, gone: 0, failed: 0 } });
+    await button.click();
+    await p
+      .locator('[data-testid=push-test-result][data-result=sent]')
+      .getByText('נשלחה למכשיר — אמורה להופיע עכשיו')
+      .waitFor();
+
+    replies.push({ body: { devices: 0, delivered: 0, gone: 0, failed: 0 } });
+    await button.click();
+    await p
+      .locator('[data-testid=push-test-result][data-result=none]')
+      .getByText('לא נמצא מכשיר רשום')
+      .waitFor();
+    await result.getByRole('button', { name: 'הפעלת התראות' }).waitFor();
+
+    // Dead subscription: renewed (a fresh subscribe) and the test retried once.
+    const before = await p.evaluate(() => globalThis.__push.subscribes);
+    replies.push({ body: { devices: 1, delivered: 0, gone: 1, failed: 0 } });
+    replies.push({ body: { devices: 1, delivered: 1, gone: 0, failed: 0 }, delay: 1_500 });
+    const testsBefore = tests;
+    await button.click();
+    await p
+      .locator('[data-testid=push-test-result][data-result=renewing]')
+      .getByText('המנוי במכשיר הזה פג — מחדשים…')
+      .waitFor();
+    await p.locator('[data-testid=push-test-result][data-result=sent]').waitFor();
+    assert(tests - testsBefore === 2, `test retried once (${tests - testsBefore} calls)`);
+    assert((await p.evaluate(() => globalThis.__push.subscribes)) === before + 1, 'resubscribed once');
+
+    // Rate-limited (a 4xx, so no retry loop): a plain error, never a crash.
+    replies.push({ body: { error: { code: 'rate_limited', message: 'slow down' } }, status: 429 });
+    await button.click();
+    await p.locator('[data-testid=push-test-result][data-result=error]').waitFor();
+    await noHorizontalScroll(p, 'push test');
+    await ctx.close();
+  });
+
+  await step(
+    'iOS Safari (not installed) gets the Add-to-Home-Screen guide; denied explains iOS Settings',
+    async () => {
+      const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+      {
+        const { ctx } = await pushContext(
+          browser,
+          token,
+          { permission: 'default', standalone: false },
+          {
+            userAgent: IPHONE_UA,
+          },
+        );
+        const p = await ctx.newPage();
+        watch(p, 'ios-safari');
+        await p.goto(`${WEB}/profile/`);
+        const card = p.locator('[data-testid=push-state][data-state=needs-install]');
+        await card.waitFor();
+        await p.getByText('באייפון ההתראות עובדות רק אחרי שמוסיפים את פנטזיונרים למסך הבית').waitFor();
+        assert(
+          (await p.getByRole('button', { name: 'הפעלת התראות', exact: true }).count()) === 0,
+          'no toggle that cannot work',
+        );
+        await noHorizontalScroll(p, 'ios safari profile');
+        await ctx.close();
+      }
+      {
+        const { ctx } = await pushContext(
+          browser,
+          token,
+          { permission: 'denied', standalone: true },
+          {
+            userAgent: IPHONE_UA,
+          },
+        );
+        const p = await ctx.newPage();
+        watch(p, 'ios-denied');
+        await p.goto(`${WEB}/profile/`);
+        await p.locator('[data-testid=push-state][data-state=denied]').waitFor();
+        await p.getByText('הגדרות האייפון ← התראות ← פנטזיונרים').waitFor();
+        await ctx.close();
+      }
+    },
+  );
+
   await step('My Team shows the Triple Captain chip and the pitch', async () => {
     await page.goto(`${WEB}/my-team/`);
     await page.getByTestId('pitch-player').first().waitFor();
@@ -946,6 +1161,40 @@ async function journeys(browser) {
       .getByRole('button', { name: 'התחברות עם Facebook' })
       .waitFor();
     await noHorizontalScroll(admin, 'admin integrations');
+  });
+
+  await step('admin push card shows delivery health (devices by service, recent batches)', async () => {
+    // Deterministic numbers: the real endpoint is exercised by the API tests.
+    const at = new Date(Date.now() - 5 * 60_000).toISOString();
+    await admin.route(`${API}/v1/admin/push/health`, (r) =>
+      r.fulfill(
+        json({
+          users: 3,
+          devices: [
+            { service: 'apple', count: 2 },
+            { service: 'google', count: 4 },
+          ],
+          recent: [
+            { at, kind: 'news', devices: 6, delivered: 5, gone: 1, failed: 0, failureCodes: [] },
+            { at, kind: 'test', devices: 1, delivered: 0, gone: 0, failed: 1, failureCodes: [403] },
+          ],
+        }),
+      ),
+    );
+    await admin.goto(`${WEB}/admin/?view=integrations`);
+    const card = await openCard(admin, 'integrations.push');
+    const health = card.getByTestId('push-health');
+    await health.getByText('מצב המשלוחים').waitFor();
+    await health.getByTestId('push-health-devices').getByText('Apple 2').waitFor();
+    await health.getByTestId('push-health-devices').getByText('Google 4').waitFor();
+    const rows = health.getByTestId('push-health-recent').locator('li');
+    assert((await rows.count()) === 2, 'two recent batches');
+    await rows.nth(0).getByText('5/6 נמסרו').waitFor();
+    await rows.nth(0).getByText('1 פגו').waitFor();
+    await rows.nth(1).getByText('1 נכשלו').waitFor();
+    await rows.nth(1).getByText('403').waitFor();
+    await noHorizontalScroll(admin, 'admin push health');
+    await admin.unroute(`${API}/v1/admin/push/health`);
   });
 
   await step('Instagram OAuth return (?instagram=error) shows a notice and cleans the URL', async () => {

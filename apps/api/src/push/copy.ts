@@ -95,6 +95,13 @@ export function broadcastCopy(locale: Locale, title: string | null, text: string
   return { title: title ?? BRAND[locale], body: snippet(text, BROADCAST_SNIPPET_CHARS) };
 }
 
+/** POST /v1/push/test: the "it works" notification. */
+export function testPushCopy(locale: Locale): PushText {
+  return locale === 'he'
+    ? { title: '🔔 התראת בדיקה', body: 'אם אתם רואים את זה — ההתראות עובדות 🎉' }
+    : { title: '🔔 Test notification', body: 'If you can see this, notifications work 🎉' };
+}
+
 /** "שעתיים" / "2 hours", "יום" / "1 day", "30 דקות" / "30 minutes". */
 export function formatOffset(locale: Locale, minutes: number): string {
   if (locale === 'he') {

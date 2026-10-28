@@ -24,6 +24,7 @@ import type { Job } from './jobs/types.js';
 import { createMediaUrlMapper } from './media/publicUrl.js';
 import { LocalDiskMediaStore, type MediaStore } from './media/store.js';
 import type { PushProvider } from './push/provider.js';
+import { PushBatchRecorder } from './push/stats.js';
 import { MAX_UPLOAD_BYTES } from './community/images.js';
 import { userRateLimitKey } from './community/guard.js';
 import { adminBroadcastRoutes } from './routes/adminBroadcast.js';
@@ -75,6 +76,7 @@ const DEFAULT_RATE_LIMIT: RateLimitConfig = {
   uploadsPerHour: 30,
   broadcastsPerHour: 30,
   invitesPerHour: 20,
+  pushTestsPer10Min: 5,
 };
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -114,6 +116,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     integrationCtx: { fetch: fetchImpl, now: () => clock.now().getTime() },
     fetch: fetchImpl,
     push: deps.push ?? null,
+    pushStats: new PushBatchRecorder(),
     media:
       deps.media ?? new LocalDiskMediaStore('./.media', deps.config.apiPublicUrl ?? 'http://localhost:4000'),
     mediaUrl: createMediaUrlMapper(deps.config.mediaOriginBaseUrl, deps.config.mediaPublicBaseUrl),
@@ -205,6 +208,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const broadcastLimit = { max: limits.broadcastsPerHour, timeWindow: HOUR_MS, keyGenerator: perUser };
   const jobs = new JobRunner(ctx, deps.jobs ?? JOBS, app.log);
   app.decorate('jobs', jobs);
+  ctx.pushStats.setLogger(app.log);
 
   configRoutes(app, ctx);
   meRoutes(app, ctx, auth, communityLimits.writes, strictLimit);
@@ -214,7 +218,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   captainBattleRoutes(app, ctx, auth);
   adminRoutes(app, ctx, auth, strictLimit);
   newsRoutes(app, ctx);
-  pushRoutes(app, ctx, auth, writeLimit);
+  pushRoutes(app, ctx, auth, writeLimit, {
+    max: limits.pushTestsPer10Min,
+    timeWindow: 10 * 60 * 1000,
+    keyGenerator: perUser,
+  });
   integrationRoutes(app, ctx, auth, jobs);
   adminNewsRoutes(app, ctx, auth);
   communityRoutes(app, ctx, auth, communityLimits);

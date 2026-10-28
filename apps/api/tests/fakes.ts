@@ -10,16 +10,26 @@ import type { PushPayload } from '@fant/shared';
 import type { FastifyInstance } from 'fastify';
 import type { IntegrationFactories } from '../src/integrations/factories.js';
 import type { MediaStore } from '../src/media/store.js';
-import type { PushProvider, PushSendOptions, PushSendResult, PushTarget } from '../src/push/provider.js';
+import type {
+  PushProvider,
+  PushSendOptions,
+  PushSendOutcome,
+  PushSendResult,
+  PushTarget,
+} from '../src/push/provider.js';
 import { bearer } from './helpers.js';
 
 // ---------- push ----------
 export class FakePushProvider implements PushProvider {
   sent: { endpoint: string; payload: PushPayload; options: PushSendOptions | undefined }[] = [];
-  /** Per-endpoint result (default 'ok'). */
-  results = new Map<string, PushSendResult>();
+  /** Per-endpoint result (default 'ok'); an outcome object also carries the push service's HTTP status. */
+  results = new Map<string, PushSendResult | PushSendOutcome>();
 
-  async send(sub: PushTarget, payload: PushPayload, options?: PushSendOptions): Promise<PushSendResult> {
+  async send(
+    sub: PushTarget,
+    payload: PushPayload,
+    options?: PushSendOptions,
+  ): Promise<PushSendResult | PushSendOutcome> {
     this.sent.push({ endpoint: sub.endpoint, payload, options });
     return this.results.get(sub.endpoint) ?? 'ok';
   }

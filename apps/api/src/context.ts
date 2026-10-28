@@ -5,6 +5,7 @@ import type { IntegrationFactories } from './integrations/factories.js';
 import type { MediaUrlMapper } from './media/publicUrl.js';
 import type { MediaStore } from './media/store.js';
 import type { PushProvider } from './push/provider.js';
+import type { PushBatchRecorder } from './push/stats.js';
 
 /** Injected clock so tests control session expiry and timestamps. */
 export interface Clock {
@@ -31,6 +32,8 @@ export interface RateLimitConfig {
   broadcastsPerHour: number;
   /** Admin invite links created per admin per hour. */
   invitesPerHour: number;
+  /** POST /v1/push/test per user per 10 minutes. */
+  pushTestsPer10Min: number;
 }
 
 export interface MetaAppConfig {
@@ -78,6 +81,8 @@ export interface AppContext {
   fetch: typeof fetch;
   /** null when VAPID isn't configured: notifications are skipped. */
   push: PushProvider | null;
+  /** Recent notification batches (in memory) + one log line per batch. */
+  pushStats: PushBatchRecorder;
   media: MediaStore;
   /** Stored media URL → client URL (see media/publicUrl.ts). Every serializer of a media URL uses it. */
   mediaUrl: MediaUrlMapper;

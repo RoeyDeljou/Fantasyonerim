@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { WebPushSubscriptionBodySchema } from '@fant/shared';
-import { api, isApiError } from './api';
+import { API_BASE_URL, api, isApiError } from './api';
 import { readPref, removePref, writePref } from './prefs';
 import { isIos, isStandalone } from './pwa';
 import { isNativeShell } from './platform';
+import { tokenStore } from './tokenStore';
 
 /**
  * Web push: support detection, subscribe/unsubscribe and the start-up re-sync. The native shells will
@@ -27,6 +28,11 @@ export type PushError = 'unconfigured' | 'dismissed' | 'failed';
 
 /** Set when the user turns push off in the app, so the start-up re-sync doesn't silently resubscribe. */
 const OPT_OUT_KEY = 'fant.push.optOut';
+/** The endpoint last registered with the API from this device, and when (ms). */
+const LAST_ENDPOINT_KEY = 'fant.push.lastEndpoint';
+const LAST_SYNC_KEY = 'fant.push.lastSyncAt';
+/** An unchanged subscription is re-POSTed (idempotent upsert) at most this often. */
+export const PUSH_RESYNC_MS = 12 * 60 * 60_000;
 
 export function pushSupported(): boolean {
   return (
@@ -113,18 +119,45 @@ function sameKey(a: ArrayBuffer | null, b: Uint8Array): boolean {
   return x.length === b.length && x.every((v, i) => v === b[i]);
 }
 
-/** Subscribe with the API's VAPID key (replacing a subscription made with another key) and register it. */
-async function subscribeAndSave(): Promise<void> {
+let vapidKey: Promise<Uint8Array<ArrayBuffer>> | null = null;
+/** The API's VAPID public key, fetched once per page load (a failure is retried next time). */
+function serverKey(): Promise<Uint8Array<ArrayBuffer>> {
+  if (!vapidKey) {
+    const p = api.vapidPublicKey().then(urlBase64ToUint8Array);
+    p.catch(() => {
+      if (vapidKey === p) vapidKey = null;
+    });
+    vapidKey = p;
+  }
+  return vapidKey;
+}
+
+/** Screens showing the push state re-read it when the background re-sync (re)creates a subscription. */
+const changeListeners = new Set<() => void>();
+
+async function save(sub: PushSubscription): Promise<void> {
+  await api.savePushSubscription(WebPushSubscriptionBodySchema.parse(sub.toJSON()));
+  writePref(LAST_ENDPOINT_KEY, sub.endpoint);
+  writePref(LAST_SYNC_KEY, String(Date.now()));
+  changeListeners.forEach((l) => l());
+}
+
+/**
+ * Subscribe with the API's VAPID key and register it. A subscription made with another key is replaced;
+ * `fresh` replaces any existing one (the server reported it dead).
+ */
+async function subscribeAndSave(fresh = false): Promise<void> {
   const reg = await registration();
   if (!reg) throw new Error('no service worker');
-  const key = urlBase64ToUint8Array(await api.vapidPublicKey());
+  const key = await serverKey();
   let sub = await reg.pushManager.getSubscription();
-  if (sub && !sameKey(sub.options.applicationServerKey, key)) {
-    await sub.unsubscribe();
+  if (sub && (fresh || !sameKey(sub.options.applicationServerKey, key))) {
+    await sub.unsubscribe().catch(() => false);
     sub = null;
   }
   sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
-  await api.savePushSubscription(WebPushSubscriptionBodySchema.parse(sub.toJSON()));
+  await save(sub);
+  void shareWithWorker();
 }
 
 /** Ask for permission (must run from a tap), subscribe and register with the API. */
@@ -171,20 +204,101 @@ export async function forgetPushLocally(): Promise<void> {
     console.warn('push unsubscribe failed', e);
   }
   removePref(OPT_OUT_KEY);
+  removePref(LAST_ENDPOINT_KEY);
+  removePref(LAST_SYNC_KEY);
+}
+
+export type PushSyncResult = 'skipped' | 'unchanged' | 'posted' | 'resubscribed';
+
+/** Automatic re-sync is for real installs only: not the native shells (native push) and not `next dev`. */
+function autoSyncAllowed(): boolean {
+  return process.env.NODE_ENV === 'production' && !isNativeShell();
+}
+
+let inFlight: Promise<PushSyncResult> | null = null;
+
+/**
+ * Self-healing subscription, run on start and on every resume for signed-in users who granted permission and
+ * didn't turn push off on this device. Browsers drop subscriptions silently (iOS especially), so:
+ * - none → subscribe again and register it;
+ * - made with another VAPID key → unsubscribe and resubscribe;
+ * - present → re-POST it (idempotent upsert by endpoint, also re-binds it to whoever is signed in) when the
+ *   endpoint differs from the last one registered from here (e.g. the service worker renewed it on
+ *   `pushsubscriptionchange`), or at most every 12 h otherwise.
+ */
+export function ensurePushSubscription(force = false): Promise<PushSyncResult> {
+  inFlight ??= syncOnce(force).finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+async function syncOnce(force: boolean): Promise<PushSyncResult> {
+  if (!autoSyncAllowed()) return 'skipped';
+  if ((await baseState()) !== 'maybe' || (await permission()) !== 'granted') return 'skipped';
+  if (readPref(OPT_OUT_KEY) === '1') return 'skipped';
+  const reg = await registration();
+  if (!reg) return 'skipped';
+  void shareWithWorker();
+  const key = await serverKey();
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && !sameKey(sub.options.applicationServerKey, key)) {
+    await sub.unsubscribe().catch(() => false);
+    sub = null;
+  }
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    await save(sub);
+    return 'resubscribed';
+  }
+  const last = Number(readPref(LAST_SYNC_KEY) ?? 0);
+  const due = force || sub.endpoint !== readPref(LAST_ENDPOINT_KEY) || !(Date.now() - last < PUSH_RESYNC_MS);
+  if (!due) return 'unchanged';
+  await save(sub);
+  return 'posted';
+}
+
+/** Fire-and-forget wrapper for the app shell (failures are logged, never thrown). */
+export async function resyncPush(): Promise<void> {
+  try {
+    await ensurePushSubscription();
+  } catch (e) {
+    console.warn('push re-sync failed', e);
+  }
+}
+
+/** The test button found this device's subscription dead: replace it with a brand-new one. */
+export async function renewPushSubscription(): Promise<boolean> {
+  if (isNativeShell() || (await permission()) !== 'granted') return false;
+  try {
+    await subscribeAndSave(true);
+    writePref(OPT_OUT_KEY, '0');
+    return true;
+  } catch (e) {
+    console.warn('push renew failed', e);
+    return false;
+  }
 }
 
 /**
- * Start-up re-sync for signed-in users who have granted permission: makes sure a subscription exists
- * (browsers drop them; this also covers `pushsubscriptionchange`) and re-POSTs it — idempotent by endpoint,
- * and it re-binds the endpoint to whoever is signed in now.
+ * Gives the service worker what it needs to re-register a subscription on `pushsubscriptionchange` while no
+ * page is open: the API base URL, the bearer token (null = signed out) and the VAPID key. The worker keeps them
+ * in IndexedDB (sw.js); the token is never part of the worker script.
  */
-export async function resyncPush(): Promise<void> {
-  if ((await baseState()) !== 'maybe' || (await permission()) !== 'granted') return;
-  if (readPref(OPT_OUT_KEY) === '1') return;
+export async function shareWithWorker(): Promise<void> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || isNativeShell()) return;
   try {
-    await subscribeAndSave();
-  } catch (e) {
-    console.warn('push re-sync failed', e);
+    const reg = await withTimeout(navigator.serviceWorker.ready, 5_000);
+    const token = await tokenStore.get();
+    const key = token ? await serverKey().catch(() => null) : null;
+    reg?.active?.postMessage({
+      type: 'PUSH_CONTEXT',
+      apiBase: API_BASE_URL,
+      token,
+      vapidKey: key ? Array.from(key) : null,
+    });
+  } catch {
+    // best effort: the page re-syncs on its next start anyway
   }
 }
 
@@ -197,8 +311,13 @@ export function usePushState() {
     const onVisible = () => {
       if (document.visibilityState === 'visible') void refresh();
     };
+    const onChange = () => void refresh();
     document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
+    changeListeners.add(onChange);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      changeListeners.delete(onChange);
+    };
   }, [refresh]);
   return { state, setState, refresh };
 }

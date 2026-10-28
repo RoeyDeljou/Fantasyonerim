@@ -31,6 +31,7 @@ export const deadlineRemindersJob: Job = {
       if (nowMs < fireAt || nowMs >= deadlineMs || nowMs - fireAt > REMINDER_MAX_LATENESS_MS) continue;
       const ttlSec = Math.max(60, Math.min(3600, Math.floor((deadlineMs - nowMs) / 1000)));
       const result = await notify(app, {
+        kind: 'deadline',
         to: 'all',
         pref: 'fpl',
         dedupeKeys: [`deadline:${next.event}:${offset}`],
@@ -86,6 +87,7 @@ export const gameweekSummaryJob: Job = {
       }
     });
     const result = await notify(app, {
+      kind: 'gw_summary',
       to: [...scores.keys()],
       pref: 'fpl',
       dedupeKeys: [key],

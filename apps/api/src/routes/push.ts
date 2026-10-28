@@ -1,5 +1,9 @@
 import {
+  AdminPushHealthSchema,
   DeleteWebPushSubscriptionBodySchema,
+  PushServiceSchema,
+  PushTestResultSchema,
+  type PushService,
   NativePushDeviceBodySchema,
   NotificationPrefsSchema,
   VapidKeySchema,
@@ -9,10 +13,70 @@ import type { FastifyInstance } from 'fastify';
 import type { Auth } from '../auth/session.js';
 import type { AppContext } from '../context.js';
 import { ApiHttpError } from '../errors.js';
+import { PUSH_ICON } from '../news/pushNews.js';
+import { testPushCopy } from '../push/copy.js';
+import { notify } from '../push/notify.js';
+import { pushServiceOf } from '../push/stats.js';
 import { parseInput, serialize } from '../validate.js';
 
-export function pushRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, writeLimit: object): void {
+export function pushRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  auth: Auth,
+  writeLimit: object,
+  testLimit: object,
+): void {
   const { prisma } = ctx;
+
+  // A test notification to the caller's OWN devices only (same provider path as every other push).
+  app.post('/v1/push/test', { config: { rateLimit: testLimit } }, async (request) => {
+    const { user } = await auth.requireUser(request);
+    if (ctx.push === null) {
+      throw new ApiHttpError(503, 'upstream_unavailable', 'Push notifications are not configured');
+    }
+    const result = await notify(ctx, {
+      kind: 'test',
+      to: [user.id],
+      pref: null,
+      options: { ttlSec: 10 * 60, urgency: 'high' },
+      build: ({ locale }) => ({
+        ...testPushCopy(locale),
+        url: '/profile/',
+        tag: 'push-test',
+        icon: PUSH_ICON,
+        image: null,
+      }),
+    });
+    return serialize(PushTestResultSchema, {
+      devices: result.devices,
+      delivered: result.devicesDelivered,
+      gone: result.gone,
+      failed: result.failed,
+    });
+  });
+
+  // Counts only: no endpoint, key or user id leaves the server.
+  void app.register(async (admin) => {
+    admin.addHook('onRequest', async (request) => {
+      await auth.requireAdmin(request);
+    });
+    admin.get('/v1/admin/push/health', async () => {
+      const [users, subs] = await Promise.all([
+        prisma.user.count({ where: { pushSubscriptions: { some: {} } } }),
+        prisma.pushSubscription.findMany({ select: { endpoint: true } }),
+      ]);
+      const counts = new Map<PushService, number>();
+      for (const s of subs)
+        counts.set(pushServiceOf(s.endpoint), (counts.get(pushServiceOf(s.endpoint)) ?? 0) + 1);
+      return serialize(AdminPushHealthSchema, {
+        users,
+        devices: PushServiceSchema.options
+          .filter((service) => (counts.get(service) ?? 0) > 0)
+          .map((service) => ({ service, count: counts.get(service) ?? 0 })),
+        recent: ctx.pushStats.recent(),
+      });
+    });
+  });
 
   app.get('/v1/push/vapid-public-key', async () => {
     const key = ctx.config.vapidPublicKey;

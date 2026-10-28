@@ -77,6 +77,7 @@ export const qk = {
   newsHead: (filter: NewsFilter | null) =>
     filter ? (['news', 'head', filter] as const) : (['news', 'head'] as const),
   newsFilters: ['news', 'filters'] as const,
+  pushHealth: ['admin', 'push', 'health'] as const,
   stories: ['news', 'stories'] as const,
   newsItem: (id: NewsItemId) => ['news', 'item', id] as const,
   notificationPrefs: ['me', 'notification-prefs'] as const,
@@ -438,7 +439,11 @@ export function usePostNews() {
 }
 
 export function useAdminPush() {
-  return useMutation({ mutationFn: (body: AdminPushBody) => api.admin.push(body) });
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AdminPushBody) => api.admin.push(body),
+    onSettled: () => void qc.invalidateQueries({ queryKey: qk.pushHealth }),
+  });
 }
 
 // ---------- notification prefs ----------
@@ -921,5 +926,15 @@ export function useRedeemInvite() {
       qc.setQueryData(qk.me, me);
       void qc.invalidateQueries({ queryKey: ['admin'] });
     },
+  });
+}
+
+/** Admin: push delivery health (subscribed devices by service + the latest batches). */
+export function useAdminPushHealth(enabled: boolean) {
+  return useQuery({
+    queryKey: qk.pushHealth,
+    queryFn: ({ signal }) => api.admin.pushHealth({ signal }),
+    enabled,
+    staleTime: 30_000,
   });
 }
