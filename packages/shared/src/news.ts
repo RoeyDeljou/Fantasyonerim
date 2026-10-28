@@ -116,6 +116,11 @@ export const NotificationPrefsSchema = z.object({
   live: z.boolean(),
   /** Replies/comments on your community posts (Phase 3). */
   community: z.boolean(),
+  /**
+   * Your moments in the podcast's league after each GW (climbed 3+ places, GW top scorer, first place, top 3 / top 10).
+   * Defaults to on; optional on input so older clients that don't send it keep working.
+   */
+  league: z.boolean().default(true),
 });
 export type NotificationPrefs = z.infer<typeof NotificationPrefsSchema>;
 
