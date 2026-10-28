@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import type { FplService } from '@fant/fpl';
 import type { IntegrationContext } from '@fant/integrations';
 import type { IntegrationFactories } from './integrations/factories.js';
+import type { MediaUrlMapper } from './media/publicUrl.js';
 import type { MediaStore } from './media/store.js';
 import type { PushProvider } from './push/provider.js';
 
@@ -54,6 +55,13 @@ export interface AppConfig {
   apiPublicUrl?: string | null;
   /** Public base URL of the web app (OAuth callback redirects here). */
   webAppUrl?: string | null;
+  /** Base of the URLs the MediaStore returns (S3_PUBLIC_BASE_URL), as stored in the DB. */
+  mediaOriginBaseUrl?: string | null;
+  /**
+   * Base clients load media from (MEDIA_PUBLIC_BASE_URL, the web app's cached `/media` rewrite). Stored URLs under
+   * `mediaOriginBaseUrl` are served under this base instead. Unset → stored URLs are served as-is.
+   */
+  mediaPublicBaseUrl?: string | null;
 }
 
 /** Everything a route or job needs. Built once in buildApp and passed to each module. */
@@ -71,4 +79,6 @@ export interface AppContext {
   /** null when VAPID isn't configured: notifications are skipped. */
   push: PushProvider | null;
   media: MediaStore;
+  /** Stored media URL → client URL (see media/publicUrl.ts). Every serializer of a media URL uses it. */
+  mediaUrl: MediaUrlMapper;
 }

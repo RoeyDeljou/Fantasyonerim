@@ -5,6 +5,7 @@ import { loadEnv, parseOrigins } from './env.js';
 import { createFplFromEnv } from './fpl.js';
 import { ensureIntegrationRows, seedIntegrationSecrets } from './integrations/store.js';
 import { JobScheduler } from './jobs/runner.js';
+import { mediaUrlConfigFromEnv } from './media/publicUrl.js';
 import { LocalDiskMediaStore, S3MediaStore, type MediaStore } from './media/store.js';
 import { WebPushProvider } from './push/provider.js';
 import { devSecretsKey, parseSecretsKey } from './secrets.js';
@@ -67,6 +68,7 @@ const app = await buildApp({
         : null,
     apiPublicUrl,
     webAppUrl: env.WEB_APP_URL ?? null,
+    ...mediaUrlConfigFromEnv(env),
   },
 });
 

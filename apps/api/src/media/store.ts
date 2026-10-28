@@ -30,15 +30,25 @@ export function contentTypeForKey(key: string): string {
   return CONTENT_TYPES[ext] ?? 'application/octet-stream';
 }
 
-/** Only [a-z0-9_-./] segments, no "..": keys come from our own code, but never trust a URL path. */
+/** Shared-cache (CDN) TTL of immutable media: Instagram/X copies, Spotify episode thumbnails. */
+export const MEDIA_CDN_TTL_SEC = 30 * 24 * 60 * 60;
+/** Browser and CDN TTL of community uploads: how long a deleted/removed photo can still be served. */
+export const UPLOAD_CACHE_TTL_SEC = 300;
+
 /**
- * Instagram/X copies never change and are public anyway → cache for a year. Community uploads can be taken down
- * (deleted post, moderation) → short cache so a removed photo disappears from browsers and the CDN within minutes.
+ * Stored on each object at upload (the bucket returns it on every read). Instagram/X copies and Spotify thumbnails
+ * never change → a year in browsers, `s-maxage` 30 days in the CDN in front of the bucket (vercel.json /media/*).
+ * Community uploads can be taken down (deleted post, moderation) → 5 minutes everywhere, so a removed photo
+ * disappears from browsers and the CDN within minutes. vercel.json sets the same TTLs for objects stored before
+ * `s-maxage` was added; keep the two in sync.
  */
 export function mediaCacheControl(key: string): string {
-  return key.startsWith('uploads/') ? 'public, max-age=300' : 'public, max-age=31536000, immutable';
+  return key.startsWith('uploads/')
+    ? `public, max-age=${UPLOAD_CACHE_TTL_SEC}, s-maxage=${UPLOAD_CACHE_TTL_SEC}`
+    : `public, max-age=31536000, s-maxage=${MEDIA_CDN_TTL_SEC}, immutable`;
 }
 
+/** Only [a-z0-9_-./] segments, no "..": keys come from our own code, but never trust a URL path. */
 export function isSafeKey(key: string): boolean {
   return (
     key.length > 0 &&

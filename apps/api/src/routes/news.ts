@@ -51,7 +51,7 @@ export function newsRoutes(app: FastifyInstance, ctx: AppContext): void {
     const page = rows.slice(0, query.limit);
     const last = page[page.length - 1];
     return serialize(NewsPageSchema, {
-      items: page.map(toNewsItem),
+      items: page.map((row) => toNewsItem(row, ctx.mediaUrl)),
       nextCursor:
         rows.length > query.limit && last !== undefined ? encodeNewsCursor(last.publishedAt, last.id) : null,
     });
@@ -63,7 +63,7 @@ export function newsRoutes(app: FastifyInstance, ctx: AppContext): void {
       orderBy: [{ publishedAt: 'asc' }, { id: 'asc' }],
       include: { media: { orderBy: { order: 'asc' } } },
     });
-    return serialize(StoriesSchema, { items: rows.map(toNewsItem) });
+    return serialize(StoriesSchema, { items: rows.map((row) => toNewsItem(row, ctx.mediaUrl)) });
   });
 
   app.get('/v1/news/:id', async (request) => {
@@ -73,6 +73,6 @@ export function newsRoutes(app: FastifyInstance, ctx: AppContext): void {
       include: { media: { orderBy: { order: 'asc' } } },
     });
     if (row === null || row.hiddenAt !== null) throw notFound('This news item does not exist');
-    return serialize(NewsItemSchema, toNewsItem(row));
+    return serialize(NewsItemSchema, toNewsItem(row, ctx.mediaUrl));
   });
 }

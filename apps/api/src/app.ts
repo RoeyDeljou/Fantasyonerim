@@ -21,6 +21,7 @@ import { realIntegrations, type IntegrationFactories } from './integrations/fact
 import { JOBS } from './jobs/index.js';
 import { JobRunner } from './jobs/runner.js';
 import type { Job } from './jobs/types.js';
+import { createMediaUrlMapper } from './media/publicUrl.js';
 import { LocalDiskMediaStore, type MediaStore } from './media/store.js';
 import type { PushProvider } from './push/provider.js';
 import { MAX_UPLOAD_BYTES } from './community/images.js';
@@ -115,6 +116,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     push: deps.push ?? null,
     media:
       deps.media ?? new LocalDiskMediaStore('./.media', deps.config.apiPublicUrl ?? 'http://localhost:4000'),
+    mediaUrl: createMediaUrlMapper(deps.config.mediaOriginBaseUrl, deps.config.mediaPublicBaseUrl),
   };
   const limits: RateLimitConfig = { ...DEFAULT_RATE_LIMIT, ...deps.config.rateLimit };
 

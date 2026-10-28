@@ -5,6 +5,12 @@
   "buildCommand": "npx tsc -b packages/shared && npm run build -w @fant/web",
   "outputDirectory": "apps/web/out",
   "trailingSlash": true,
+  "rewrites": [
+    {
+      "source": "/media/:path*",
+      "destination": "https://f003.backblazeb2.com/file/fantasyonerim-media/:path*"
+    }
+  ],
   "headers": [
     {
       "source": "/sw.js",
@@ -24,6 +30,22 @@
     {
       "source": "/_next/static/(.*)",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
+    {
+      "source": "/media/uploads/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=300, s-maxage=300" },
+        { "key": "CDN-Cache-Control", "value": "public, max-age=300" },
+        { "key": "x-vercel-enable-rewrite-caching", "value": "1" }
+      ]
+    },
+    {
+      "source": "/media/((?!uploads/).*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, s-maxage=2592000, immutable" },
+        { "key": "CDN-Cache-Control", "value": "public, max-age=2592000, immutable" },
+        { "key": "x-vercel-enable-rewrite-caching", "value": "1" }
+      ]
     },
     {
       "source": "/(.*)",

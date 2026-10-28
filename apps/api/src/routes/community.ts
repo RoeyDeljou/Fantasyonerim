@@ -127,7 +127,7 @@ export function communityRoutes(
     const page = rows.slice(0, query.limit);
     const last = page[page.length - 1];
     return serialize(CommunityPageSchema, {
-      items: await toPosts(prisma, page, viewer),
+      items: await toPosts(prisma, page, viewer, ctx.mediaUrl),
       nextCursor:
         rows.length > query.limit && last !== undefined ? encodeCursor(last.createdAt, last.id) : null,
     });
@@ -143,7 +143,7 @@ export function communityRoutes(
     if (row === null || (viewer !== null && (await hasBlocked(prisma, viewer, row.authorId)))) {
       throw notFound('This post does not exist');
     }
-    const [post] = await toPosts(prisma, [row], viewer);
+    const [post] = await toPosts(prisma, [row], viewer, ctx.mediaUrl);
     return serialize(CommunityPostSchema, post);
   });
 
@@ -173,7 +173,7 @@ export function communityRoutes(
         include: POST_INCLUDE,
       });
     });
-    return reply.code(201).send(serialize(CommunityPostSchema, toPost(row, user.id, false)));
+    return reply.code(201).send(serialize(CommunityPostSchema, toPost(row, user.id, false, ctx.mediaUrl)));
   });
 
   app.delete('/v1/community/posts/:id', { config: { rateLimit: limits.writes } }, async (request, reply) => {

@@ -41,7 +41,7 @@ export function adminNewsRoutes(app: FastifyInstance, ctx: AppContext, auth: Aut
       } catch (err) {
         request.log.error({ err }, 'admin news push failed');
       }
-      return reply.code(201).send(serialize(NewsItemSchema, toNewsItem(created)));
+      return reply.code(201).send(serialize(NewsItemSchema, toNewsItem(created, ctx.mediaUrl)));
     });
 
     admin.delete('/v1/admin/news/:id', async (request, reply) => {
@@ -72,7 +72,9 @@ export function adminNewsRoutes(app: FastifyInstance, ctx: AppContext, auth: Aut
       });
       return serialize(HiddenNewsListSchema, {
         items: rows.flatMap((row) =>
-          row.hiddenAt === null ? [] : [{ item: toNewsItem(row), hiddenAt: row.hiddenAt.toISOString() }],
+          row.hiddenAt === null
+            ? []
+            : [{ item: toNewsItem(row, ctx.mediaUrl), hiddenAt: row.hiddenAt.toISOString() }],
         ),
       });
     });

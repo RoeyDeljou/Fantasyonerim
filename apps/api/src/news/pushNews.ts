@@ -1,4 +1,5 @@
 import { NewsSourceSchema, type NewsSource, type PushPayload } from '@fant/shared';
+import { mapMediaUrl, type MediaUrlMapper } from '../media/publicUrl.js';
 import { newsCopy } from '../push/copy.js';
 import { notify, type NotifyDeps, type NotifyResult } from '../push/notify.js';
 import type { NewsItemWithMedia } from './serialize.js';
@@ -8,10 +9,10 @@ export const NEWS_PUSH_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 export const NEWS_PUSH_TTL_SEC = 24 * 60 * 60;
 export const PUSH_ICON = '/icons/icon-192.png';
 
-function imageOf(item: NewsItemWithMedia): string | null {
+function imageOf(item: NewsItemWithMedia, mediaUrl: MediaUrlMapper): string | null {
   const first = [...item.media].sort((a, b) => a.order - b.order)[0];
   if (first === undefined) return null;
-  return first.kind === 'image' ? first.url : first.posterUrl;
+  return mapMediaUrl(mediaUrl, first.kind === 'image' ? first.url : first.posterUrl);
 }
 
 /**
@@ -20,7 +21,7 @@ function imageOf(item: NewsItemWithMedia): string | null {
  * NotificationLog (`news:<itemId>`), so it is never announced twice.
  */
 export async function pushNewNewsItems(
-  deps: NotifyDeps,
+  deps: NotifyDeps & { mediaUrl: MediaUrlMapper },
   items: readonly NewsItemWithMedia[],
 ): Promise<NotifyResult> {
   const now = deps.clock.now().getTime();
@@ -51,7 +52,7 @@ export async function pushNewNewsItems(
           url: `/news/?item=${encodeURIComponent(newest.id)}`,
           tag: `news-${source}`,
           icon: PUSH_ICON,
-          image: group.map(imageOf).find((u) => u !== null) ?? null,
+          image: group.map((i) => imageOf(i, deps.mediaUrl)).find((u) => u !== null) ?? null,
         };
       },
     });

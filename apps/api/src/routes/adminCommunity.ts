@@ -65,7 +65,9 @@ export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth
         where: { id: { in: idsOf('post') }, deletedAt: null },
         include: POST_INCLUDE,
       });
-      const posts = new Map((await toPosts(prisma, postRows, user.id)).map((p) => [p.id as string, p]));
+      const posts = new Map(
+        (await toPosts(prisma, postRows, user.id, ctx.mediaUrl)).map((p) => [p.id as string, p]),
+      );
       const commentRows = await prisma.comment.findMany({
         where: { id: { in: idsOf('comment') }, deletedAt: null, post: { deletedAt: null } },
         include: COMMENT_INCLUDE,

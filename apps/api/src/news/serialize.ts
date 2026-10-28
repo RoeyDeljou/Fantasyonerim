@@ -6,6 +6,7 @@ import {
   type NewsLinks,
 } from '@fant/shared';
 import type { NewsItem as NewsItemRow, NewsMedia } from '@prisma/client';
+import { mapMediaUrl, type MediaUrlMapper } from '../media/publicUrl.js';
 import { serialize } from '../validate.js';
 
 export type NewsItemWithMedia = NewsItemRow & { media: NewsMedia[] };
@@ -33,7 +34,8 @@ export function readLinks(json: unknown): NewsLinks {
   };
 }
 
-export function toNewsItem(row: NewsItemWithMedia): NewsItem {
+/** `mediaUrl` maps stored media URLs to client URLs (ctx.mediaUrl). */
+export function toNewsItem(row: NewsItemWithMedia, mediaUrl: MediaUrlMapper): NewsItem {
   const podcast = row.podcast === null ? null : PodcastMetaSchema.safeParse(row.podcast);
   return serialize(
     NewsItemSchema,
@@ -46,8 +48,8 @@ export function toNewsItem(row: NewsItemWithMedia): NewsItem {
         .sort((a, b) => a.order - b.order)
         .map((m) => ({
           kind: m.kind,
-          url: m.url,
-          posterUrl: m.posterUrl,
+          url: mediaUrl(m.url),
+          posterUrl: mapMediaUrl(mediaUrl, m.posterUrl),
           width: m.width,
           height: m.height,
         })),

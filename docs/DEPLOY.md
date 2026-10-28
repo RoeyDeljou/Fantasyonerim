@@ -4,7 +4,7 @@
 | ------------------------------------------ | --------------------------------------------------- | --------------------------------- |
 | API (`apps/api`)                           | Render web service, Frankfurt                       | `render.yaml` (Blueprint)         |
 | Database                                   | **Neon free tier** (persistent Postgres, Frankfurt) | `DATABASE_URL`                    |
-| Media (Instagram copies, community photos) | **Backblaze B2** (S3-compatible, 10 GB free)        | `S3_*`                            |
+| Media (Instagram copies, community photos) | **Backblaze B2** (S3-compatible, 10 GB free)        | `S3_*`, `MEDIA_PUBLIC_BASE_URL`   |
 | Web app (`apps/web`, static export)        | Vercel                                              | `vercel.json`                     |
 | Scheduler wake-up                          | GitHub Actions every 5 min                          | `.github/workflows/jobs-tick.yml` |
 
@@ -25,8 +25,9 @@ Chosen by the owner: Neon's free tier keeps data indefinitely (Render's free Pos
 ## 2. Media bucket — Backblaze B2 (free 10 GB)
 
 1. backblaze.com → B2 Cloud Storage → sign up, region **EU Central**.
-2. Buckets → Create a Bucket `fantasyonerim-media`, Files in Bucket: **Public**. (If B2 refuses public buckets until
-   the account is verified, verify it — or ask for the API-proxy mode, a small code change.)
+2. Buckets → Create a Bucket `fantasyonerim-media`, Files in Bucket: **Public**. The bucket **must** be Public: the
+   web app's `/media/*` rewrite (see [Keep B2 free](#keep-b2-free)) fetches objects anonymously. (If B2 refuses
+   public buckets until the account is verified, verify it.)
 3. Note the bucket's **Endpoint**, e.g. `s3.eu-central-003.backblazeb2.com`:
    - `S3_ENDPOINT` = `https://s3.eu-central-003.backblazeb2.com`
    - `S3_REGION` = `eu-central-003`
@@ -50,6 +51,7 @@ Chosen by the owner: Neon's free tier keeps data indefinitely (Render's free Pos
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`                                                                  | run `npm run vapid -w @fant/api` locally once; **never change them later** (it would silently break every existing push subscription)                               |
 | `VAPID_SUBJECT`                                                                                           | `mailto:ashalim.fantasy@gmail.com`                                                                                                                                  |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PUBLIC_BASE_URL` | from step 2                                                                                                                                                         |
+| `MEDIA_PUBLIC_BASE_URL`                                                                                   | `https://fantasyonerim.vercel.app/media` — clients load media through the web app's CDN instead of straight from B2 (see [Keep B2 free](#keep-b2-free))             |
 | `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`                                                             | the owner-approved Spotify app keys — seeded encrypted into the Spotify integration on first boot, so every episode gets its Spotify link with no manual step       |
 | `META_APP_ID` / `META_APP_SECRET`                                                                         | from the Meta app (only needed to connect Instagram; can be added later)                                                                                            |
 
@@ -69,6 +71,39 @@ other change needed.
 2. Environment variable: `NEXT_PUBLIC_API_URL` = the API URL from step 3 (no trailing slash). It's baked in at
    build time — redeploy after changing it.
 3. Deploy, then put the Vercel URL into the API's `WEB_APP_URL` and `CORS_ORIGINS` and redeploy the API.
+
+## Keep B2 free
+
+Backblaze's free tier is 10 GB stored, 1 GB/day download and about 2,500 Class B (download) transactions/day. Fans
+viewing images straight from B2 would blow through that quickly, so every media URL the API returns goes through the
+Vercel CDN instead, and B2 is hit roughly once per object per Vercel region:
+
+- **Rewrite.** `vercel.json` rewrites `/media/:path*` → `https://f003.backblazeb2.com/file/fantasyonerim-media/:path*`.
+  The API serves `MEDIA_PUBLIC_BASE_URL/<key>` (= `https://fantasyonerim.vercel.app/media/<key>`). The DB keeps the
+  B2 URLs it always had; they are rewritten when serialized (news media + posters, community photos, upload
+  responses, push images), so old rows work with no migration. Deletes always go by storage key, never by URL.
+  **Unset `MEDIA_PUBLIC_BASE_URL` = exactly the old behaviour** (direct B2 URLs), so the API can deploy first. If
+  the bucket or the web domain changes, update the rewrite destination and `MEDIA_PUBLIC_BASE_URL` together.
+- **CDN caching.** Vercel caches an external rewrite only when the response allows shared caching (`s-maxage`,
+  `CDN-Cache-Control` or `Vercel-CDN-Cache-Control`); a plain `max-age` only reaches browsers. Both sides say so:
+  - each object is uploaded with its Cache-Control (`mediaCacheControl()` in `apps/api/src/media/store.ts`), which
+    B2 returns on every read: now including `s-maxage`;
+  - `vercel.json` adds `CDN-Cache-Control`, a `Cache-Control` with `s-maxage`, and the
+    `x-vercel-enable-rewrite-caching` opt-in on `/media/*`, which also covers objects uploaded before `s-maxage`
+    was added.
+- **TTLs.** Instagram/X copies and Spotify episode thumbnails (`instagram/…`, `spotify/<guid>/thumbnail.*`) never
+  change: 30 days in the CDN, a year in browsers. Community photos (`uploads/…`) get **5 minutes** in the CDN and in
+  browsers. A deleted or moderated post's photo is removed from B2 immediately (purge job), and then disappears from
+  the CDN and browsers within about 5 minutes (10 at the very worst, CDN + browser). Don't raise the `uploads/` TTL: it is the takedown delay. The values
+  live in `mediaCacheControl()` and in `vercel.json`, so change both together.
+- **Check it works** after a deploy: `curl -sI https://fantasyonerim.vercel.app/media/<some key>` twice. The second
+  response should say `x-vercel-cache: HIT` (an `Age` header growing). `MISS` every time means the CDN isn't caching:
+  check the bucket is Public and the headers above are deployed.
+- **Hard stop at $0.** Backblaze → **Caps & Alerts**: set the daily caps for Storage, Download bandwidth, Class B
+  and Class C transactions to **$0**, and turn on the email (and SMS) alerts. At a $0 cap B2 refuses requests over
+  the free allowance instead of billing. Images may stop loading for the rest of that day, but there is never a
+  charge, and the alert email says which limit was hit.
+- Vercel's side (Hobby plan) has its own generous free bandwidth/edge-request allowance; images count toward it.
 
 ## 5. Scheduler wake-up (GitHub Actions)
 

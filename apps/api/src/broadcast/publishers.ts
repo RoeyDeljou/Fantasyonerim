@@ -146,7 +146,7 @@ const pushPublisher: BroadcastPublisher = {
           url,
           tag: `live-${input.id}`,
           icon: PUSH_ICON,
-          image: input.upload?.url ?? null,
+          image: input.upload ? ctx.mediaUrl(input.upload.url) : null,
         };
       },
     });

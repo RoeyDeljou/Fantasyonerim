@@ -70,7 +70,7 @@ export function uploadRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, 
     return reply.code(201).send(
       serialize(UploadResponseSchema, {
         uploadId,
-        image: { url, width: image.width, height: image.height },
+        image: { url: ctx.mediaUrl(url), width: image.width, height: image.height },
       }),
     );
   });

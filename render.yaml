@@ -74,6 +74,8 @@ services:
         sync: false
       - key: S3_PUBLIC_BASE_URL # https://f003.backblazeb2.com/file/<bucket> (public bucket's friendly URL)
         sync: false
+      - key: MEDIA_PUBLIC_BASE_URL # https://<web app>/media — serves media through the Vercel CDN (keeps B2 in its free tier)
+        sync: false
       # Spotify app credentials (owner-approved). Seeded encrypted into the Spotify integration on first boot so
       # nobody re-types them; ignored once an admin saves keys in the console. Never commit these values.
       - key: SPOTIFY_CLIENT_ID

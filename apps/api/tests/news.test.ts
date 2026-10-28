@@ -515,7 +515,7 @@ describe('local media store + /media route', () => {
     const res = await local.inject({ method: 'GET', url: '/media/instagram/5/0.jpg' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('image/jpeg');
-    expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    expect(res.headers['cache-control']).toBe('public, max-age=31536000, s-maxage=2592000, immutable');
     expect([...res.rawPayload]).toEqual([9, 8, 7]);
     expect((await local.inject({ method: 'GET', url: '/media/instagram/5/missing.jpg' })).statusCode).toBe(
       404,

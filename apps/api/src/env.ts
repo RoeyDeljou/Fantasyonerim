@@ -78,6 +78,12 @@ export const EnvSchema = z
     S3_SECRET_ACCESS_KEY: z.string().trim().min(1).optional(),
     /** Public base URL of the bucket (e.g. the R2 public/custom domain). */
     S3_PUBLIC_BASE_URL: HttpUrlSchema.optional(),
+    /**
+     * Optional: where clients load media from instead of S3_PUBLIC_BASE_URL — the web app's CDN-cached rewrite
+     * (`vercel.json` /media/* → the bucket), e.g. https://fantasyonerim.vercel.app/media. Stored bucket URLs are
+     * rewritten to it when served. Unset → media is served straight from S3_PUBLIC_BASE_URL.
+     */
+    MEDIA_PUBLIC_BASE_URL: HttpUrlSchema.optional(),
   })
   .superRefine((env, ctx) => {
     const origins = parseOrigins(env.CORS_ORIGINS);
