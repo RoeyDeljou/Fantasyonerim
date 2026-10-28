@@ -1,9 +1,13 @@
 import {
+  NEWS_FILTER_SOURCES,
+  NewsFilterSchema,
+  NewsFiltersSchema,
   NewsItemIdSchema,
   NewsItemSchema,
   NewsPageQuerySchema,
   NewsPageSchema,
   StoriesSchema,
+  type NewsFilter,
 } from '@fant/shared';
 import type { Prisma } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
@@ -14,21 +18,36 @@ import { toNewsItem } from '../news/serialize.js';
 import { parseInput, serialize } from '../validate.js';
 import { cleanQuery } from './query.js';
 
-const CursorSchema = z.tuple([z.string().datetime({ offset: true }), z.string().min(1).max(100)]);
+const CursorSchema = z.union([
+  // [iso, id, filter | null] — the filter the cursor was issued for.
+  z.tuple([z.string().datetime({ offset: true }), z.string().min(1).max(100), NewsFilterSchema.nullable()]),
+  // [iso, id] — cursors issued before filters existed: the unfiltered feed.
+  z.tuple([z.string().datetime({ offset: true }), z.string().min(1).max(100)]),
+]);
 
-/** Opaque keyset cursor on (publishedAt, id): base64url(JSON [iso, id]). */
-export function encodeNewsCursor(publishedAt: Date, id: string): string {
-  return Buffer.from(JSON.stringify([publishedAt.toISOString(), id])).toString('base64url');
+/** Opaque keyset cursor on (publishedAt, id) for one filter: base64url(JSON [iso, id, filter | null]). */
+export function encodeNewsCursor(publishedAt: Date, id: string, filter: NewsFilter | null = null): string {
+  return Buffer.from(JSON.stringify([publishedAt.toISOString(), id, filter])).toString('base64url');
 }
 
-export function decodeNewsCursor(cursor: string): { publishedAt: Date; id: string } {
+export function decodeNewsCursor(cursor: string): {
+  publishedAt: Date;
+  id: string;
+  filter: NewsFilter | null;
+} {
   try {
-    const [iso, id] = CursorSchema.parse(JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')));
-    return { publishedAt: new Date(iso), id };
+    const [iso, id, filter] = CursorSchema.parse(
+      JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')),
+    );
+    return { publishedAt: new Date(iso), id, filter: filter ?? null };
   } catch {
     throw badRequest('cursor: invalid or expired cursor');
   }
 }
+
+/** Sources covered by some filter (the feed shows these; stories live in the profile header). */
+const FILTERED_SOURCES = [...new Set(Object.values(NEWS_FILTER_SOURCES).flat())];
+export const NEWS_FILTERS_CACHE_CONTROL = 'public, max-age=60';
 
 const ParamsSchema = z.object({ id: NewsItemIdSchema });
 
@@ -37,9 +56,20 @@ export function newsRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.get('/v1/news', async (request) => {
     const query = parseInput(NewsPageQuerySchema, cleanQuery(request.query));
-    const where: Prisma.NewsItemWhereInput = { hiddenAt: null, source: { not: 'instagram_story' } };
+    const filter = query.filter ?? null;
+    // hiddenAt: null also excludes suppressed dedupe placeholders (they are always hidden).
+    // Filtered queries use the (hiddenAt, source, publishedAt DESC) index.
+    const where: Prisma.NewsItemWhereInput = {
+      hiddenAt: null,
+      source: filter === null ? { not: 'instagram_story' } : { in: [...NEWS_FILTER_SOURCES[filter]] },
+    };
     if (query.cursor !== undefined) {
       const c = decodeNewsCursor(query.cursor);
+      if (c.filter !== filter) {
+        throw badRequest(
+          `cursor: this cursor belongs to ${c.filter === null ? 'the unfiltered feed' : `filter "${c.filter}"`} — start again without it`,
+        );
+      }
       where.OR = [{ publishedAt: { lt: c.publishedAt } }, { publishedAt: c.publishedAt, id: { lt: c.id } }];
     }
     const rows = await prisma.newsItem.findMany({
@@ -53,7 +83,22 @@ export function newsRoutes(app: FastifyInstance, ctx: AppContext): void {
     return serialize(NewsPageSchema, {
       items: page.map((row) => toNewsItem(row, ctx.mediaUrl)),
       nextCursor:
-        rows.length > query.limit && last !== undefined ? encodeNewsCursor(last.publishedAt, last.id) : null,
+        rows.length > query.limit && last !== undefined
+          ? encodeNewsCursor(last.publishedAt, last.id, filter)
+          : null,
+    });
+  });
+
+  // The filter chips that have something to show, in display order: one grouped query over visible items.
+  app.get('/v1/news/filters', async (_request, reply) => {
+    const groups = await prisma.newsItem.groupBy({
+      by: ['source'],
+      where: { hiddenAt: null, source: { in: FILTERED_SOURCES } },
+    });
+    const present = new Set(groups.map((g) => g.source));
+    reply.header('cache-control', NEWS_FILTERS_CACHE_CONTROL);
+    return serialize(NewsFiltersSchema, {
+      filters: NewsFilterSchema.options.filter((f) => NEWS_FILTER_SOURCES[f].some((s) => present.has(s))),
     });
   });
 
