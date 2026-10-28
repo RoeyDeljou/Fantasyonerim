@@ -8,6 +8,7 @@ import type { AuthResponse, Me } from '@fant/shared';
 import { api, setUnauthorizedHandler } from './api';
 import { tokenStore } from './tokenStore';
 import { qk } from './queries';
+import { clearPersistedQueries } from './persist';
 import { useI18n } from '@/i18n';
 
 export type SessionStatus = 'loading' | 'signedIn' | 'signedOut';
@@ -49,6 +50,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   /** After the active session ends: bring back a stashed fan session, else go to onboarding. */
   const afterSessionEnded = useCallback(async () => {
     qc.clear();
+    clearPersistedQueries(); // nothing of the old session stays on the device
     const fan = await tokenStore.get('fan');
     if (fan) {
       await tokenStore.set(fan);

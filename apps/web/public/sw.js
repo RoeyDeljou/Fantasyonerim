@@ -137,6 +137,9 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // API + image CDNs: straight to network
   if (url.pathname === '/version.json') return; // the update check must always see the live deploy
+  // Uploaded media (same-origin via the CDN rewrite): left to the CDN + HTTP cache, never kept in the SW cache,
+  // so a deleted community photo isn't served from here afterwards.
+  if (url.pathname.startsWith('/media/')) return;
   if (url.pathname.startsWith('/_next/static/')) {
     respond(event, cacheFirst); // content-hashed, immutable
     return;

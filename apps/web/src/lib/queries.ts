@@ -50,6 +50,7 @@ import type {
 import type { InfiniteData, QueryClient as QC } from '@tanstack/react-query';
 import { api, isApiError, isBannedError } from './api';
 import type { CreateAdminBody, ResolveAction } from './api';
+import { PERSIST_MAX_AGE } from './persist';
 
 export const LIVE_POLL_MS = 30_000;
 export const IDLE_POLL_MS = 5 * 60_000;
@@ -99,8 +100,29 @@ export const NEWS_PAGE_SIZE = 15;
 export const NEWS_HEAD_POLL_MS = 2 * 60_000;
 export const STORIES_POLL_MS = 5 * 60_000;
 
+/**
+ * A sleeping API (free hosting tier) takes up to ~60 s to wake: network errors and 5xx keep retrying with backoff
+ * for about that long before a screen shows an error. 4xx are real answers and never retried.
+ */
+export const QUERY_RETRIES = 6;
+export function queryRetryDelay(attempt: number): number {
+  return Math.min(1_000 * 2 ** attempt, 10_000);
+}
+
+/** Queries restored from the device cache (lib/persist.ts) must outlive its max age in memory too. */
+const PERSISTED_PREFIXES: readonly (readonly string[])[] = [
+  ['config'],
+  ['me'],
+  ['captain-battle'],
+  ['fpl'],
+  ['league'],
+  ['news', 'feed'],
+  ['news', 'stories'],
+  ['community', 'feed'],
+];
+
 export function makeQueryClient(): QueryClient {
-  return new QueryClient({
+  const qc = new QueryClient({
     defaultOptions: {
       queries: {
         staleTime: 30_000,
@@ -108,12 +130,15 @@ export function makeQueryClient(): QueryClient {
         refetchIntervalInBackground: false,
         retry: (failureCount, error) => {
           if (isApiError(error) && error.status >= 400 && error.status < 500) return false;
-          return failureCount < 2;
+          return failureCount < QUERY_RETRIES;
         },
+        retryDelay: queryRetryDelay,
       },
       mutations: { retry: false },
     },
   });
+  for (const prefix of PERSISTED_PREFIXES) qc.setQueryDefaults(prefix, { gcTime: PERSIST_MAX_AGE });
+  return qc;
 }
 
 /** True while any fixture in the list is being played. */

@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react';
 import { BroadcastTargetSchema } from '@fant/shared';
 import type { BroadcastTarget } from '@fant/shared';
 import { readPref, removePref, writePref } from './prefs';
+import { clearPersistedQueries } from './persist';
 
 /**
  * Small device-local UI state (seen stories, push-prompt dismissal, preferred podcast app, the live-update
@@ -140,6 +141,7 @@ export function writeCardOpen(id: string, open: boolean): void {
 
 /** Account deleted: forget everything this device remembered about it (theme and language stay — they're the device's). */
 export function clearAccountLocalState(): void {
+  clearPersistedQueries();
   for (const key of Object.values(KEYS)) removePref(key);
   seenCache = null;
   seenListeners.forEach((l) => l());

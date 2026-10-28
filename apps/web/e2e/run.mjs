@@ -344,6 +344,29 @@ async function openCard(page, id) {
   return card;
 }
 
+/** The queries kept on this device (lib/persist.ts), as key strings like "news,feed". */
+async function persistedKeys(page) {
+  return page.evaluate(() => {
+    const raw = globalThis.localStorage.getItem('fant.queryCache');
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw).clientState.queries.map((q) => q.queryKey.join(','));
+    } catch {
+      return ['<unparseable>'];
+    }
+  });
+}
+/** Anything tied to the signed-in user. */
+const PRIVATE_KEY = /^(me|fpl,(entry|picks|live)|community|league)/;
+
+/** Every API call answers `ms` late (a sleeping API waking up). */
+async function slowApi(page, ms) {
+  await page.route(`${API}/**`, async (r) => {
+    await sleep(ms);
+    await r.continue().catch(() => {}); // the page may have navigated away meanwhile
+  });
+}
+
 async function journeys(browser) {
   let recoveryCode = '';
   const user = await newContext(browser);
@@ -624,7 +647,7 @@ async function journeys(browser) {
     await card.waitFor();
     if ((await card.getAttribute('data-open')) === 'true') await card.getByTestId('card-toggle').click();
     const err = card.getByTestId('card-error');
-    await err.waitFor({ timeout: 30_000 }); // after the client's own retries
+    await err.waitFor({ timeout: 70_000 }); // after the client's own (cold-start-patient) retries
     assert((await card.getAttribute('data-open')) === 'false', 'the card stays collapsed');
     assert(await err.isVisible(), 'the error is visible without opening the card');
     await card.getByTestId('card-summary').getByText('לא נטען').waitFor();
@@ -903,7 +926,8 @@ async function journeys(browser) {
     await noHorizontalScroll(mod, 'admin community');
     await page.goto(`${WEB}/community/`);
     await feedCard(page, 'צילום מסך של ההעברות e2e').waitFor();
-    assert((await feedCard(page, 'פוסט בדיקה e2e').count()) === 0, 'removed post still in the feed');
+    // The device cache may show it for a moment; the background revalidation must take it out.
+    await feedCard(page, 'פוסט בדיקה e2e').waitFor({ state: 'detached', timeout: 15_000 });
   });
 
   await step('admin bans the second fan → their composer is blocked with the notice', async () => {
@@ -1258,6 +1282,8 @@ async function journeys(browser) {
         (await fan.evaluate(() => globalThis.localStorage.getItem('fant.token'))) === null,
         'token cleared',
       );
+      const left = (await persistedKeys(fan)).filter((k) => PRIVATE_KEY.test(k));
+      assert(left.length === 0, `persisted after account deletion: ${left.join(' | ')}`);
       const me = await globalThis.fetch(`${API}/v1/me`, { headers: { authorization: `Bearer ${token}` } });
       assert(me.status === 401, `the old token must be dead, got ${me.status}`);
       // The same Team ID registers again as a brand-new account (no "already registered").
@@ -1462,11 +1488,74 @@ async function journeys(browser) {
     await ctx.close();
   });
 
+  await step(
+    'reopening with a slow API: cached content shows instantly with "Updating…", no skeletons',
+    async () => {
+      await page.goto(`${WEB}/news/`);
+      await page.locator('[data-testid=news-card]').first().waitFor();
+      await page.waitForFunction(() =>
+        (globalThis.localStorage.getItem('fant.queryCache') ?? '').includes('"feed"'),
+      );
+      const kept = await persistedKeys(page);
+      assert(kept.includes('news,feed') && kept.includes('me'), `persisted: ${kept.join(' | ')}`);
+      assert(
+        !kept.some((k) => k.startsWith('admin') || k.includes('recovery')),
+        `never persisted: ${kept.join(' | ')}`,
+      );
+      await slowApi(page, 10_000);
+      await page.reload({ waitUntil: 'commit' });
+      const t0 = Date.now();
+      await page.locator('[data-testid=news-card]').first().waitFor({ timeout: 1_000 });
+      const ms = Date.now() - t0;
+      log(`  cached News visible ${ms} ms after reload (API answering 10 s late)`);
+      assert((await page.locator('main .skeleton').count()) === 0, 'no skeletons over cached content');
+      await page.getByTestId('updating-indicator').getByText('מתעדכן…').waitFor({ timeout: 3_000 });
+      assert(
+        (await page.getByTestId('waking-notice').count()) === 0,
+        'not "waking up" when content is shown',
+      );
+      await page.unroute(`${API}/**`);
+      await page.getByTestId('updating-indicator').waitFor({ state: 'detached', timeout: 30_000 });
+      await noHorizontalScroll(page, 'updating indicator');
+    },
+  );
+
+  await step('first visit with a slow API: "waking up the server" after ~4 s, then the content', async () => {
+    const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+    const ctx = await newContext(browser);
+    await ctx.addInitScript((tok) => {
+      if (!globalThis.sessionStorage.getItem('e2e-init')) {
+        globalThis.localStorage.setItem('fant.token', tok); // signed in, but nothing cached on this device
+        globalThis.sessionStorage.setItem('e2e-init', '1');
+      }
+    }, token);
+    const p = await ctx.newPage();
+    watch(p, 'cold');
+    await slowApi(p, 7_000);
+    await p.goto(`${WEB}/news/`, { waitUntil: 'commit' });
+    const t0 = Date.now();
+    await sleep(3_000);
+    assert((await p.getByTestId('waking-notice').count()) === 0, 'no "waking up" notice before ~4 s');
+    await p.getByTestId('waking-notice').getByText('השרת מתעורר, עוד רגע…').waitFor({ timeout: 4_000 });
+    log(`  "waking up" shown after ${Date.now() - t0} ms`);
+    await noHorizontalScroll(p, 'waking notice');
+    await p.locator('[data-testid=news-card]').first().waitFor({ timeout: 60_000 });
+    await p.unroute(`${API}/**`);
+    await p.getByTestId('waking-notice').waitFor({ state: 'detached', timeout: 30_000 });
+    await ctx.close();
+  });
+
   await step('sign out, then recover the account with the recovery code', async () => {
     await page.goto(`${WEB}/profile/`);
     await page.getByRole('button', { name: 'התנתקות' }).click();
     await page.getByRole('button', { name: 'התנתקות' }).first().click();
     await page.waitForURL('**/onboarding/');
+    // Logout forgets the device cache: nothing of the old session survives (now, or after the next save).
+    for (const wait of [0, 1_500]) {
+      await sleep(wait);
+      const left = (await persistedKeys(page)).filter((k) => PRIVATE_KEY.test(k));
+      assert(left.length === 0, `persisted after logout: ${left.join(' | ')}`);
+    }
     await page.getByRole('button', { name: /התחברו עם קוד שחזור/ }).click();
     await page.getByLabel('Team ID של FPL').fill(DEMO.tripleCaptain);
     await page.getByLabel('קוד שחזור').fill(recoveryCode);
@@ -1578,6 +1667,7 @@ async function updateJourneys(ctx) {
       assert(v.buildId === A, `version.json ${v.buildId} ≠ html ${A}`);
       const sw = await (await globalThis.fetch(`${WEB}/sw.js`)).text();
       assert(sw.includes(`const BUILD_ID = '${A}'`), 'sw.js is stamped with the build id');
+      assert(sw.includes("url.pathname.startsWith('/media/')) return;"), 'sw.js never intercepts /media/*');
       await bootCheckDone(checks);
       assert((await buildOf(up)) === A, 'no reload while nothing changed');
 

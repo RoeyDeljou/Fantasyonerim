@@ -5,6 +5,7 @@ import './globals.css';
 import { Providers } from './providers';
 import { BOOT_SCRIPT } from '@/lib/prefs';
 import { CHUNK_GUARD_SCRIPT } from '@/lib/appVersion';
+import { WARMUP_SCRIPT } from '@/lib/warmupScript';
 import { THEME_META_COLORS } from './theme-meta';
 
 export const metadata: Metadata = {
@@ -38,6 +39,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     // data-build: the deploy this page belongs to (compared with /version.json — src/lib/updates.ts).
     <html lang="he" dir="rtl" data-build={process.env.NEXT_PUBLIC_BUILD_ID} suppressHydrationWarning>
       <head>
+        {/* First: start waking the (possibly sleeping) API before anything else loads. */}
+        <script dangerouslySetInnerHTML={{ __html: WARMUP_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: CHUNK_GUARD_SCRIPT }} />
         <meta name="apple-mobile-web-app-capable" content="yes" />

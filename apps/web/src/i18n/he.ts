@@ -878,6 +878,11 @@ export const he = {
     noneHidden: 'אין מוסתרים',
     items: 'פריטים',
   },
+  sync: {
+    updating: 'מתעדכן…',
+    waking: 'השרת מתעורר, עוד רגע…',
+    wakingBody: 'אחרי הפסקה ארוכה זה יכול לקחת עד דקה.',
+  },
   invites: {
     checkFailed: 'לא הצלחנו לבדוק את קישור ההזמנה',
     viaInvite: 'מנהל דרך קישור הזמנה',

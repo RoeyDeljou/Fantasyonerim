@@ -888,6 +888,11 @@ export const en: Messages = {
     noneHidden: 'None hidden',
     items: 'items',
   },
+  sync: {
+    updating: 'Updating…',
+    waking: 'Waking up the server, one moment…',
+    wakingBody: 'After a long break this can take up to a minute.',
+  },
   invites: {
     checkFailed: "We couldn't check the invite link",
     viaInvite: 'Invite link admin',
