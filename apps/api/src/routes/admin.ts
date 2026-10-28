@@ -14,7 +14,13 @@ import type { Auth } from '../auth/session.js';
 import type { AppContext } from '../context.js';
 import { badRequest, conflict, notFound, unauthorized } from '../errors.js';
 import { isFplNotFound } from '../fplErrors.js';
-import { getLatestBattle, getSettings, toAdminSettings, toBattleConfig } from '../settings.js';
+import {
+  derivedSocials,
+  getLatestBattle,
+  getSettings,
+  toAdminSettings,
+  toBattleConfig,
+} from '../settings.js';
 import { parseInput, serialize } from '../validate.js';
 
 export class AdminUsernameTakenError extends Error {
@@ -59,7 +65,9 @@ export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, p
       await auth.requireAdmin(request);
     });
 
-    admin.get('/v1/admin/settings', async () => toAdminSettings(await getSettings(prisma)));
+    admin.get('/v1/admin/settings', async () =>
+      toAdminSettings(await getSettings(prisma), await derivedSocials(prisma)),
+    );
 
     admin.put('/v1/admin/settings', async (request) => {
       const body = parseInput(AdminSettingsSchema, request.body);
@@ -87,7 +95,7 @@ export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, p
           whatsappUrl: body.socials.whatsappUrl,
         },
       });
-      return toAdminSettings(updated);
+      return toAdminSettings(updated, await derivedSocials(prisma));
     });
 
     admin.get('/v1/admin/captain-battle', async (_request, reply) => {

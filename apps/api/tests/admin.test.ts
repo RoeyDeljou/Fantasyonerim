@@ -90,7 +90,14 @@ describe('admin settings', () => {
       leagueId: null,
       leagueName: null,
       deadlineReminderMinutes: [1440, 120],
-      socials: { spotifyUrl: null, appleUrl: null, instagramUrl: null, xUrl: null, whatsappUrl: null },
+      // Derived from the integrations (tests/socials.test.ts covers the rules).
+      socials: {
+        spotifyUrl: 'https://open.spotify.com/show/4sYY0tpz7M8gflimZAglHi',
+        appleUrl: 'https://podcasts.apple.com/podcast/id1819558192',
+        instagramUrl: 'https://www.instagram.com/fantasyonerimfpl/',
+        xUrl: null,
+        whatsappUrl: null,
+      },
     });
 
     // Unknown league → 404, nothing saved.
