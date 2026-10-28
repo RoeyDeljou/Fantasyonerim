@@ -74,10 +74,33 @@ export const NewsPageSchema = z.object({
 });
 export type NewsPage = z.infer<typeof NewsPageSchema>;
 
+/**
+ * News feed filter chips. Each maps to one or more sources:
+ * episodes → podcast · shorts → youtube_short · videos → youtube_video · instagram → instagram_post ·
+ * x → x_post · updates → admin_update. (Stories never appear in the feed, so they have no filter.)
+ */
+export const NewsFilterSchema = z.enum(['episodes', 'shorts', 'videos', 'instagram', 'x', 'updates']);
+export type NewsFilter = z.infer<typeof NewsFilterSchema>;
+
+export const NEWS_FILTER_SOURCES: Readonly<Record<NewsFilter, readonly NewsSource[]>> = {
+  episodes: ['podcast'],
+  shorts: ['youtube_short'],
+  videos: ['youtube_video'],
+  instagram: ['instagram_post'],
+  x: ['x_post'],
+  updates: ['admin_update'],
+};
+
 export const NewsPageQuerySchema = z.object({
   cursor: z.string().min(1).max(200).optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
+  /** Omitted = everything (the "All" chip). The cursor is only valid for the filter it was issued with. */
+  filter: NewsFilterSchema.optional(),
 });
+
+/** GET /v1/news/filters — the filters that currently have at least one visible item, in display order. */
+export const NewsFiltersSchema = z.object({ filters: z.array(NewsFilterSchema) });
+export type NewsFilters = z.infer<typeof NewsFiltersSchema>;
 
 /** GET /v1/news/stories — unexpired Instagram stories, oldest first (Instagram order). */
 export const StoriesSchema = z.object({ items: z.array(NewsItemSchema) });
