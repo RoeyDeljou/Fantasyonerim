@@ -8,6 +8,7 @@ import {
   createSpotifyLinkResolver,
   createXPublisher,
   createXSource,
+  fetchSpotifyEpisodeThumbnail,
   resolveEpisodeLinks,
   resolveXUser,
 } from '@fant/integrations';
@@ -28,6 +29,7 @@ export interface IntegrationFactories {
   createXSource: typeof createXSource;
   resolveXUser: typeof resolveXUser;
   createXPublisher: typeof createXPublisher;
+  fetchSpotifyEpisodeThumbnail: typeof fetchSpotifyEpisodeThumbnail;
 }
 
 export const realIntegrations: IntegrationFactories = {
@@ -42,4 +44,5 @@ export const realIntegrations: IntegrationFactories = {
   createXSource,
   resolveXUser,
   createXPublisher,
+  fetchSpotifyEpisodeThumbnail,
 };

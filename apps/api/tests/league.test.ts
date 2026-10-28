@@ -1,7 +1,7 @@
-import { ApiErrorSchema, LeagueStandingsSchema, LiveLeagueSchema } from '@fant/shared';
+import { ApiErrorSchema, EntryPicksSchema, LeagueStandingsSchema, LiveLeagueSchema } from '@fant/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { makeBootstrap, upstreamDown, type FakeFplService } from './fakeFpl.js';
+import { makeBootstrap, makePicks, upstreamDown, type FakeFplService } from './fakeFpl.js';
 import { adminToken, bearer, buildTestApp, createTestPrisma, migrateTestDb, resetDb } from './helpers.js';
 
 const prisma = createTestPrisma();
@@ -59,6 +59,55 @@ describe('league routes', () => {
       (await app.inject({ method: 'GET', url: '/v1/league/standings' })).json(),
     );
     expect(def.page).toBe(1);
+  });
+
+  it('standings carry each row’s chip for the current GW; a failed lookup is null, not a failed page', async () => {
+    await configureLeague();
+    const row = (entryId: number, rank: number) => ({
+      rank,
+      lastRank: rank,
+      entryId,
+      entryName: `Team ${entryId}`,
+      managerName: `M ${entryId}`,
+      total: 600 - rank,
+      eventTotal: 50,
+    });
+    fpl.standingsRows = [row(21, 1), row(22, 2), row(23, 3), row(24, 4)];
+    const chip = (entryId: number, activeChip: string | null) =>
+      fpl.picks.set(`${entryId}:9`, EntryPicksSchema.parse({ ...makePicks(entryId, 9, 1), activeChip }));
+    chip(21, 'bboost');
+    chip(22, null);
+    chip(23, 'wildcard');
+    fpl.failPicksFor.set(23, upstreamDown());
+    // 24: no picks at all (404) → null
+
+    const res = await app.inject({ method: 'GET', url: '/v1/league/standings' });
+    expect(res.statusCode).toBe(200);
+    const body = LeagueStandingsSchema.parse(res.json());
+    expect(body.rows.map((r) => [r.entryId, r.activeChip])).toEqual([
+      [21, 'bboost'],
+      [22, null],
+      [23, null],
+      [24, null],
+    ]);
+    // Only this page's rows, for the current GW (9).
+    expect(fpl.calls.filter((c) => c.startsWith('getEntryPicks:')).sort()).toEqual([
+      'getEntryPicks:21:9',
+      'getEntryPicks:22:9',
+      'getEntryPicks:23:9',
+      'getEntryPicks:24:9',
+    ]);
+  });
+
+  it('standings chips are null before the first deadline (no picks fetched)', async () => {
+    await configureLeague();
+    fpl.bootstrap = makeBootstrap(null, 1);
+    fpl.calls = [];
+    const body = LeagueStandingsSchema.parse(
+      (await app.inject({ method: 'GET', url: '/v1/league/standings' })).json(),
+    );
+    expect(body.rows.every((r) => r.activeChip === null)).toBe(true);
+    expect(fpl.calls.some((c) => c.startsWith('getEntryPicks:'))).toBe(false);
   });
 
   it('serves the live table for the current GW (next GW pre-season)', async () => {

@@ -143,25 +143,29 @@ enum IntegrationId {
 /// One row per News item. `dedupeKey` (e.g. "podcast:<guid>", "instagram:<media id>") makes every poll
 /// idempotent. Hidden items stay in the table so a re-poll never re-creates them.
 model NewsItem {
-  id          String    @id @default(cuid())
-  dedupeKey   String    @unique
+  id                 String    @id @default(cuid())
+  dedupeKey          String    @unique
   /// NewsSource: podcast | instagram_post | instagram_story | x_post | admin_update
-  source      String
-  title       String?
-  text        String?
+  source             String
+  title              String?
+  text               String?
   /// NewsLinks JSON (spotify, apple, instagram, x, audio).
-  links       Json
+  links              Json
   /// PodcastMeta JSON for episodes, null otherwise.
-  podcast     Json?
-  publishedAt DateTime
+  podcast            Json?
+  publishedAt        DateTime
   /// Stories only (publishedAt + 24 h).
-  expiresAt   DateTime?
-  hiddenAt    DateTime?
+  expiresAt          DateTime?
+  hiddenAt           DateTime?
   /// Dedupe-only placeholder (e.g. our own X post from a live broadcast): permanently hidden, never listed
   /// among hidden items, never restorable. It only exists so a re-poll of that dedupeKey is a no-op.
-  suppressed  Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  suppressed         Boolean   @default(false)
+  /// Podcast episodes: per-episode Spotify thumbnail lookup. null = never checked · "found" (media = the re-hosted
+  /// thumbnail; feed polls never put the show cover back) · "none" (audio-only so far) · "error" (retry later).
+  thumbnailStatus    String?
+  thumbnailCheckedAt DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   media NewsMedia[]
 

@@ -126,6 +126,10 @@ export class FakeFplService implements FplService {
   failAll: Error | null = null;
   /** When set, getEntryPicks throws this error. */
   failPicks: Error | null = null;
+  /** Per-entry getEntryPicks failures (entryId → error). */
+  failPicksFor = new Map<number, Error>();
+  /** Standings rows override (default: one row, entry 11). */
+  standingsRows: unknown[] | null = null;
   calls: string[] = [];
 
   addEntry(entryId: number, teamName?: string): this {
@@ -170,6 +174,8 @@ export class FakeFplService implements FplService {
   async getEntryPicks(entryId: FplEntryId, event: Gameweek): Promise<EntryPicks> {
     this.check(`getEntryPicks:${entryId}:${event}`);
     if (this.failPicks) throw this.failPicks;
+    const failure = this.failPicksFor.get(entryId);
+    if (failure) throw failure;
     const picks = this.picks.get(`${entryId}:${event}`);
     if (!picks) throw new FplNotFoundError(`picks ${entryId}/${event}`);
     return picks;
@@ -201,7 +207,7 @@ export class FakeFplService implements FplService {
       league,
       page,
       hasNext: page < 2,
-      rows: [
+      rows: this.standingsRows ?? [
         {
           rank: 1,
           lastRank: 2,

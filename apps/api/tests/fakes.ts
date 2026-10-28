@@ -196,6 +196,8 @@ export function fakeIntegrations() {
       return { links: resolved.links, warnings: [] };
     },
     resolveXUser: async ({ username }) => ({ id: '4242', username: username.replace(/^@/, ''), name: 'X' }),
+    // No network in tests: episodes have no video thumbnail unless a test overrides this.
+    fetchSpotifyEpisodeThumbnail: async () => null,
   };
   return { factories, podcast, igPosts, igStories, x, resolved };
 }

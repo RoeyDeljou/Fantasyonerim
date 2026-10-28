@@ -182,6 +182,8 @@ export async function ingestDrafts(
         // them) — only retry when nothing was stored.
         if (existing.media.length === 0 && draft.media.length > 0) media = await rehostMedia(deps, draft);
       } else if (
+        // A per-episode thumbnail (jobs/episodeThumbnails.ts) replaced the feed's show cover: keep it.
+        existing.thumbnailStatus !== 'found' &&
         !sameJson(
           existing.media.map((m) => [m.kind, m.sourceUrl]),
           draft.media.map((m) => [m.kind, m.sourceUrl]),

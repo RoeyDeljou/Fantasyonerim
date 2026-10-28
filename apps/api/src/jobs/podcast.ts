@@ -10,6 +10,7 @@ import {
 } from '../integrations/store.js';
 import { readLinks } from '../news/serialize.js';
 import { runContentSource, runSummary } from './content.js';
+import { fillEpisodeThumbnails, thumbnailSummary } from './episodeThumbnails.js';
 import { MINUTE, type Job, type JobRunContext } from './types.js';
 
 /** Spotify/Apple list an episode later than the RSS: re-resolve recent episodes missing a link. */
@@ -193,6 +194,13 @@ export const podcastJob: Job = {
       }
       state['lastRelinkAt'] = nowMs;
     }
-    return { summary: `${runSummary(result)}, ${relinked} relinked`, state };
+    // Per-episode Spotify thumbnails: best-effort, after the feed; never fails the run or the Spotify status.
+    let thumbs: string;
+    try {
+      thumbs = thumbnailSummary(await fillEpisodeThumbnails(app, ctx.now));
+    } catch (err) {
+      thumbs = `thumbnails: skipped (${err instanceof Error ? err.message : String(err)})`;
+    }
+    return { summary: `${runSummary(result)}, ${relinked} relinked, ${thumbs}`, state };
   },
 };
