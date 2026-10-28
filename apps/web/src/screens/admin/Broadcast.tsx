@@ -21,12 +21,14 @@ import { X_MAX, xWeightedLength } from '@/lib/xLength';
 import { BottomSheet } from '@/components/BottomSheet';
 import { PhotoInput, PhotoPreview, usePhotoUpload } from '@/components/PhotoUpload';
 import { RelativeTime } from '@/components/news/parts';
+import { Collapsible, loadProblem } from '@/components/Collapsible';
 import {
   BellIcon,
   BoltIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronEndIcon,
+  ClockIcon,
   CloseIcon,
   ExternalIcon,
   ImageIcon,
@@ -40,9 +42,7 @@ import {
   Button,
   Card,
   EmptyState,
-  ErrorState,
   InlineError,
-  SectionTitle,
   Skeleton,
   Spinner,
   Switch,
@@ -224,17 +224,16 @@ function Composer({ onSent }: { onSent(r: BroadcastResult): void }) {
   };
 
   return (
-    <Card className="flex flex-col gap-4">
-      <div className="flex items-start gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary">
-          <BoltIcon size={22} />
-        </span>
-        <div className="min-w-0">
-          <h2 className="text-lg font-extrabold text-ink">{b.title}</h2>
-          <p className="text-sm text-muted">{b.intro}</p>
-        </div>
-      </div>
-
+    // The composer is what this section is for: open by default (its own toggle is still remembered).
+    <Collapsible
+      id="broadcast.composer"
+      icon={<BoltIcon size={20} />}
+      title={b.title}
+      defaultOpen
+      info={b.intro}
+      error={loadProblem(t, status)}
+      saveError={send.isError ? `${b.sendFailed} ${errorMessage(t, send.error)}` : null}
+    >
       {/* ---------- templates ---------- */}
       <div className="flex flex-col gap-2">
         <p className="text-sm font-semibold text-ink">{b.templatesLabel}</p>
@@ -382,7 +381,7 @@ function Composer({ onSent }: { onSent(r: BroadcastResult): void }) {
           onBack={() => setConfirm(false)}
         />
       </BottomSheet>
-    </Card>
+    </Collapsible>
   );
 }
 
@@ -430,10 +429,10 @@ function TargetRow({
       )}
       {paid && (
         <p
-          className="mb-1 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning-soft p-3 text-sm font-bold text-warning"
+          className="-mt-1 mb-1 flex items-center gap-1.5 self-start rounded-xl bg-warning-soft px-3 py-1.5 text-xs font-bold text-warning"
           data-testid="broadcast-x-paid"
         >
-          <InfoIcon size={20} className="shrink-0" />
+          <InfoIcon size={14} className="shrink-0" />
           <span>{t.integrations.xPaid}</span>
         </p>
       )}
@@ -709,7 +708,7 @@ function HistoryCard() {
       </div>
     );
   } else if (history.isError) {
-    body = <ErrorState error={history.error} onRetry={() => void history.refetch()} />;
+    body = null; // shown by the card header (also while collapsed)
   } else if (history.data.items.length === 0) {
     body = <EmptyState icon={<BoltIcon size={28} />} title={b.historyEmpty} />;
   } else {
@@ -721,11 +720,17 @@ function HistoryCard() {
       </ul>
     );
   }
+  const n = history.data?.items.length ?? 0;
   return (
-    <section className="flex flex-col gap-2">
-      <SectionTitle>{b.historyTitle}</SectionTitle>
+    <Collapsible
+      id="broadcast.history"
+      icon={<ClockIcon size={18} />}
+      title={b.historyTitle}
+      summary={history.data ? (n > 0 ? fmt(t.adminUi.sent, { n }) : t.adminUi.noneSent) : undefined}
+      error={loadProblem(t, history)}
+    >
       {body}
-    </section>
+    </Collapsible>
   );
 }
 

@@ -8,8 +8,8 @@ import type { FplIndex } from '@/lib/queries';
 import { BottomSheet } from '@/components/BottomSheet';
 import { ShirtIcon } from '@/components/icons';
 import { Pitch } from '@/components/team/Pitch';
-import { chipName } from '@/components/team/TeamParts';
-import { Badge, Card, Num, Skeleton, cx } from '@/components/ui';
+import { ChipIcon } from '@/components/team/ChipIcon';
+import { Card, Num, Skeleton, cx } from '@/components/ui';
 
 /** What a team preview needs — a `TeamSnapshot` from a post, or picks + entry while composing. */
 export interface TeamView {
@@ -43,11 +43,7 @@ function Summary({ team, large = false }: { team: TeamView; large?: boolean }) {
           <bdi dir="auto" className="truncate">
             {team.managerName}
           </bdi>
-          {team.activeChip && (
-            <Badge tone="accent" className="px-1.5 py-0 text-[10px]">
-              {chipName(t, team.activeChip)}
-            </Badge>
-          )}
+          {team.activeChip && <ChipIcon chip={team.activeChip} />}
         </span>
       </div>
       <div className="flex shrink-0 flex-col items-center rounded-xl bg-primary px-2.5 py-1 text-on-primary">

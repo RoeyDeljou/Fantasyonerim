@@ -4,23 +4,13 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { CreateAdminInviteBodySchema } from '@fant/shared';
 import type { AdminInvite, AdminInviteCreated } from '@fant/shared';
-import { fmt, useI18n } from '@/i18n';
+import { fmt, plural, useI18n } from '@/i18n';
+import { Collapsible, loadProblem, saveProblem } from '@/components/Collapsible';
 import { useAdminInvites, useCreateInvite, useRevokeInvite } from '@/lib/queries';
 import { BottomSheet } from '@/components/BottomSheet';
 import { RelativeTime } from '@/components/news/parts';
 import { CheckIcon, CopyIcon, InfoIcon, PlusIcon, ShareIcon } from '@/components/icons';
-import {
-  Badge,
-  Button,
-  Card,
-  ErrorState,
-  InlineError,
-  SectionTitle,
-  Skeleton,
-  Spinner,
-  TextField,
-  errorMessage,
-} from '@/components/ui';
+import { Badge, Button, InlineError, Skeleton, Spinner, TextField, errorMessage } from '@/components/ui';
 
 /**
  * Admin → Admins: one-time invite links (the hosts create their own account and are admins from the start).
@@ -33,6 +23,8 @@ export function InvitesCard() {
   const [label, setLabel] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<AdminInviteCreated | null>(null);
+  const invites = useAdminInvites(true);
+  const pending = invites.data?.filter((i) => i.status === 'pending').length ?? 0;
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -51,9 +43,22 @@ export function InvitesCard() {
   }
 
   return (
-    <Card className="flex flex-col gap-3">
-      <SectionTitle>{v.title}</SectionTitle>
-      <p className="-mt-1 text-sm text-muted">{v.intro}</p>
+    <Collapsible
+      id="settings.invites"
+      icon={<ShareIcon size={18} />}
+      title={v.title}
+      tone={invites.isError ? 'live' : pending > 0 ? 'primary' : 'neutral'}
+      summary={
+        invites.data
+          ? pending > 0
+            ? plural(pending, t.adminUi.pendingOne, t.adminUi.pending)
+            : t.adminUi.nonePending
+          : undefined
+      }
+      error={loadProblem(t, invites)}
+      saveError={saveProblem(t, create)}
+      info={v.intro}
+    >
       <form onSubmit={submit} noValidate className="flex flex-col gap-3" data-testid="invite-form">
         <TextField
           label={v.label}
@@ -81,7 +86,7 @@ export function InvitesCard() {
       >
         {created && <CreatedSheet created={created} onDone={() => setCreated(null)} />}
       </BottomSheet>
-    </Card>
+    </Collapsible>
   );
 }
 
@@ -188,7 +193,7 @@ function InviteList() {
   const v = t.invites;
   const invites = useAdminInvites(true);
   if (invites.isPending) return <Skeleton className="h-20" />;
-  if (invites.isError) return <ErrorState error={invites.error} onRetry={() => void invites.refetch()} />;
+  if (invites.isError) return null; // shown by the card header (also while collapsed)
   return (
     <div className="flex flex-col gap-2 border-t border-line pt-3">
       <h3 className="font-bold text-ink">{v.listTitle}</h3>

@@ -15,6 +15,7 @@ const KEYS = {
   pushPromptDismissedAt: 'fant.news.pushPromptDismissedAt',
   listenApp: 'fant.news.listenApp',
   broadcastTargets: 'fant.admin.broadcastTargets',
+  adminCards: 'fant.admin.cards',
 } as const;
 
 function readJson(key: string): unknown {
@@ -114,6 +115,27 @@ export function readBroadcastTargets(): BroadcastTarget[] | null {
 
 export function writeBroadcastTargets(targets: readonly BroadcastTarget[]): void {
   writePref(KEYS.broadcastTargets, JSON.stringify(targets));
+}
+
+// ---------- admin console: which collapsible cards are open ----------
+
+function readCards(): Record<string, boolean> {
+  const v = readJson(KEYS.adminCards);
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  return Object.fromEntries(
+    Object.entries(v as Record<string, unknown>).filter(
+      (e): e is [string, boolean] => typeof e[1] === 'boolean',
+    ),
+  );
+}
+
+/** The admin's own open/closed choice for a card on this device (null = never toggled). */
+export function readCardOpen(id: string): boolean | null {
+  return readCards()[id] ?? null;
+}
+
+export function writeCardOpen(id: string, open: boolean): void {
+  writePref(KEYS.adminCards, JSON.stringify({ ...readCards(), [id]: open }));
 }
 
 /** Account deleted: forget everything this device remembered about it (theme and language stay — they're the device's). */

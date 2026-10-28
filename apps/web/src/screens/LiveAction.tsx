@@ -21,7 +21,7 @@ import { AppShell, ShellSkeleton } from '@/components/AppShell';
 import { ImageWithFallback, fplImage } from '@/components/FplImages';
 import { ClockIcon, ShirtIcon, TableIcon } from '@/components/icons';
 import { ManagerSheet } from '@/components/team/ManagerSheet';
-import { chipName } from '@/components/team/TeamParts';
+import { ChipIcon } from '@/components/team/ChipIcon';
 import { BonusBadge } from '@/components/team/BonusBadge';
 import { fixtureScoreText, fixtureStatusText } from '@/components/team/fixtureText';
 import {
@@ -345,8 +345,11 @@ function LiveLeagueRowItem({
           <Movement rank={r.liveRank} lastRank={r.officialRank} />
         </span>
         <span className="flex min-w-0 flex-col gap-0.5">
-          <span dir="auto" className="name-start truncate font-semibold text-ink">
-            {r.entryName}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span dir="auto" className="name-start min-w-0 truncate font-semibold text-ink">
+              {r.entryName}
+            </span>
+            {r.activeChip && <ChipIcon chip={r.activeChip} />}
           </span>
           <span dir="auto" className="name-start truncate text-xs text-muted">
             {r.managerName}
@@ -359,11 +362,6 @@ function LiveLeagueRowItem({
                   {captain.webName}
                 </span>
                 {viceTook && <span className="shrink-0 opacity-80">({t.liveAction.viceTook})</span>}
-              </Badge>
-            )}
-            {r.activeChip && (
-              <Badge tone="accent" className="px-1.5 py-0">
-                {chipName(t, r.activeChip)}
               </Badge>
             )}
             {r.playersYetToPlay > 0 && (
@@ -504,11 +502,7 @@ function CaptainRow({
               {player.webName}
             </span>
             {team && <span className="shrink-0 text-muted">· {team.shortName}</span>}
-            {row.multiplier === 3 && (
-              <Badge tone="accent" className="shrink-0 px-1.5">
-                {t.liveAction.tc}
-              </Badge>
-            )}
+            {row.multiplier === 3 && <ChipIcon chip="3xc" />}
           </span>
         ) : (
           <span className="text-sm text-muted">

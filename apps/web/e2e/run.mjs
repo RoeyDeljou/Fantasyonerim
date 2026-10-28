@@ -310,6 +310,19 @@ async function noHorizontalScroll(page, where) {
   assert(sw <= cw, `${where}: horizontal scroll (${sw} > ${cw})`);
 }
 
+/** Opens an admin collapsible card (a no-op when it is already open) and returns it. */
+async function openCard(page, id) {
+  const card = page.locator(`[data-testid=admin-card][data-card="${id}"]`);
+  await card.waitFor();
+  if ((await card.getAttribute('data-open')) !== 'true') {
+    const toggle = card.getByTestId('card-toggle').first();
+    assert((await toggle.getAttribute('aria-expanded')) === 'false', `${id}: aria-expanded before opening`);
+    await toggle.click();
+  }
+  await page.locator(`[data-testid=admin-card][data-card="${id}"][data-open=true]`).waitFor();
+  return card;
+}
+
 async function journeys(browser) {
   let recoveryCode = '';
   const user = await newContext(browser);
@@ -457,6 +470,17 @@ async function journeys(browser) {
     assert((await page.getByTestId('pitch-player').count()) === 15, 'expected 15 players on pitch + bench');
     await page.locator('section').getByText('טריפל קפטן').first().waitFor();
     await page.getByText('פעיל עכשיו').first().waitFor();
+    // Chip icons: the header, the GW selector and the chips-played row all mark the Triple Captain.
+    const tc = page.locator('main [data-testid=chip-icon][data-chip="3xc"]');
+    assert(
+      (await tc.count()) >= 3,
+      `expected TC chip icons in header, GW selector and chips row, got ${await tc.count()}`,
+    );
+    const gwChip = page.locator('main [role=img][data-chip="3xc"]').first();
+    const label = (await gwChip.getAttribute('aria-label')) ?? '';
+    assert(label.includes('טריפל קפטן'), `chip icon has a Hebrew accessible label: "${label}"`);
+    assert((await gwChip.getAttribute('title')) === label, 'chip icon tooltip');
+    await page.getByTestId('chips-used').waitFor();
     await noHorizontalScroll(page, 'my-team');
   });
 
@@ -492,10 +516,24 @@ async function journeys(browser) {
     await admin.getByLabel('סיסמה').fill(ADMIN.password);
     await admin.getByRole('button', { name: 'כניסה' }).click();
     await admin.waitForURL('**/admin/');
+    // Cards start collapsed except the ones that need attention: here, the unset league and battle.
+    for (const id of ['settings.socials', 'settings.reminders', 'settings.invites', 'settings.admins']) {
+      const card = admin.locator(`[data-testid=admin-card][data-card="${id}"]`);
+      await card.waitFor();
+      assert((await card.getAttribute('data-open')) === 'false', `${id} starts collapsed`);
+    }
+    for (const id of ['settings.league', 'settings.battle']) {
+      const card = admin.locator(`[data-testid=admin-card][data-card="${id}"]`);
+      assert((await card.getAttribute('data-open')) === 'true', `${id} (not set) starts open`);
+      await card.getByTestId('card-summary').getByText('לא מוגדר').waitFor();
+    }
+    await noHorizontalScroll(admin, 'admin settings');
+    await openCard(admin, 'settings.league');
     await admin.getByLabel('League ID של הליגה הקלאסית').fill(DEMO.league);
     await admin.getByRole('button', { name: 'שמירת הליגה' }).click();
     await admin.getByText('Fantasyonerim League').first().waitFor();
     // Default rows: Dor (linked), Itay (linked), community (player).
+    await openCard(admin, 'settings.battle');
     await admin.getByText('עדיין לא הוגדר קרב').waitFor();
     const teamIds = admin.getByLabel('Team ID של הקבוצה');
     assert((await teamIds.count()) === 2, 'expected two linked-team default rows');
@@ -507,6 +545,69 @@ async function journeys(browser) {
     await admin.locator('dialog[open] ul li button').first().click();
     await admin.getByRole('button', { name: 'שמירת קרב הקפטנים' }).click();
     await admin.getByText('נשמר', { exact: true }).first().waitFor();
+    // Collapsing is remembered per card on this device, and survives a reload.
+    const socials = admin.locator('[data-testid=admin-card][data-card="settings.socials"]');
+    const toggle = socials.getByTestId('card-toggle');
+    await toggle.focus();
+    await admin.keyboard.press('Enter'); // keyboard operable
+    await admin.locator('[data-testid=admin-card][data-card="settings.socials"][data-open=true]').waitFor();
+    assert((await toggle.getAttribute('aria-expanded')) === 'true', 'aria-expanded follows the state');
+    const panel = await toggle.getAttribute('aria-controls');
+    assert(
+      panel && (await admin.locator(`[id="${panel}"]`).count()) === 1,
+      'aria-controls points at the panel',
+    );
+    const box = await toggle.boundingBox();
+    assert(box && box.height >= 44, `card header is a 44 px touch target (${box?.height})`);
+    await admin.reload();
+    await admin.locator('[data-testid=admin-card][data-card="settings.socials"][data-open=true]').waitFor();
+    await admin
+      .locator('[data-testid=admin-card][data-card="settings.socials"]')
+      .getByTestId('card-toggle')
+      .click();
+    await admin.locator('[data-testid=admin-card][data-card="settings.socials"][data-open=false]').waitFor();
+    await admin
+      .locator('[data-testid=admin-card][data-card="settings.league"]')
+      .getByTestId('card-summary')
+      .getByText('ליגה 314159')
+      .waitFor();
+  });
+
+  await step('a collapsed card still shows its load error (GET → 500) with a retry', async () => {
+    const token = await admin.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+    const ctx = await newContext(browser);
+    await ctx.addInitScript((tok) => globalThis.localStorage.setItem('fant.token', tok), token);
+    const p = await ctx.newPage();
+    // Not watch()ed: the forced 500s are expected console errors here; page errors still fail the step.
+    const pageErrors = [];
+    p.on('pageerror', (e) => pageErrors.push(e.message));
+    let fail = true;
+    await p.route(`${API}/v1/admin/admins`, (r) =>
+      fail
+        ? r.fulfill({
+            status: 500,
+            contentType: 'application/json',
+            headers: { 'access-control-allow-origin': WEB },
+            body: JSON.stringify({ error: { code: 'internal', message: 'forced by e2e' } }),
+          })
+        : r.continue(),
+    );
+    await p.goto(`${WEB}/admin/`);
+    const card = p.locator('[data-testid=admin-card][data-card="settings.admins"]');
+    await card.waitFor();
+    if ((await card.getAttribute('data-open')) === 'true') await card.getByTestId('card-toggle').click();
+    const err = card.getByTestId('card-error');
+    await err.waitFor({ timeout: 30_000 }); // after the client's own retries
+    assert((await card.getAttribute('data-open')) === 'false', 'the card stays collapsed');
+    assert(await err.isVisible(), 'the error is visible without opening the card');
+    await card.getByTestId('card-summary').getByText('לא נטען').waitFor();
+    fail = false;
+    await err.getByRole('button', { name: 'נסו שוב' }).click();
+    await err.waitFor({ state: 'detached' });
+    await card.getByTestId('card-summary').getByText(/מנהל/).waitFor();
+    await noHorizontalScroll(p, 'collapsed card error');
+    assert(pageErrors.length === 0, `page errors: ${pageErrors.join('; ')}`);
+    await ctx.close();
   });
 
   await step('admin Integrations lists all five sources with the X paid-feature note', async () => {
@@ -516,10 +617,12 @@ async function journeys(browser) {
       .getByTestId('integration-card')
       .evaluateAll((cs) => cs.map((c) => c.getAttribute('data-integration')));
     assert(ids.join(',') === 'podcast_rss,apple,spotify,instagram,x', `cards: ${ids.join(',')}`);
+    await openCard(admin, 'integrations.x');
     await admin
       .locator('[data-integration=x] [data-testid=x-paid-note]')
       .getByText("פיצ'ר בתשלום — צרו קשר עם היוצר אם תרצו להפעיל אותו")
       .waitFor();
+    await openCard(admin, 'integrations.instagram');
     await admin
       .locator('[data-integration=instagram]')
       .getByRole('button', { name: 'התחברות עם Facebook' })
@@ -534,6 +637,7 @@ async function journeys(browser) {
   });
 
   await step('admin manual post appears in News; admin can hide it', async () => {
+    await openCard(admin, 'integrations.manual');
     await admin.getByLabel('טקסט').fill('הודעת בדיקה e2e');
     await admin.getByRole('button', { name: 'פרסום בפיד' }).click();
     await admin.getByText('הפוסט פורסם').waitFor();
@@ -550,10 +654,27 @@ async function journeys(browser) {
   await step('Table shows the league; tapping a row opens that manager’s team', async () => {
     await page.goto(`${WEB}/table/`);
     await page.getByRole('heading', { name: 'Fantasyonerim League' }).waitFor();
+    // Standings rows mark the chip played in the current GW (demo: TC / BB / FH / WC teams).
+    const chip = page.locator('ol [data-testid=chip-icon][data-chip="3xc"]').first();
+    await chip.waitFor();
+    assert(((await chip.getAttribute('aria-label')) ?? '').includes('טריפל קפטן'), 'table chip label');
     await page.locator('ol li button').first().click();
     await page.locator('dialog[open] [data-testid="pitch-player"], dialog[open] .flex-col').first().waitFor();
     await page.keyboard.press('Escape');
     await noHorizontalScroll(page, 'table');
+  });
+
+  await step('Live Action: managers who played a chip this GW carry its icon in the live table', async () => {
+    await page.goto(`${WEB}/live/`);
+    await page.locator('ol li button').first().waitFor();
+    const icons = page.locator('ol [role=img][data-testid=chip-icon]');
+    await icons.first().waitFor();
+    const chips = new Set(await icons.evaluateAll((els) => els.map((e) => e.getAttribute('data-chip'))));
+    assert(chips.has('3xc'), `live table chip icons: ${[...chips].join(',')}`);
+    for (const c of chips) assert(['wildcard', 'freehit', 'bboost', '3xc'].includes(c), `unknown chip ${c}`);
+    const label = (await icons.first().getAttribute('aria-label')) ?? '';
+    assert(/הופעל במחזור/.test(label), `chip icon label: "${label}"`);
+    await noHorizontalScroll(page, 'live table with chips');
   });
 
   await step('Captain Battle lists the configured rows plus "my captain"', async () => {
@@ -637,7 +758,9 @@ async function journeys(browser) {
       const card = page.locator('[data-testid=post-card]').first();
       const preview = card.getByTestId('team-preview');
       await preview.waitFor();
-      await preview.getByText('טריפל קפטן').waitFor();
+      const tc = preview.locator('[data-testid=chip-icon][data-chip="3xc"]');
+      await tc.waitFor();
+      assert(((await tc.getAttribute('aria-label')) ?? '').includes('טריפל קפטן'), 'snapshot chip label');
       await preview.getByText('מחזור 9').waitFor();
       await preview.click();
       await page.locator('dialog[open] [data-testid=snapshot-sheet]').waitFor();
@@ -740,6 +863,8 @@ async function journeys(browser) {
     await mod.waitForURL('**/admin/');
     await mod.getByRole('tablist', { name: 'אזורי ניהול' }).getByRole('tab', { name: 'קהילה' }).click();
     await mod.waitForURL('**/admin/?view=community');
+    // An open report needs attention: the reports card opens by itself.
+    await mod.locator('[data-testid=admin-card][data-card="community.reports"][data-open=true]').waitFor();
     const group = mod.locator('[data-testid=reports] li', { hasText: 'פוסט בדיקה e2e' });
     await group.waitFor();
     await group.getByText('ספאם או פרסומת').waitFor();
@@ -755,6 +880,7 @@ async function journeys(browser) {
   });
 
   await step('admin bans the second fan → their composer is blocked with the notice', async () => {
+    await openCard(mod, 'community.users');
     await mod.getByTestId('users-search').fill('E2E Second');
     const row = mod.locator('[data-testid=user-row]', { hasText: 'E2E Second' });
     await row.waitFor();
@@ -803,6 +929,7 @@ async function journeys(browser) {
     await mod.getByRole('button', { name: 'כן, להסתיר' }).click();
     await card.waitFor({ state: 'detached' });
     await mod.goto(`${WEB}/admin/?view=community`);
+    await openCard(mod, 'community.hidden');
     const hidden = mod.locator('[data-testid=hidden-item]', { hasText: 'פרק 61' });
     await hidden.waitFor();
     await hidden.getByRole('button', { name: 'שחזור' }).click();
@@ -821,6 +948,7 @@ async function journeys(browser) {
     await admin.goto(`${WEB}/admin/`);
     const card = admin.getByTestId('live-update-card');
     await card.waitFor();
+    await openCard(admin, 'settings.league');
     const league = admin.getByLabel('League ID של הליגה הקלאסית');
     await league.waitFor();
     const cardBox = await card.boundingBox();
@@ -963,6 +1091,7 @@ async function journeys(browser) {
     await card.waitFor();
     await card.getByText('גול e2e').waitFor();
     await admin.goto(`${WEB}/admin/?view=broadcast`);
+    await openCard(admin, 'broadcast.history');
     const item = admin.locator('[data-testid=broadcast-history-item]', { hasText: BROADCAST_TEXT });
     await item.waitFor();
     await item.getByText('גול e2e').waitFor();
@@ -1125,6 +1254,7 @@ async function journeys(browser) {
   /** Creates an invite in the admin console and returns its link (shown once). */
   const createInvite = async (label) => {
     await admin.goto(`${WEB}/admin/`);
+    await openCard(admin, 'settings.invites');
     const form = admin.getByTestId('invite-form');
     await form.getByLabel('למי ההזמנה?').fill(label);
     await form.getByTestId('invite-create').click();
@@ -1187,6 +1317,7 @@ async function journeys(browser) {
       await host.getByRole('link', { name: 'קונסולת ניהול' }).waitFor();
       await ctx.close();
       await admin.goto(`${WEB}/admin/`);
+      await openCard(admin, 'settings.invites');
       await inviteRow('דור e2e').getByText('נוצל ע״י E2E Host').waitFor();
     },
   );
@@ -1267,6 +1398,7 @@ async function journeys(browser) {
       await reuser.waitForURL('**/admin/');
       await reuser.getByTestId('live-update-card').waitFor();
       await admin.goto(`${WEB}/admin/`);
+      await openCard(admin, 'settings.invites');
       await inviteRow('איתי e2e').getByText('נוצל ע״י E2E Reuser').waitFor();
     },
   );

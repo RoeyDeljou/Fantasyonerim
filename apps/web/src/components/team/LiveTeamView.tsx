@@ -10,9 +10,9 @@ import { ImageWithFallback, fplImage } from '../FplImages';
 import { ClockIcon, ShirtIcon, SubInIcon, SubOutIcon } from '../icons';
 import { Badge, Card, EmptyState, ErrorState, LiveDot, Num, SectionTitle, Skeleton, cx } from '../ui';
 import { BonusBadge } from './BonusBadge';
+import { ChipIcon } from './ChipIcon';
 import { Pitch } from './Pitch';
 import { PlayerSheet } from './PlayerSheet';
-import { chipName } from './TeamParts';
 import { fixtureStatusText, opponentText } from './fixtureText';
 
 /** My Team → Live: live GW points with auto-subs, provisional bonus and per-player status. */
@@ -63,7 +63,7 @@ export function LiveTeamView({
             </span>
           </div>
           <div className="flex flex-col items-end gap-1 text-end">
-            {d.activeChip && <Badge tone="accent">{chipName(t, d.activeChip)}</Badge>}
+            {d.activeChip && <ChipIcon chip={d.activeChip} withName size="md" />}
             {d.liveTotal !== null && (
               <span className="text-sm text-muted">
                 {t.live.liveTotal}: <Num value={d.liveTotal} className="font-bold text-ink" />

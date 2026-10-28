@@ -26,7 +26,7 @@ import type {
   PublicConfig,
 } from '@fant/shared';
 import { GameweekSchema } from '@fant/shared';
-import { fmt, useI18n } from '@/i18n';
+import { fmt, plural, useI18n } from '@/i18n';
 import type { Messages } from '@/i18n';
 import { isApiError } from '@/lib/api';
 import {
@@ -48,19 +48,23 @@ import {
   ArrowUpIcon,
   CheckIcon,
   ChevronDownIcon,
+  ClockIcon,
   CloseIcon,
+  GlobeIcon,
   PlusIcon,
   SearchIcon,
+  ShieldIcon,
+  ShirtIcon,
+  TableIcon,
   TrashIcon,
 } from '@/components/icons';
+import { Collapsible, MoreInfo, loadProblem, saveProblem } from '@/components/Collapsible';
 import {
   Badge,
   Button,
-  Card,
   ErrorState,
   IconButton,
   InlineError,
-  SectionTitle,
   Segmented,
   Skeleton,
   Spinner,
@@ -303,8 +307,15 @@ function LeagueCard({ server }: { server: AdminSettings }) {
       : null;
   return (
     <form onSubmit={submit} noValidate>
-      <Card className="flex flex-col gap-3">
-        <SectionTitle>{t.admin.leagueSection}</SectionTitle>
+      <Collapsible
+        id="settings.league"
+        icon={<TableIcon width={18} height={18} />}
+        title={t.admin.leagueSection}
+        tone={league ? 'success' : 'warning'}
+        summary={league ? fmt(t.adminUi.league, { id: league.id }) : t.adminUi.notSet}
+        defaultOpen={!league}
+        saveError={saveProblem(t, save)}
+      >
         <TextField
           label={t.admin.leagueId}
           hint={t.admin.leagueHelp}
@@ -338,7 +349,7 @@ function LeagueCard({ server }: { server: AdminSettings }) {
           </InlineError>
         )}
         <SaveRow label={t.admin.saveLeague} pending={save.isPending} flash={flash} />
-      </Card>
+      </Collapsible>
     </form>
   );
 }
@@ -376,10 +387,17 @@ function SocialsCard({ server }: { server: AdminSettings }) {
     save.mutate({ ...server, socials }, { onSuccess: triggerFlash });
   }
 
+  const setCount = SOCIAL_FIELDS.filter(({ key }) => server.socials[key] !== null).length;
   return (
     <form onSubmit={submit} noValidate>
-      <Card className="flex flex-col gap-3">
-        <SectionTitle>{t.admin.socialsSection}</SectionTitle>
+      <Collapsible
+        id="settings.socials"
+        icon={<GlobeIcon size={18} />}
+        title={t.admin.socialsSection}
+        tone={setCount > 0 ? 'success' : 'neutral'}
+        summary={fmt(t.adminUi.links, { n: setCount, total: SOCIAL_FIELDS.length })}
+        saveError={saveProblem(t, save)}
+      >
         {SOCIAL_FIELDS.map(({ key, label }) => (
           <TextField
             key={key}
@@ -400,7 +418,7 @@ function SocialsCard({ server }: { server: AdminSettings }) {
           <InlineError>{errorMessage(t, save.error, { bad_request: t.admin.urlInvalid })}</InlineError>
         )}
         <SaveRow label={t.admin.saveSocials} pending={save.isPending} flash={flash} />
-      </Card>
+      </Collapsible>
     </form>
   );
 }
@@ -410,6 +428,7 @@ function RemindersCard({ server }: { server: AdminSettings }) {
   const save = useSaveAdminSettings();
   const [flash, triggerFlash] = useFlash();
   const [reminders, setReminders] = useState<number[]>(() => [...server.deadlineReminderMinutes]);
+  const savedCount = server.deadlineReminderMinutes.length;
   const [error, setError] = useState<string | null>(null);
 
   function submit(e: FormEvent) {
@@ -425,13 +444,21 @@ function RemindersCard({ server }: { server: AdminSettings }) {
 
   return (
     <form onSubmit={submit} noValidate>
-      <Card className="flex flex-col gap-3">
-        <SectionTitle>{t.admin.remindersSection}</SectionTitle>
-        <p className="text-sm text-muted">{t.admin.remindersHelp}</p>
+      <Collapsible
+        id="settings.reminders"
+        icon={<ClockIcon width={18} height={18} />}
+        title={t.admin.remindersSection}
+        tone={savedCount > 0 ? 'success' : 'neutral'}
+        summary={
+          savedCount > 0 ? plural(savedCount, t.adminUi.reminderOne, t.adminUi.reminders) : t.adminUi.off
+        }
+        info={t.admin.remindersHelp}
+        saveError={saveProblem(t, save)}
+      >
         <RemindersEditor value={reminders} onChange={setReminders} error={error ?? undefined} />
         {save.isError && <InlineError>{errorMessage(t, save.error)}</InlineError>}
         <SaveRow label={t.admin.saveReminders} pending={save.isPending} flash={flash} />
-      </Card>
+      </Collapsible>
     </form>
   );
 }
@@ -671,8 +698,19 @@ function BattleForm({
 
   return (
     <form onSubmit={submit} noValidate>
-      <Card className="flex flex-col gap-3">
-        <SectionTitle>{t.admin.battleSection}</SectionTitle>
+      <Collapsible
+        id="settings.battle"
+        icon={<ShirtIcon size={18} />}
+        title={t.admin.battleSection}
+        tone={isDefault ? 'warning' : 'success'}
+        summary={
+          isDefault || initialEvent === null
+            ? t.adminUi.notSet
+            : fmt(t.adminUi.battleGw, { gw: initialEvent })
+        }
+        defaultOpen={isDefault}
+        saveError={saveProblem(t, save) ?? error}
+      >
         {isDefault && (
           <p className="rounded-xl bg-accent px-3 py-2 text-sm text-on-accent">{t.admin.defaultsNote}</p>
         )}
@@ -724,7 +762,7 @@ function BattleForm({
           </Button>
           <SaveFeedback ok={flash} />
         </div>
-      </Card>
+      </Collapsible>
       <PlayerPicker
         open={picking !== null}
         index={index}
@@ -998,7 +1036,8 @@ function AdminsSection() {
 
   let list: ReactNode;
   if (admins.isPending) list = <Skeleton className="h-24" />;
-  else if (admins.isError) list = <ErrorState error={admins.error} onRetry={() => admins.refetch()} />;
+  else if (admins.isError)
+    list = null; // shown by the card header (also while collapsed)
   else
     list = (
       <ul className="divide-y divide-line rounded-xl border border-line">
@@ -1020,8 +1059,15 @@ function AdminsSection() {
     );
 
   return (
-    <Card className="flex flex-col gap-3">
-      <SectionTitle>{t.admin.adminsSection}</SectionTitle>
+    <Collapsible
+      id="settings.admins"
+      icon={<ShieldIcon size={18} />}
+      title={t.admin.adminsSection}
+      tone={admins.isError ? 'live' : 'neutral'}
+      summary={admins.data ? plural(admins.data.length, t.adminUi.adminOne, t.adminUi.admins) : undefined}
+      error={loadProblem(t, admins)}
+      saveError={saveProblem(t, create)}
+    >
       {list}
       <details className="group border-t border-line pt-1">
         <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-semibold text-muted [&::-webkit-details-marker]:hidden">
@@ -1029,7 +1075,7 @@ function AdminsSection() {
           <ChevronDownIcon size={18} className="transition-transform group-open:rotate-180" />
         </summary>
         <form onSubmit={submit} className="flex flex-col gap-3 pt-3" noValidate>
-          <p className="text-xs text-muted">{t.invites.passwordAdminsHint}</p>
+          <MoreInfo>{t.invites.passwordAdminsHint}</MoreInfo>
           <TextField label={t.admin.adminName} value={name} onChange={(e) => setName(e.target.value)} />
           <TextField
             label={t.admin.username}
@@ -1068,6 +1114,6 @@ function AdminsSection() {
           </div>
         </form>
       </details>
-    </Card>
+    </Collapsible>
   );
 }

@@ -18,6 +18,7 @@ import type { Messages } from '@/i18n';
 import type { FplIndex } from '@/lib/queries';
 import { ChevronEndIcon, ChevronStartIcon } from '../icons';
 import { Badge, Card, IconButton, Ltr, Num, SectionTitle, Skeleton, cx } from '../ui';
+import { ChipIcon } from './ChipIcon';
 import { opponentText } from './fixtureText';
 
 export function chipName(t: Messages, chip: Chip): string {
@@ -77,11 +78,7 @@ export function TeamHeader({
           <p dir="auto" className="name-start truncate text-sm text-muted">
             {entry?.managerName ?? ''}
           </p>
-          {picks.activeChip && (
-            <Badge tone="accent" className="mt-2">
-              {chipName(t, picks.activeChip)}
-            </Badge>
-          )}
+          {picks.activeChip && <ChipIcon chip={picks.activeChip} withName size="md" className="mt-2" />}
         </div>
         <div className="flex shrink-0 flex-col items-center rounded-2xl bg-primary px-4 py-2 text-on-primary">
           <span className="text-3xl leading-none font-extrabold tabular">
@@ -124,10 +121,13 @@ export function TeamHeaderSkeleton() {
 export function GwSelector({
   value,
   max,
+  chip,
   onChange,
 }: {
   value: Gameweek;
   max: Gameweek;
+  /** The chip played in the GW shown (marked next to the GW name). */
+  chip?: Chip | null | undefined;
   onChange(gw: Gameweek): void;
 }) {
   const { t } = useI18n();
@@ -140,8 +140,9 @@ export function GwSelector({
       <IconButton label={t.myTeam.prevGw} disabled={value <= 1} onClick={() => go(value - 1)}>
         <ChevronStartIcon />
       </IconButton>
-      <span className="text-base font-bold text-ink" aria-live="polite">
+      <span className="flex items-center gap-2 text-base font-bold text-ink" aria-live="polite">
         {fmt(t.common.gw, { gw: value })}
+        {chip && <ChipIcon chip={chip} gw={value} />}
       </span>
       <IconButton label={t.myTeam.nextGw} disabled={value >= max} onClick={() => go(value + 1)}>
         <ChevronEndIcon />
@@ -168,6 +169,7 @@ type HalfState =
 export function ChipsPanel({ picks, currentGw }: { picks: EntryPicks; currentGw: Gameweek }) {
   const { t } = useI18n();
   const extra = [...new Set(picks.chipsUsed.map((c) => c.chip))].filter((c) => !MAIN_CHIPS.includes(c));
+  const used = [...picks.chipsUsed].sort((x, y) => x.event - y.event);
 
   const stateOf = (chip: Chip, half: (typeof HALVES)[number]): HalfState => {
     const use = picks.chipsUsed.find((c) => c.chip === chip && c.event >= half.from && c.event <= half.to);
@@ -200,6 +202,23 @@ export function ChipsPanel({ picks, currentGw }: { picks: EntryPicks; currentGw:
   return (
     <Card>
       <SectionTitle>{t.myTeam.chipsTitle}</SectionTitle>
+      {used.length > 0 && (
+        <ul
+          className="mb-3 flex flex-wrap gap-1.5"
+          data-testid="chips-used"
+          aria-label={t.chipIcon.usedLabel}
+        >
+          {used.map((u) => (
+            <li
+              key={`${u.chip}-${u.event}`}
+              className="inline-flex min-h-7 items-center gap-1 rounded-full bg-surface-2 ps-1 pe-2 text-xs font-semibold text-muted"
+            >
+              <ChipIcon chip={u.chip} gw={u.event} />
+              <span aria-hidden="true">{fmt(t.chipIcon.gwShort, { gw: u.event })}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <ul className="grid grid-cols-2 gap-2">
         {MAIN_CHIPS.map((chip) => {
           const states = HALVES.map((h) => stateOf(chip, h));
@@ -212,7 +231,7 @@ export function ChipsPanel({ picks, currentGw }: { picks: EntryPicks; currentGw:
                 active ? 'border-primary bg-primary-soft' : 'border-line bg-surface-2',
               )}
             >
-              <span className="text-sm font-bold text-ink">{chipName(t, chip)}</span>
+              <ChipIcon chip={chip} withName />
               {HALVES.map((h, i) => (
                 <span key={h.from} className="flex flex-col text-xs leading-tight">
                   <span className="text-[10px] text-muted">
@@ -226,7 +245,7 @@ export function ChipsPanel({ picks, currentGw }: { picks: EntryPicks; currentGw:
         })}
         {extra.map((chip) => (
           <li key={chip} className="flex flex-col gap-1 rounded-xl border border-line bg-surface-2 px-3 py-2">
-            <span className="text-sm font-bold text-ink">{chipName(t, chip)}</span>
+            <ChipIcon chip={chip} withName />
             {picks.chipsUsed
               .filter((c) => c.chip === chip)
               .map((u) => (

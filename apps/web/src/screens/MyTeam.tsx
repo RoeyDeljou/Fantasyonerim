@@ -162,7 +162,7 @@ function TeamView({
           total={live.data ? live.data.liveTotal : gw === current ? entry.data?.overallPoints : null}
         />
       )}
-      <GwSelector value={gw} max={current} onChange={onGw} />
+      <GwSelector value={gw} max={current} chip={picks.data?.activeChip} onChange={onGw} />
       {picks.isPending && <Skeleton className="h-[28rem]" />}
       {picks.isError &&
         (isApiError(picks.error, 'not_found') ? (

@@ -32,13 +32,13 @@ import {
   XBrandIcon,
 } from '@/components/icons';
 import { RelativeTime } from '@/components/news/parts';
+import { Collapsible, SectionHeading, StatusDot } from '@/components/Collapsible';
+import type { SummaryTone } from '@/components/Collapsible';
 import {
-  Badge,
   Button,
-  Card,
   ErrorState,
   InlineError,
-  SectionTitle,
+  Num,
   Skeleton,
   Spinner,
   Switch,
@@ -152,36 +152,16 @@ function statusOf(s: IntegrationStatus): Status {
   return failedLast ? 'error' : 'active';
 }
 
-function StatusChip({ status }: { status: Status }) {
-  const { t } = useI18n();
-  const map = {
-    active: { tone: 'success', label: t.integrations.statusActive },
-    disabled: { tone: 'neutral', label: t.integrations.statusDisabled },
-    needsSetup: { tone: 'warning', label: t.integrations.statusNeedsSetup },
-    error: { tone: 'live', label: t.integrations.statusError },
-  } as const;
-  const m = map[status];
-  return (
-    <Badge tone={m.tone} className="shrink-0">
-      <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
-      {m.label}
-    </Badge>
-  );
-}
-
 // ---------- screen ----------
 
 export function IntegrationsView() {
   const { t } = useI18n();
   const list = useIntegrations(true);
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="text-lg font-extrabold text-ink">{t.integrations.title}</h2>
-        <p className="text-sm text-muted">{t.integrations.intro}</p>
-      </div>
+    <div className="flex flex-col gap-3">
+      <SectionHeading title={t.integrations.title} info={t.integrations.intro} />
       {list.isPending ? (
-        ORDER.map((id) => <Skeleton key={id} className="h-44" />)
+        ORDER.map((id) => <Skeleton key={id} className="h-14" />)
       ) : list.isError ? (
         <ErrorState error={list.error} onRetry={() => list.refetch()} />
       ) : (
@@ -189,21 +169,19 @@ export function IntegrationsView() {
           .sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id))
           .map((s) => <IntegrationCard key={s.id} status={s} />)
       )}
-      <h2 className="mt-2 text-lg font-extrabold text-ink">{t.integrations.toolsTitle}</h2>
+      <SectionHeading title={t.integrations.toolsTitle} className="mt-3" />
       <AdminPushCard />
       <ManualPostCard />
     </div>
   );
 }
 
-function Stat({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col rounded-xl bg-surface-2 px-2.5 py-2">
-      <dt className="truncate text-[11px] text-muted">{label}</dt>
-      <dd className="truncate text-sm font-semibold text-ink">{children}</dd>
-    </div>
-  );
-}
+const STATUS_TONE: Record<Status, SummaryTone> = {
+  active: 'success',
+  disabled: 'neutral',
+  needsSetup: 'warning',
+  error: 'live',
+};
 
 function IntegrationCard({ status: s }: { status: IntegrationStatus }) {
   const { t } = useI18n();
@@ -212,10 +190,18 @@ function IntegrationCard({ status: s }: { status: IntegrationStatus }) {
   const sync = useSyncIntegration(s.id);
   const update = useUpdateIntegration(s.id);
   const [synced, setSynced] = useState(false);
-  const [open, setOpen] = useState(!s.configured && s.id !== 'instagram');
+  // X is a paid add-on: "not connected" is its normal state, not something to fix.
+  const paidOff = s.paidFeature && !s.configured;
+  const [open, setOpen] = useState(!s.configured && s.id !== 'instagram' && !paidOff);
   const hasForm = SETTINGS[s.id].length > 0 || SECRETS[s.id].length > 0;
   // Instagram syncs only through the OAuth connection — no "Sync now" until an account is connected.
   const igNotConnected = s.id === 'instagram' && !instagramConnected(s);
+  const statusLabel = {
+    active: it.statusActive,
+    disabled: it.statusDisabled,
+    needsSetup: it.statusNeedsSetup,
+    error: it.statusError,
+  }[status];
 
   useEffect(() => {
     if (!synced) return;
@@ -223,109 +209,130 @@ function IntegrationCard({ status: s }: { status: IntegrationStatus }) {
     return () => window.clearTimeout(id);
   }, [synced]);
 
-  return (
-    <section
-      className="flex flex-col gap-3 rounded-2xl border border-line bg-surface p-4 shadow-card"
-      data-testid="integration-card"
-      data-integration={s.id}
-    >
-      <div className="flex items-start gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-on-primary-soft">
-          {ICONS[s.id]}
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="truncate font-bold text-ink">{it[`name_${s.id}`]}</h3>
-            <StatusChip status={status} />
-          </div>
-          <p className="text-xs text-muted">{it[`desc_${s.id}`]}</p>
-        </div>
-      </div>
-
-      {s.paidFeature && (
-        <p
-          className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning-soft p-3 text-sm font-bold text-warning"
-          data-testid="x-paid-note"
-        >
-          <InfoIcon size={20} className="shrink-0" />
-          <span>{it.xPaid}</span>
-        </p>
-      )}
-
-      {s.accountLabel && (
-        <p className="text-sm text-muted">
-          {it.account}:{' '}
-          <bdi dir="auto" className="font-semibold text-ink">
-            {s.accountLabel}
-          </bdi>
-        </p>
-      )}
-
-      <dl className="grid grid-cols-3 gap-2">
-        <Stat label={it.lastSync}>{s.lastRunAt ? <RelativeTime iso={s.lastRunAt} /> : it.never}</Stat>
-        <Stat label={it.lastSuccess}>
-          {s.lastSuccessAt ? <RelativeTime iso={s.lastSuccessAt} /> : it.never}
-        </Stat>
-        <Stat label={it.itemsImported}>
-          <bdi dir="ltr" className="tabular">
-            {s.itemsImported}
-          </bdi>
-        </Stat>
-      </dl>
-
-      {s.lastError && status === 'error' && (
-        <div role="alert" className="rounded-xl border border-live/30 bg-live-soft p-3">
-          <p className="text-xs font-bold text-live">{it.lastError}</p>
-          <p dir="auto" className="mt-0.5 text-sm break-words text-ink">
+  const errorBox =
+    (s.lastError && status === 'error') || sync.isError ? (
+      <div role="alert" className="flex flex-col gap-0.5 rounded-xl bg-live-soft px-3 py-2">
+        {s.lastError && status === 'error' && (
+          <p dir="auto" className="line-clamp-3 text-sm break-words text-live">
+            <span className="font-bold">{it.lastError}: </span>
             {s.lastError}
           </p>
-        </div>
-      )}
-
-      {s.id === 'instagram' && <InstagramConnect status={s} />}
-
-      <div className="border-t border-line pt-1">
-        <Switch
-          label={it.enabledLabel}
-          checked={s.enabled}
-          disabled={update.isPending}
-          onChange={(enabled) => update.mutate({ enabled, settings: s.settings })}
-        />
+        )}
+        {sync.isError && <p className="text-sm font-semibold text-live">{apiText(t, sync.error)}</p>}
       </div>
+    ) : null;
 
-      <div className="flex flex-wrap items-center gap-2">
-        {igNotConnected ? (
-          <p className="flex items-center gap-1.5 text-sm text-muted" data-testid="ig-sync-hint">
-            <InfoIcon size={16} className="shrink-0" />
-            {it.igSyncHint}
-          </p>
-        ) : (
-          <Button
-            variant="secondary"
-            disabled={sync.isPending || !s.configured}
-            onClick={() => sync.mutate(undefined, { onSuccess: () => setSynced(true) })}
+  return (
+    <div data-testid="integration-card" data-integration={s.id} data-status={status}>
+      <Collapsible
+        id={`integrations.${s.id}`}
+        level={3}
+        icon={ICONS[s.id]}
+        title={it[`name_${s.id}`]}
+        tone={paidOff ? 'warning' : STATUS_TONE[status]}
+        summary={
+          paidOff ? (
+            t.adminUi.paid
+          ) : status === 'active' && s.lastRunAt ? (
+            <RelativeTime iso={s.lastRunAt} />
+          ) : (
+            statusLabel
+          )
+        }
+        defaultOpen={(status === 'error' || status === 'needsSetup') && !paidOff}
+        alert={errorBox}
+        saveError={update.isError ? apiText(t, update.error) : null}
+        info={it[`desc_${s.id}`]}
+      >
+        {s.paidFeature && (
+          <p
+            className="flex items-center gap-1.5 self-start rounded-xl bg-warning-soft px-3 py-1.5 text-xs font-bold text-warning"
+            data-testid="x-paid-note"
           >
-            {sync.isPending ? <Spinner /> : <RefreshIcon size={18} />}
-            {sync.isPending ? it.syncing : it.syncNow}
-          </Button>
+            <InfoIcon size={14} className="shrink-0" />
+            <span>{it.xPaid}</span>
+          </p>
         )}
-        {synced && (
-          <span role="status" className="flex items-center gap-1 text-sm font-semibold text-success">
-            <CheckIcon size={16} />
-            {it.syncDone}
+
+        <p
+          className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm text-muted"
+          data-testid="sync-line"
+        >
+          <StatusDot tone={STATUS_TONE[status]} />
+          <span className="font-semibold text-ink">{statusLabel}</span>
+          <span aria-hidden="true">·</span>
+          <span>
+            {it.lastSync}: {s.lastRunAt ? <RelativeTime iso={s.lastRunAt} /> : it.never}
           </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            <Num value={s.itemsImported} /> {t.adminUi.items}
+          </span>
+        </p>
+        {status === 'error' && (
+          <p className="-mt-2 text-xs text-muted">
+            {it.lastSuccess}: {s.lastSuccessAt ? <RelativeTime iso={s.lastSuccessAt} /> : it.never}
+          </p>
         )}
-        {hasForm && (
-          <Button variant="ghost" className="ms-auto" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-            {it.settingsToggle}
-            <ChevronDownIcon size={18} className={cx('transition-transform', open && 'rotate-180')} />
-          </Button>
+
+        {s.accountLabel && (
+          <p className="text-sm text-muted">
+            {it.account}:{' '}
+            <bdi dir="auto" className="font-semibold text-ink">
+              {s.accountLabel}
+            </bdi>
+          </p>
         )}
-      </div>
-      {sync.isError && <InlineError>{apiText(t, sync.error)}</InlineError>}
-      {update.isError && !open && <InlineError>{apiText(t, update.error)}</InlineError>}
-      {open && hasForm && <SettingsForm status={s} />}
-    </section>
+
+        {s.id === 'instagram' && <InstagramConnect status={s} />}
+
+        <div className="border-t border-line pt-1">
+          <Switch
+            label={it.enabledLabel}
+            checked={s.enabled}
+            disabled={update.isPending}
+            onChange={(enabled) => update.mutate({ enabled, settings: s.settings })}
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {igNotConnected ? (
+            <p className="flex items-center gap-1.5 text-sm text-muted" data-testid="ig-sync-hint">
+              <InfoIcon size={16} className="shrink-0" />
+              {it.igSyncHint}
+            </p>
+          ) : (
+            <Button
+              variant="secondary"
+              disabled={sync.isPending || !s.configured}
+              onClick={() => sync.mutate(undefined, { onSuccess: () => setSynced(true) })}
+            >
+              {sync.isPending ? <Spinner /> : <RefreshIcon size={18} />}
+              {sync.isPending ? it.syncing : it.syncNow}
+            </Button>
+          )}
+          {synced && (
+            <span role="status" className="flex items-center gap-1 text-sm font-semibold text-success">
+              <CheckIcon size={16} />
+              {it.syncDone}
+            </span>
+          )}
+          {hasForm && (
+            <Button
+              variant="ghost"
+              className="ms-auto"
+              aria-expanded={open}
+              onClick={() => setOpen((o) => !o)}
+            >
+              {it.settingsToggle}
+              <ChevronDownIcon size={18} className={cx('transition-transform', open && 'rotate-180')} />
+            </Button>
+          )}
+        </div>
+        {update.isError && !open && <InlineError>{apiText(t, update.error)}</InlineError>}
+        {open && hasForm && <SettingsForm status={s} />}
+      </Collapsible>
+    </div>
   );
 }
 
@@ -600,14 +607,15 @@ function AdminPushCard() {
 
   return (
     <form onSubmit={submit} noValidate>
-      <Card className="flex flex-col gap-3">
-        <SectionTitle>
-          <span className="flex items-center gap-2">
-            <SendIcon size={18} className="text-primary" />
-            {it.pushTitle}
-          </span>
-        </SectionTitle>
-        <p className="-mt-2 text-xs text-muted">{it.pushNote}</p>
+      <Collapsible
+        id="integrations.push"
+        level={3}
+        icon={<SendIcon size={18} />}
+        title={it.pushTitle}
+        summary={t.adminUi.toEveryone}
+        info={it.pushNote}
+        saveError={push.isError ? apiText(t, push.error) : null}
+      >
         <TextField
           label={it.pushTitleField}
           value={title}
@@ -639,7 +647,7 @@ function AdminPushCard() {
           {push.isPending ? <Spinner /> : <SendIcon size={18} />}
           {it.pushSubmit}
         </Button>
-      </Card>
+      </Collapsible>
       <BottomSheet open={confirm} onClose={() => setConfirm(false)} title={it.pushConfirm}>
         <div className="flex flex-col gap-3">
           <div className="rounded-xl bg-surface-2 p-3">
@@ -729,17 +737,15 @@ function ManualPostCard() {
 
   return (
     <form onSubmit={submit} noValidate>
-      <Card className="flex flex-col gap-3 border-dashed shadow-none">
-        <SectionTitle>
-          <span className="flex items-center gap-2">
-            <MegaphoneIcon size={18} className="text-muted" />
-            {it.manualTitle}
-          </span>
-        </SectionTitle>
-        <p className="-mt-2 flex items-center gap-1.5 text-xs text-muted">
-          <InfoIcon size={14} />
-          {it.manualNote}
-        </p>
+      <Collapsible
+        id="integrations.manual"
+        level={3}
+        icon={<MegaphoneIcon size={18} />}
+        title={it.manualTitle}
+        summary={t.adminUi.fallback}
+        info={it.manualNote}
+        saveError={post.isError ? apiText(t, post.error) : null}
+      >
         <TextField
           label={it.manualTitleField}
           value={title}
@@ -771,7 +777,7 @@ function ManualPostCard() {
             </span>
           )}
         </div>
-      </Card>
+      </Collapsible>
     </form>
   );
 }

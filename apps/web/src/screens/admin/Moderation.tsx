@@ -18,6 +18,7 @@ import { BottomSheet } from '@/components/BottomSheet';
 import {
   BanIcon,
   CheckIcon,
+  CommunityIcon,
   EyeOffIcon,
   FlagIcon,
   ImageIcon,
@@ -28,14 +29,13 @@ import {
 } from '@/components/icons';
 import { AuthorAvatar, AuthorLine } from '@/components/community/parts';
 import { MediaImage, RelativeTime } from '@/components/news/parts';
+import { Collapsible, loadProblem, saveProblem } from '@/components/Collapsible';
 import {
   Badge,
   Button,
   Card,
   EmptyState,
-  ErrorState,
   InlineError,
-  Num,
   Skeleton,
   Spinner,
   TextField,
@@ -62,24 +62,27 @@ function ReportsSection({ onDone }: { onDone(msg: string): void }) {
   const { t } = useI18n();
   const m = t.moderation;
   const reports = useAdminReports(true);
+  const n = reports.data?.length ?? 0;
   return (
-    <section className="flex flex-col gap-3" aria-labelledby="mod-reports">
-      <div>
-        <h2 id="mod-reports" className="flex items-center gap-2 text-lg font-extrabold text-ink">
-          {m.reportsTitle}
-          {reports.data && reports.data.length > 0 && (
-            <Badge tone="live">
-              <Num value={reports.data.length} />
-            </Badge>
-          )}
-        </h2>
-        <p className="text-sm text-muted">{m.reportsBody}</p>
-      </div>
+    <Collapsible
+      id="community.reports"
+      icon={<FlagIcon size={18} />}
+      title={m.reportsTitle}
+      tone={n > 0 ? 'live' : 'success'}
+      summary={
+        reports.data
+          ? n > 0
+            ? plural(n, t.adminUi.openReportOne, t.adminUi.openReports)
+            : t.adminUi.noReports
+          : undefined
+      }
+      defaultOpen={n > 0}
+      error={loadProblem(t, reports)}
+      info={m.reportsBody}
+    >
       {reports.isPending ? (
         <Skeleton className="h-40" />
-      ) : reports.isError ? (
-        <ErrorState error={reports.error} onRetry={() => reports.refetch()} />
-      ) : reports.data.length === 0 ? (
+      ) : reports.isError ? null : reports.data.length === 0 ? (
         <EmptyState icon={<CheckIcon width={28} height={28} />} title={m.reportsEmpty} />
       ) : (
         <ul className="flex flex-col gap-3" data-testid="reports">
@@ -90,7 +93,7 @@ function ReportsSection({ onDone }: { onDone(msg: string): void }) {
           ))}
         </ul>
       )}
-    </section>
+    </Collapsible>
   );
 }
 
@@ -256,10 +259,12 @@ function UsersSection({ onDone }: { onDone(msg: string): void }) {
   const [target, setTarget] = useState<AdminUser | null>(null);
 
   return (
-    <section className="flex flex-col gap-3" aria-labelledby="mod-users">
-      <h2 id="mod-users" className="text-lg font-extrabold text-ink">
-        {m.usersTitle}
-      </h2>
+    <Collapsible
+      id="community.users"
+      icon={<CommunityIcon size={18} />}
+      title={m.usersTitle}
+      error={loadProblem(t, users)}
+    >
       <div className="relative">
         <TextField
           label={m.usersSearch}
@@ -273,9 +278,7 @@ function UsersSection({ onDone }: { onDone(msg: string): void }) {
       </div>
       {users.isPending ? (
         <Skeleton className="h-32" />
-      ) : users.isError ? (
-        <ErrorState error={users.error} onRetry={() => users.refetch()} />
-      ) : users.data.length === 0 ? (
+      ) : users.isError ? null : users.data.length === 0 ? (
         <p className="py-4 text-center text-sm text-muted">{m.usersEmpty}</p>
       ) : (
         <ul
@@ -328,7 +331,7 @@ function UsersSection({ onDone }: { onDone(msg: string): void }) {
         </ul>
       )}
       <BanSheet user={target} onClose={() => setTarget(null)} onDone={onDone} />
-    </section>
+    </Collapsible>
   );
 }
 
@@ -470,20 +473,27 @@ function HiddenNewsSection({ onDone }: { onDone(msg: string): void }) {
       admin_update: t.news.sourceAdmin,
     })[s];
 
+  const n = hidden.data?.items.length ?? 0;
   return (
-    <section className="flex flex-col gap-3" aria-labelledby="mod-hidden">
-      <div>
-        <h2 id="mod-hidden" className="flex items-center gap-2 text-lg font-extrabold text-ink">
-          <EyeOffIcon size={20} className="text-muted" />
-          {m.hiddenTitle}
-        </h2>
-        <p className="text-sm text-muted">{m.hiddenBody}</p>
-      </div>
+    <Collapsible
+      id="community.hidden"
+      icon={<EyeOffIcon size={18} />}
+      title={m.hiddenTitle}
+      tone={n > 0 ? 'warning' : 'neutral'}
+      summary={
+        hidden.data
+          ? n > 0
+            ? plural(n, t.adminUi.hiddenOne, t.adminUi.hidden)
+            : t.adminUi.noneHidden
+          : undefined
+      }
+      error={loadProblem(t, hidden)}
+      saveError={saveProblem(t, restore)}
+      info={m.hiddenBody}
+    >
       {hidden.isPending ? (
         <Skeleton className="h-24" />
-      ) : hidden.isError ? (
-        <ErrorState error={hidden.error} onRetry={() => hidden.refetch()} />
-      ) : hidden.data.items.length === 0 ? (
+      ) : hidden.isError ? null : hidden.data.items.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-line py-6 text-center text-sm text-muted">
           {m.hiddenEmpty}
         </p>
@@ -532,6 +542,6 @@ function HiddenNewsSection({ onDone }: { onDone(msg: string): void }) {
         </ul>
       )}
       {restore.isError && <InlineError>{errorMessage(t, restore.error)}</InlineError>}
-    </section>
+    </Collapsible>
   );
 }

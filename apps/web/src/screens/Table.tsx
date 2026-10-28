@@ -9,6 +9,7 @@ import { useConfig, useFplIndex, useLivePollInterval, useMe, useStandings } from
 import { useQueryParam } from '@/lib/useQueryParam';
 import { AppShell, ShellSkeleton } from '@/components/AppShell';
 import { ArrowDownIcon, ArrowUpIcon, ClockIcon, DotIcon, TableIcon } from '@/components/icons';
+import { ChipIcon } from '@/components/team/ChipIcon';
 import { ManagerSheet } from '@/components/team/ManagerSheet';
 import {
   Button,
@@ -138,8 +139,11 @@ function TableInner() {
                     <Movement rank={r.rank} lastRank={r.lastRank} />
                   </span>
                   <span className="flex min-w-0 flex-col">
-                    <span dir="auto" className="name-start truncate font-semibold text-ink">
-                      {r.entryName}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span dir="auto" className="name-start min-w-0 truncate font-semibold text-ink">
+                        {r.entryName}
+                      </span>
+                      {r.activeChip && <ChipIcon chip={r.activeChip} />}
                     </span>
                     <span dir="auto" className="name-start truncate text-xs text-muted">
                       {r.managerName}

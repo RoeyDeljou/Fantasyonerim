@@ -191,12 +191,15 @@ export function MediaImage({
   className,
   loading = 'lazy',
   fallback,
+  onLoad,
 }: {
   src: string;
   alt: string;
   className?: string;
   loading?: 'lazy' | 'eager';
   fallback?: ReactNode;
+  /** Gets the loaded element (e.g. to read its natural size). */
+  onLoad?: ((img: HTMLImageElement) => void) | undefined;
 }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
@@ -209,6 +212,7 @@ export function MediaImage({
       decoding="async"
       draggable={false}
       onError={() => setFailed(true)}
+      onLoad={onLoad ? (e) => onLoad(e.currentTarget) : undefined}
       className={className}
     />
   );

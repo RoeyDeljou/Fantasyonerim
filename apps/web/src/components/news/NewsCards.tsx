@@ -138,6 +138,11 @@ function CardFrame({
 
 type Platform = 'spotify' | 'apple';
 
+/** Wider than this (w/h) = an episode thumbnail (16:9), shown full width instead of as a square tile. */
+const WIDE_COVER = 1.2;
+/** Very wide art still gets a sensible height. */
+const MAX_COVER_RATIO = 2;
+
 /**
  * No in-app audio (owner decision): every listen happens on Spotify / Apple so it counts in their creator
  * stats. "Listen" opens the only available platform directly, the remembered one, or a chooser sheet.
@@ -146,7 +151,17 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
   const { t, f } = useI18n();
   const pref = useListenPref();
   const [choosing, setChoosing] = useState(false);
-  const cover = item.media.find((m) => m.kind === 'image')?.url ?? item.media[0]?.posterUrl ?? null;
+  const coverMedia = item.media.find((m) => m.kind === 'image');
+  const cover = coverMedia?.url ?? item.media[0]?.posterUrl ?? null;
+  // Episode art is either the square show cover or a 16:9 episode thumbnail. Wide art gets its own
+  // full-width box at its real aspect ratio (object-contain: faces and text are never cropped).
+  const knownRatio =
+    coverMedia?.url === cover && coverMedia.width && coverMedia.height
+      ? coverMedia.width / coverMedia.height
+      : null;
+  const [loadedRatio, setLoadedRatio] = useState<number | null>(null);
+  const ratio = knownRatio ?? loadedRatio;
+  const wide = ratio !== null && ratio > WIDE_COVER;
   const n = item.podcast?.episodeNumber ?? null;
   const duration = item.podcast?.durationSec ?? null;
   const title = episodeTitle(item.title ?? item.text ?? '', n);
@@ -167,13 +182,38 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
   const headerShowsDate = now === 0 || relativeParts(item.publishedAt, now) === null;
   const showDuration = duration !== null && duration > 0;
 
-  const coverEl = (
-    <div className="relative size-24 shrink-0 overflow-hidden rounded-2xl bg-accent shadow-card">
+  const coverEl = wide ? (
+    <div
+      className="relative w-full overflow-hidden rounded-2xl bg-surface-2 shadow-card"
+      style={{ aspectRatio: String(Math.min(ratio ?? 16 / 9, MAX_COVER_RATIO)) }}
+      data-testid="episode-cover"
+      data-shape="wide"
+    >
+      <MediaImage src={cover ?? ''} alt={t.news.cover} className="size-full object-contain" />
+    </div>
+  ) : (
+    <div
+      className="relative size-24 shrink-0 overflow-hidden rounded-2xl bg-accent shadow-card"
+      data-testid="episode-cover"
+      data-shape="square"
+    >
       {cover ? (
         <MediaImage
           src={cover}
           alt={t.news.cover}
-          className="size-full object-cover"
+          // A square box: square covers fill it; anything else is contained, never cropped.
+          className={cx(
+            'size-full',
+            ratio === null || Math.abs(ratio - 1) < 0.05 ? 'object-cover' : 'object-contain',
+          )}
+          onLoad={
+            knownRatio === null
+              ? (img) => {
+                  if (img.naturalWidth && img.naturalHeight)
+                    setLoadedRatio(img.naturalWidth / img.naturalHeight);
+                }
+              : undefined
+          }
           fallback={<img src="/brand/logo-320.png" alt="" className="size-full object-cover" />}
         />
       ) : (
@@ -181,23 +221,25 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
       )}
     </div>
   );
+  const coverButton = canListen ? (
+    <button
+      type="button"
+      onClick={listen}
+      aria-label={`${t.listen.listen}: ${title}`}
+      className={cx('rounded-2xl', wide && 'w-full')}
+    >
+      {coverEl}
+    </button>
+  ) : (
+    coverEl
+  );
 
   return (
     <CardFrame item={item} highlighted={highlighted}>
       <CardHeader item={item} isAdmin={isAdmin} />
+      {wide && coverButton}
       <div className="flex gap-3">
-        {canListen ? (
-          <button
-            type="button"
-            onClick={listen}
-            aria-label={`${t.listen.listen}: ${title}`}
-            className="rounded-2xl"
-          >
-            {coverEl}
-          </button>
-        ) : (
-          coverEl
-        )}
+        {!wide && coverButton}
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           {n !== null && (
             <Badge tone="accent" className="self-start">

@@ -6,7 +6,8 @@ import { fmt, useI18n } from '@/i18n';
 import { isApiError } from '@/lib/api';
 import { useChangePassword, useMe } from '@/lib/queries';
 import { EyeIcon, EyeOffIcon, KeyIcon } from '@/components/icons';
-import { Button, Card, InlineError, Skeleton, Spinner, Toast, cx, errorMessage } from '@/components/ui';
+import { Collapsible, MoreInfo } from '@/components/Collapsible';
+import { Button, InlineError, Skeleton, Spinner, Toast, cx, errorMessage } from '@/components/ui';
 
 /** Mirrors `ChangePasswordBodySchema` (packages/shared/src/broadcast.ts). */
 const NEW_MIN = 10;
@@ -74,22 +75,18 @@ export function AccountView() {
   if (me.isPending) return <Skeleton className="h-72" />;
   if (noPassword) {
     return (
-      <Card className="flex flex-col gap-2">
-        <div className="flex items-start gap-3" data-testid="no-password">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-on-primary-soft">
-            <KeyIcon size={20} />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-lg font-extrabold text-ink">{a.noPassword}</h2>
-            {me.data && (
-              <p className="text-sm text-muted">
-                <bdi dir="auto">{fmt(a.signedInAs, { name: me.data.name })}</bdi>
-              </p>
-            )}
-          </div>
+      // The only card in this section: open by default.
+      <Collapsible id="account.main" icon={<KeyIcon size={18} />} title={a.view} defaultOpen>
+        <div className="flex flex-col gap-1" data-testid="no-password">
+          <p className="font-bold text-ink">{a.noPassword}</p>
+          {me.data && (
+            <p className="text-sm text-muted">
+              <bdi dir="auto">{fmt(a.signedInAs, { name: me.data.name })}</bdi>
+            </p>
+          )}
         </div>
-        <p className="text-sm text-muted">{a.noPasswordBody}</p>
-      </Card>
+        <MoreInfo>{a.noPasswordBody}</MoreInfo>
+      </Collapsible>
     );
   }
 
@@ -97,21 +94,20 @@ export function AccountView() {
     <>
       <Toast message={toast} tone="success" ms={5000} onDone={clearToast} />
       <form onSubmit={submit} noValidate data-testid="password-form">
-        <Card className="flex flex-col gap-4">
-          <div className="flex items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-on-primary-soft">
-              <KeyIcon size={20} />
-            </span>
-            <div className="min-w-0">
-              <h2 className="text-lg font-extrabold text-ink">{a.title}</h2>
-              {me.data && (
-                <p className="text-sm text-muted">
-                  <bdi dir="auto">{fmt(a.signedInAs, { name: me.data.name })}</bdi>
-                </p>
-              )}
-            </div>
-          </div>
-          <p className="-mt-1 text-sm text-muted">{a.intro}</p>
+        {/* The only card in this section: open by default. */}
+        <Collapsible
+          id="account.password"
+          icon={<KeyIcon size={18} />}
+          title={a.title}
+          defaultOpen
+          info={a.intro}
+          saveError={otherError}
+        >
+          {me.data && (
+            <p className="-mt-1 text-sm text-muted">
+              <bdi dir="auto">{fmt(a.signedInAs, { name: me.data.name })}</bdi>
+            </p>
+          )}
           <PasswordField
             label={a.current}
             autoComplete="current-password"
@@ -154,7 +150,7 @@ export function AccountView() {
             {change.isPending && <Spinner />}
             {a.submit}
           </Button>
-        </Card>
+        </Collapsible>
       </form>
     </>
   );
