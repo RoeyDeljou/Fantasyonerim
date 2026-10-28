@@ -5,6 +5,7 @@ export {
   normalizeTitle,
   episodeNumberFromTitle,
   titleKeys,
+  tidyPlainText,
 } from './text.js';
 export type { NormalizeTitleOptions } from './text.js';
 export {
@@ -23,7 +24,7 @@ export {
   resolveEpisodeLinks,
   createPodcastSource,
 } from './podcast-links.js';
-export type { PlatformEpisode, PodcastSourceConfig } from './podcast-links.js';
+export type { PlatformEpisode, PodcastSourceConfig, MatchEpisodesOptions } from './podcast-links.js';
 export { createAppleLinkResolver, parseApplePodcastId, APPLE_LOOKUP_URL } from './apple.js';
 export type { AppleLinkResolverConfig } from './apple.js';
 export {
@@ -73,3 +74,43 @@ export type { XTimelineConfig, XUser, XPublisherConfig } from './x.js';
 export { xWeightedLength, X_MAX_WEIGHTED_LENGTH, X_URL_WEIGHT } from './x-text.js';
 export { oauth1Header, oauth1Signature, rfc3986 } from './oauth1.js';
 export type { OAuth1Credentials, OAuth1SignInput } from './oauth1.js';
+export {
+  YOUTUBE_BASE_URL,
+  YOUTUBE_FEED_URL,
+  YOUTUBE_DEDUPE_PREFIX,
+  YOUTUBE_CHANNEL_ID_PATTERN,
+  YOUTUBE_VIDEO_ID_PATTERN,
+  YOUTUBE_MAX_CLASSIFY_REQUESTS,
+  parseYouTubeChannel,
+  extractYouTubeChannelId,
+  resolveYouTubeChannelId,
+  resolveYouTubeChannel,
+  parseYouTubeFeed,
+  fetchYouTubeFeed,
+  probeYouTubeShort,
+  classifyYouTubeVideos,
+  clearYouTubeKindCache,
+  splitTrailingHashtags,
+  youTubeDraft,
+  youTubeThumbnail,
+  youTubeWatchUrl,
+  youTubeShortUrl,
+  youTubeVideoIdFromUrl,
+  youTubeVideoRefFromDraft,
+  createYouTubeSource,
+  createYouTubeLinkResolver,
+  matchYouTubeEpisodes,
+  isEpisodeVideo,
+} from './youtube.js';
+export type {
+  YouTubeChannelRef,
+  YouTubeVideo,
+  YouTubeVideoKind,
+  ClassifiedYouTubeVideo,
+  YouTubeKindCache,
+  YouTubeSourceConfig,
+  YouTubeLinkResolverConfig,
+  YouTubeMatchOptions,
+  YouTubeVideoRef,
+  YouTubeEpisodeRef,
+} from './youtube.js';

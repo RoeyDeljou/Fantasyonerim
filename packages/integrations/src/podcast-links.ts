@@ -12,7 +12,7 @@ import type {
 } from './types.js';
 
 /**
- * Returns new drafts with the resolved Spotify/Apple links filled in (existing non-null links are kept;
+ * Returns new drafts with the resolved Spotify/Apple/YouTube links filled in (existing non-null links are kept;
  * a resolved link never overwrites a different one already present). Pure — inputs are not mutated.
  */
 export function mergePodcastLinks(
@@ -22,12 +22,15 @@ export function mergePodcastLinks(
   return drafts.map((draft) => {
     const found = resolved.get(draft.dedupeKey);
     if (found === undefined) return draft;
+    const youtube = draft.links.youtube ?? found.youtube ?? null;
     return {
       ...draft,
       links: {
         ...draft.links,
         spotify: draft.links.spotify ?? found.spotify ?? null,
         apple: draft.links.apple ?? found.apple ?? null,
+        // `youtube` is optional in the contract: only present once some link is known.
+        ...(youtube === null ? {} : { youtube }),
       },
     };
   });
@@ -56,6 +59,19 @@ export interface PlatformEpisode {
 
 const HOUR = 3_600_000;
 
+export interface MatchEpisodesOptions {
+  /**
+   * Tier 4 (date alone). Default true. YouTube turns it off: there a wrong match would hide a real,
+   * unrelated video from the feed (see `isEpisodeVideo`), which is worse than a missing link.
+   */
+  allowDateOnly?: boolean;
+  /**
+   * Title tiers: reject a pair whose episode numbers are both known and differ ("פרק 64 - X" vs
+   * "פרק 65 - X"). Default false (Spotify/Apple behaviour unchanged); YouTube turns it on.
+   */
+  rejectConflictingNumbers?: boolean;
+}
+
 /**
  * Matches RSS episodes to platform episodes, most reliable signal first:
  *   1. GUID (Apple exposes the RSS guid);
@@ -64,13 +80,15 @@ const HOUR = 3_600_000;
  *   4. date alone, only when it is unambiguous: exactly one unmatched platform episode within 12 h of the
  *      RSS episode, and that RSS episode is the only unmatched one within 12 h of it. Platform episodes
  *      that carry a GUID (Apple) or a different episode number in their title never match on date.
- * Pass every recent episode (not just the unresolved one) so tier 4 can see its rivals.
+ * Pass every recent episode (not just the unresolved one) so tier 4 can see its rivals (tier 4 can be
+ * turned off with `allowDateOnly: false`).
  * Each platform episode is used at most once.
  */
 export function matchEpisodes(
   refs: readonly EpisodeRef[],
   candidates: readonly PlatformEpisode[],
   maxDateDistanceMs = 48 * HOUR,
+  opts: MatchEpisodesOptions = {},
 ): Map<string, string> {
   const result = new Map<string, string>();
   const used = new Set<PlatformEpisode>();
@@ -98,7 +116,12 @@ export function matchEpisodes(
       if (result.has(ref.dedupeKey)) continue;
       const key = titleKeys(ref.title)[keyIndex] ?? titleKeys(ref.title)[0];
       if (key === undefined || key === '') continue;
-      const options = (byTitle.get(key) ?? []).filter((ep) => !used.has(ep));
+      const options = (byTitle.get(key) ?? []).filter((ep) => {
+        if (used.has(ep)) return false;
+        if (opts.rejectConflictingNumbers !== true || ref.episodeNumber === null) return true;
+        const n = episodeNumberFromTitle(ep.title);
+        return n === null || n === ref.episodeNumber;
+      });
       // Same title twice (e.g. "Trailer"): take the one closest in time.
       const best = closest(options, ref.publishedAt);
       if (best !== undefined) take(ref, best);
@@ -117,6 +140,7 @@ export function matchEpisodes(
     if (best !== undefined) take(ref, best);
   }
 
+  if (opts.allowDateOnly === false) return result;
   const dateWindow = 12 * HOUR;
   const unmatchedRefs = refs.filter((r) => !result.has(r.dedupeKey));
   for (const ref of unmatchedRefs) {
@@ -153,7 +177,7 @@ function closest(options: readonly PlatformEpisode[], at: Date): PlatformEpisode
 }
 
 export interface PodcastSourceConfig extends PodcastRssConfig {
-  /** Spotify / Apple resolvers that are configured; each one failing only adds a warning. */
+  /** Spotify / Apple / YouTube resolvers that are configured; each one failing only adds a warning. */
   resolvers: readonly PodcastLinkResolver[];
 }
 

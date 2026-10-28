@@ -142,3 +142,66 @@ export function episodeTitle(title: string, episodeNumber: number | null): strin
   const stripped = title.replace(re, '').trim();
   return stripped || title;
 }
+
+// ---------- YouTube ----------
+
+const YT_ID = /^[A-Za-z0-9_-]{11}$/;
+const YT_HOST = /^(?:www\.|m\.|music\.)?(?:youtube\.com|youtube-nocookie\.com)$/i;
+
+/**
+ * The 11-character video id from a YouTube link: `youtube.com/shorts/<id>`, `watch?v=<id>`, `youtu.be/<id>`,
+ * `/embed/<id>`, `/live/<id>` (www./m. hosts too). Anything else → null.
+ */
+export function youtubeVideoId(input: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(input.trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  const host = u.hostname.toLowerCase();
+  const parts = u.pathname.split('/').filter(Boolean);
+  let id: string | null | undefined = null;
+  if (host === 'youtu.be') id = parts[0];
+  else if (YT_HOST.test(host)) {
+    if (parts[0] === 'watch') id = u.searchParams.get('v');
+    else if (parts[0] === 'shorts' || parts[0] === 'embed' || parts[0] === 'live' || parts[0] === 'v')
+      id = parts[1];
+  }
+  return id && YT_ID.test(id) ? id : null;
+}
+
+/** The official privacy-enhanced player, autoplaying inline (only ever loaded after the user taps play). */
+export function youtubeEmbedUrl(id: string): string {
+  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0`;
+}
+
+/** YouTube's own thumbnail, for items synced without re-hosted media. */
+export function youtubeThumbnailUrl(id: string): string {
+  return `https://i.ytimg.com/vi/${encodeURIComponent(id)}/hqdefault.jpg`;
+}
+
+/**
+ * Normalizes the admin's "YouTube channel" input: `@handle` / `youtube.com/@handle` → `@handle`,
+ * `youtube.com/channel/UC…` / bare `UC…` → the channel id, `youtube.com/c/<name>` / `/user/<name>` → the full
+ * URL (the server resolves it). null = not a channel.
+ */
+export function youtubeChannel(input: string): string | null {
+  const v = input.trim();
+  if (/^UC[A-Za-z0-9_-]{22}$/.test(v)) return v;
+  if (/^@[\w.-]{3,30}$/.test(v)) return v;
+  let u: URL;
+  try {
+    u = new URL(/^https?:\/\//i.test(v) ? v : `https://${v}`);
+  } catch {
+    return null;
+  }
+  if (!YT_HOST.test(u.hostname)) return null;
+  const [first, second] = u.pathname.split('/').filter(Boolean);
+  if (first && /^@[\w.-]{3,30}$/.test(decodeURIComponent(first))) return decodeURIComponent(first);
+  if (first === 'channel' && second && /^UC[A-Za-z0-9_-]{22}$/.test(second)) return second;
+  if ((first === 'c' || first === 'user') && second && /^[\w.-]{1,100}$/.test(second))
+    return `https://www.youtube.com/${first}/${second}`;
+  return null;
+}

@@ -43,11 +43,33 @@ function externalIdOf(dedupeKey: string): string {
   return raw.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 120) || 'item';
 }
 
+/**
+ * MediaStore folder per platform. YouTube keys include the source: a video reclassified as a Short gets a new
+ * thumbnail at a NEW url (re-hosted files are cached as immutable).
+ */
+function mediaBase(draft: NewsItemDraft): string {
+  const id = externalIdOf(draft.dedupeKey);
+  return draft.dedupeKey.startsWith('youtube:') ? `youtube/${id}/${draft.source}` : `instagram/${id}`;
+}
+
+/** The main rendition, else its `fallback` (YouTube: hq720/oar2 aren't generated for every upload). */
+async function downloadWithFallback(deps: IngestDeps, m: MediaDraft) {
+  try {
+    return { file: await downloadMedia(deps.fetch, m.sourceUrl, m.kind), sourceUrl: m.sourceUrl, ...dims(m) };
+  } catch (err) {
+    const fb = m.fallback ?? null;
+    if (fb === null) throw err;
+    const file = await downloadMedia(deps.fetch, fb.sourceUrl, m.kind);
+    return { file, sourceUrl: fb.sourceUrl, width: fb.width, height: fb.height };
+  }
+}
+
 async function rehostMedia(deps: IngestDeps, draft: NewsItemDraft): Promise<MediaRow[]> {
-  const base = `instagram/${externalIdOf(draft.dedupeKey)}`;
+  const base = mediaBase(draft);
   const rows: MediaRow[] = [];
   for (const [n, m] of draft.media.entries()) {
-    const file = await downloadMedia(deps.fetch, m.sourceUrl, m.kind);
+    const got = await downloadWithFallback(deps, m);
+    const file = got.file;
     const storageKey = `${base}/${n}.${file.ext}`;
     const url = await deps.media.put(storageKey, file.bytes, file.contentType);
     let posterUrl: string | null = null;
@@ -58,12 +80,13 @@ async function rehostMedia(deps: IngestDeps, draft: NewsItemDraft): Promise<Medi
       posterUrl = await deps.media.put(posterKey, poster.bytes, poster.contentType);
     }
     rows.push({
-      ...dims(m),
+      width: got.width,
+      height: got.height,
       order: n,
       kind: m.kind,
       url,
       posterUrl,
-      sourceUrl: m.sourceUrl,
+      sourceUrl: got.sourceUrl,
       storageKey,
       posterKey,
     });
@@ -97,6 +120,7 @@ function mergeLinks(existing: NewsLinks, incoming: NewsLinks): NewsLinks {
     x: incoming.x ?? existing.x,
     audio: incoming.audio ?? existing.audio,
     web: incoming.web ?? existing.web ?? null,
+    youtube: incoming.youtube ?? existing.youtube ?? null,
   };
 }
 
@@ -169,6 +193,9 @@ export async function ingestDrafts(
 
       const links = mergeLinks(readLinks(existing.links), draft.links);
       const data: Prisma.NewsItemUpdateInput = {};
+      // A source can be reclassified (a YouTube upload first listed as a video turns out to be a Short).
+      const reclassified = existing.source !== draft.source;
+      if (reclassified) data.source = draft.source;
       if (existing.title !== draft.title) data.title = draft.title;
       if (existing.text !== draft.text) data.text = draft.text;
       if (!sameJson(readLinks(existing.links), links)) data.links = links;
@@ -180,7 +207,9 @@ export async function ingestDrafts(
       if (options.rehost) {
         // Re-hosted media never changes after publishing (CDN URLs rotate on every poll, so don't compare
         // them) — only retry when nothing was stored.
-        if (existing.media.length === 0 && draft.media.length > 0) media = await rehostMedia(deps, draft);
+        if ((existing.media.length === 0 || reclassified) && draft.media.length > 0) {
+          media = await rehostMedia(deps, draft);
+        }
       } else if (
         // A per-episode thumbnail (jobs/episodeThumbnails.ts) replaced the feed's show cover: keep it.
         existing.thumbnailStatus !== 'found' &&

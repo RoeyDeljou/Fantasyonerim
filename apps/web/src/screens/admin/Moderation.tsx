@@ -471,6 +471,8 @@ function HiddenNewsSection({ onDone }: { onDone(msg: string): void }) {
       instagram_story: t.news.sourceInstagram,
       x_post: t.news.sourceX,
       admin_update: t.news.sourceAdmin,
+      youtube_short: t.news.sourceYoutube,
+      youtube_video: t.news.sourceYoutube,
     })[s];
 
   const n = hidden.data?.items.length ?? 0;

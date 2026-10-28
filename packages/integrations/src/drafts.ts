@@ -8,6 +8,14 @@ const MediaDraftSchema = z.object({
   posterSourceUrl: z.string().url().nullable(),
   width: z.number().int().positive().nullable(),
   height: z.number().int().positive().nullable(),
+  fallback: z
+    .object({
+      sourceUrl: z.string().url(),
+      width: z.number().int().positive().nullable(),
+      height: z.number().int().positive().nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 
 /** Final gate: every draft leaving this package satisfies the `@fant/shared` News contract. */

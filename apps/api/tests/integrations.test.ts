@@ -123,6 +123,7 @@ describe('integration settings', () => {
       ['apple', true, true, false],
       ['instagram', false, false, false],
       ['x', false, false, true],
+      ['youtube', true, true, false],
     ]);
     const byId = Object.fromEntries(rows.map((r) => [r.id, r.settings]));
     expect(byId).toEqual({
@@ -131,6 +132,7 @@ describe('integration settings', () => {
       apple: { podcastId: '1819558192' },
       instagram: { igUserId: null, username: null, pageId: null },
       x: { username: 'fantasyonerim', userId: null },
+      youtube: { channel: 'https://www.youtube.com/@Fantasyonerim', channelId: 'UCGjQpoCQcIMtirSjDW1IfxA' },
     });
   });
 

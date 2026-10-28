@@ -181,6 +181,34 @@ export function integrationRoutes(app: FastifyInstance, ctx: AppContext, auth: A
         }
         if (usernameChanged) data.cursor = null;
       }
+      if (id === 'youtube') {
+        const channel = settings['channel'];
+        const channelChanged = channel !== current.settings['channel'];
+        if (channelChanged || !settings['channelId']) {
+          delete settings['channelId'];
+          if (channel) {
+            // Resolve now: without the UC… id nothing can be polled, so a failed lookup is a 400 (nothing saved).
+            try {
+              const resolved = await ctx.integrations.resolveYouTubeChannel(channel, ctx.integrationCtx);
+              settings['channelId'] = resolved.channelId;
+              data.accountLabel = resolved.handle === null ? resolved.channelId : `@${resolved.handle}`;
+            } catch (err) {
+              if (isConfigError(err)) {
+                throw badRequest(`settings.channel: ${describeIntegrationError('youtube', err)}`);
+              }
+              throw badRequest(
+                `settings.channel: couldn't look up this channel from the server — paste the channel id (UC…, ` +
+                  `from youtube.com/channel/UC…) instead. (${describeIntegrationError('youtube', err)})`,
+              );
+            }
+          }
+        }
+        if (channelChanged) {
+          // A different channel: start over, and backfill it silently (no push flood).
+          data.cursor = null;
+          data.initialSyncDone = false;
+        }
+      }
       if (id === 'podcast_rss' && settings['rssUrl'] !== current.settings['rssUrl']) data.cursor = null;
 
       data.settings = settings;

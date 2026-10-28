@@ -16,6 +16,7 @@ export const EMPTY_LINKS: NewsLinks = {
   apple: null,
   instagram: null,
   x: null,
+  youtube: null,
   audio: null,
   web: null,
 };
@@ -31,6 +32,8 @@ export function readLinks(json: unknown): NewsLinks {
     x: l.x ?? null,
     audio: l.audio ?? null,
     web: l.web ?? null,
+    // Episodes' "Watch on YouTube" video / the YouTube item itself; null when unknown.
+    youtube: l.youtube ?? null,
   };
 }
 

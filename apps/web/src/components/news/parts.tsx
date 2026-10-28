@@ -152,15 +152,19 @@ export function ExternalButton({
   children,
   tone = 'soft',
   className,
+  ...data
 }: {
   href: string;
   icon: ReactNode;
   children: ReactNode;
   tone?: 'soft' | 'outline' | 'primary';
   className?: string | undefined;
+  'data-testid'?: string;
+  'data-platform'?: string;
 }) {
   return (
     <a
+      {...data}
       href={href}
       target="_blank"
       rel="noopener noreferrer"

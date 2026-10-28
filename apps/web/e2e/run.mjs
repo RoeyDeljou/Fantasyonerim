@@ -1,4 +1,4 @@
-/* global document, window, navigator, caches, Event, PromiseRejectionEvent */
+/* global document, window, navigator, caches, Event, PromiseRejectionEvent, getComputedStyle */
 // End-to-end suite for the web app: real apps/api (FPL_MODE=demo) + the static export, driven by Playwright.
 //
 //   npm run e2e -w @fant/web
@@ -105,6 +105,56 @@ function seedNews() {
     INSERT INTO "NewsMedia"(id,"itemId","order",kind,url,"posterUrl",width,height,"sourceUrl") VALUES
     ('e2e_story_m', 'e2e_story', 0, 'image', '${WEB}/icons/icon-512.png', NULL, 512, 512, 'e2e');`;
   run('psql', [DATABASE_URL, '-v', 'ON_ERROR_STOP=1', '-q', '-c', sql]);
+}
+
+// YouTube fixtures. apps/api (demo mode) doesn't serve YouTube items yet, so they are injected into the user
+// context's GET /v1/news responses (first page only) — the episode gets a YouTube link, plus one Short and one
+// regular video. Real data: Shorts thumbnails are 1080×1920, videos 1280×720.
+const YT = {
+  episodeUrl: 'https://www.youtube.com/watch?v=zDzFZbqJUa0',
+  short: { id: 'e2e_yt_short', videoId: 'uf2qPDejzuk', url: 'https://www.youtube.com/shorts/uf2qPDejzuk' },
+  video: { id: 'e2e_yt_video', videoId: 'zDzFZbqJUa0', url: 'https://www.youtube.com/watch?v=zDzFZbqJUa0' },
+};
+function ytItem(source, v, title, hoursAgo, w, h) {
+  return {
+    id: v.id,
+    source,
+    title,
+    text: null,
+    media: [{ kind: 'image', url: `${WEB}/icons/icon-512.png`, posterUrl: null, width: w, height: h }],
+    links: { spotify: null, apple: null, instagram: null, x: null, youtube: v.url, audio: null, web: null },
+    podcast: null,
+    publishedAt: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
+    expiresAt: null,
+  };
+}
+async function injectYouTube(ctx) {
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/news',
+    async (r) => {
+      if (r.request().method() !== 'GET' || new URL(r.request().url()).searchParams.get('cursor')) {
+        return r.continue();
+      }
+      const res = await r.fetch();
+      const body = await res.json();
+      const items = body.items.map((i) =>
+        i.id === EP.both.id ? { ...i, links: { ...i.links, youtube: YT.episodeUrl } } : i,
+      );
+      items.push(
+        ytItem(
+          'youtube_short',
+          YT.short,
+          'שורט e2e: הקפטן של השבוע ומה עושים עם הצ׳יפים שנשארו לנו עד סוף העונה',
+          3,
+          1080,
+          1920,
+        ),
+        ytItem('youtube_video', YT.video, 'סרטון e2e', 50, 1280, 720),
+      );
+      items.sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
+      await r.fulfill({ response: res, json: { ...body, items } });
+    },
+  );
 }
 
 /** A throwaway VAPID pair so /v1/push/vapid-public-key answers (P-256, base64url). */
@@ -317,8 +367,13 @@ async function newContext(browser) {
   // Image CDNs are irrelevant to behaviour and may be unreachable in CI.
   await ctx.route(/premierleague\.com/, (r) => r.abort());
   // Listening happens on Spotify / Apple: their pages are never loaded in e2e, only the navigation is checked.
-  await ctx.route(/open\.spotify\.com|podcasts\.apple\.com|instagram\.com/, (r) =>
-    r.fulfill({ status: 200, contentType: 'text/html', body: '<title>external</title>' }),
+  await ctx.route(
+    /open\.spotify\.com|podcasts\.apple\.com|instagram\.com|youtube\.com\/(watch|shorts)/,
+    (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<title>external</title>' }),
+  );
+  // The inline player: the embed URL is asserted, the real player isn't loaded.
+  await ctx.route(/youtube-nocookie\.com|ytimg\.com/, (r) =>
+    r.fulfill({ status: 200, contentType: 'text/html', body: '<title>youtube embed</title>' }),
   );
   return ctx;
 }
@@ -370,6 +425,7 @@ async function slowApi(page, ms) {
 async function journeys(browser) {
   let recoveryCode = '';
   const user = await newContext(browser);
+  await injectYouTube(user);
   const page = await user.newPage();
   watch(page, 'user');
   const leagueCalls = [];
@@ -431,7 +487,10 @@ async function journeys(browser) {
       await sheet.getByText('Spotify').waitFor();
       const hrefs = await sheet.locator('a').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
       assert(
-        hrefs.length === 2 && hrefs[0] === EP.both.spotify && hrefs[1] === EP.both.apple,
+        hrefs.length === 3 &&
+          hrefs[0] === EP.both.spotify &&
+          hrefs[1] === EP.both.apple &&
+          hrefs[2] === YT.episodeUrl,
         `listen sheet hrefs: ${hrefs.join(', ')}`,
       );
       await page.keyboard.press('Escape');
@@ -446,6 +505,91 @@ async function journeys(browser) {
       assert(tab.url() === EP.apple.apple, `opened ${tab.url()}`);
       await tab.close();
       assert(!(await page.locator('dialog[open]').count()), 'no sheet for a single platform');
+    },
+  );
+
+  await step('episode card shows Spotify, Apple and YouTube buttons that fit at 390px', async () => {
+    const buttons = page.locator(`#news-${EP.both.id} [data-testid=platform-buttons] a`);
+    const platforms = await buttons.evaluateAll((as) => as.map((a) => a.getAttribute('data-platform')));
+    assert(platforms.join(',') === 'spotify,apple,youtube', `platform buttons: ${platforms.join(',')}`);
+    const yt = page.locator(`#news-${EP.both.id} [data-platform=youtube]`);
+    await yt.getByText('צפייה ביוטיוב').waitFor();
+    assert((await yt.getAttribute('href')) === YT.episodeUrl, 'episode YouTube href');
+    assert((await yt.getAttribute('target')) === '_blank', 'YouTube opens in a new tab');
+    for (const b of await buttons.all()) {
+      const box = await b.boundingBox();
+      assert(box && box.height >= 44 && box.x >= 0 && box.x + box.width <= 390, 'button fits, 44px tall');
+    }
+    const opened = user.waitForEvent('page');
+    await yt.click();
+    const tab = await opened;
+    await tab.waitForLoadState('domcontentloaded').catch(() => undefined);
+    assert(tab.url() === YT.episodeUrl, `opened ${tab.url()}`);
+    await tab.close();
+    await noHorizontalScroll(page, 'episode with 3 platforms');
+  });
+
+  await step(
+    'a YouTube Short is 9:16 and plays inline through the nocookie embed, one at a time',
+    async () => {
+      const card = page.locator(`#news-${YT.short.id}`);
+      await card.scrollIntoViewIfNeeded();
+      await card.getByText('YouTube').first().waitFor();
+      const player = card.getByTestId('youtube-player');
+      const box = await player.boundingBox();
+      assert(
+        box && Math.abs(box.width / box.height - 9 / 16) < 0.02,
+        `short ratio ${box?.width}x${box?.height}`,
+      );
+      const title = card.getByTestId('youtube-title');
+      const th = await title.evaluate((el) => {
+        const lh = parseFloat(getComputedStyle(el).lineHeight);
+        return { h: el.getBoundingClientRect().height, lh };
+      });
+      assert(th.h <= th.lh * 2 + 1, `short title clamped to 2 lines (${th.h} > 2×${th.lh})`);
+      assert((await page.locator('iframe').count()) === 0, 'no iframe before the tap');
+      const open = card.getByTestId('open-in-youtube');
+      await open.getByText('פתיחה ביוטיוב').waitFor();
+      assert((await open.getAttribute('href')) === YT.short.url, 'short Open in YouTube href');
+      await player.click();
+      const iframe = card.locator('iframe');
+      await iframe.waitFor();
+      const src = (await iframe.getAttribute('src')) ?? '';
+      assert(
+        src === `https://www.youtube-nocookie.com/embed/${YT.short.videoId}?autoplay=1&playsinline=1&rel=0`,
+        `short embed src ${src}`,
+      );
+      const allow = (await iframe.getAttribute('allow')) ?? '';
+      assert(
+        /autoplay/.test(allow) && /encrypted-media/.test(allow) && /picture-in-picture/.test(allow),
+        allow,
+      );
+      assert((await iframe.getAttribute('allowfullscreen')) !== null, 'allowfullscreen');
+      const after = await card.getByTestId('youtube-player').boundingBox();
+      assert(after && Math.abs(after.width / after.height - 9 / 16) < 0.02, 'player keeps 9:16');
+
+      // The regular video is 16:9; starting it unloads the Short's iframe.
+      const vcard = page.locator(`#news-${YT.video.id}`);
+      await vcard.scrollIntoViewIfNeeded();
+      const vplayer = vcard.getByTestId('youtube-player');
+      const vbox = await vplayer.boundingBox();
+      assert(
+        vbox && Math.abs(vbox.width / vbox.height - 16 / 9) < 0.03,
+        `video ratio ${vbox?.width}x${vbox?.height}`,
+      );
+      assert(
+        (await vcard.getByTestId('open-in-youtube').getAttribute('href')) === YT.video.url,
+        'video Open in YouTube href',
+      );
+      await vplayer.click();
+      await vcard.locator('iframe').waitFor();
+      assert(
+        ((await vcard.locator('iframe').getAttribute('src')) ?? '').includes(`/embed/${YT.video.videoId}?`),
+        'video embed src',
+      );
+      assert((await page.locator('iframe').count()) === 1, 'only one YouTube player at a time');
+      assert((await card.locator('iframe').count()) === 0, 'the Short was unloaded');
+      await noHorizontalScroll(page, 'news with YouTube');
     },
   );
 
@@ -660,13 +804,21 @@ async function journeys(browser) {
     await ctx.close();
   });
 
-  await step('admin Integrations lists all five sources with the X paid-feature note', async () => {
+  await step('admin Integrations lists all six sources with the X paid-feature note', async () => {
     await admin.goto(`${WEB}/admin/?view=integrations`);
     await admin.getByTestId('integration-card').first().waitFor();
     const ids = await admin
       .getByTestId('integration-card')
       .evaluateAll((cs) => cs.map((c) => c.getAttribute('data-integration')));
-    assert(ids.join(',') === 'podcast_rss,apple,spotify,instagram,x', `cards: ${ids.join(',')}`);
+    assert(ids.join(',') === 'podcast_rss,apple,spotify,youtube,instagram,x', `cards: ${ids.join(',')}`);
+    const yt = await openCard(admin, 'integrations.youtube');
+    // Configured by default, so its settings form starts collapsed.
+    const toggle = yt.getByRole('button', { name: 'הגדרות', exact: true });
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+    const channel = yt.getByLabel('ערוץ יוטיוב');
+    await channel.waitFor();
+    assert((await channel.getAttribute('placeholder')) === 'youtube.com/@channel', 'channel placeholder');
+    await yt.getByTestId('sync-line').waitFor();
     await openCard(admin, 'integrations.x');
     await admin
       .locator('[data-integration=x] [data-testid=x-paid-note]')

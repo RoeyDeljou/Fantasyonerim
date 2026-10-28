@@ -419,6 +419,14 @@ export const ApplePodcastsIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** YouTube: a play triangle in a rounded rectangle (outline, theme colour). */
+export const YouTubeIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="2.5" y="5.5" width="19" height="13" rx="4" />
+    <path d="M10.2 9.4v5.2l4.5-2.6-4.5-2.6Z" fill="currentColor" />
+  </Svg>
+);
+
 export const HeartIcon = ({ filled = false, ...p }: IconProps & { filled?: boolean }) => (
   <Svg {...p} fill={filled ? 'currentColor' : 'none'}>
     <path d="M12 20s-7.5-4.6-9.2-9.3C1.6 7.3 3.9 4 7.3 4c2 0 3.5 1.1 4.7 2.8C13.2 5.1 14.7 4 16.7 4c3.4 0 5.7 3.3 4.5 6.7C19.5 15.4 12 20 12 20Z" />

@@ -373,6 +373,7 @@ describe('failures, leases and the cron tick', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().ran).toEqual([
       'podcast',
+      'youtube',
       'instagram_stories',
       'instagram_posts',
       'x',
@@ -418,7 +419,7 @@ describe('failures, leases and the cron tick', () => {
   it('runs a job only when due; the tick reports what ran', async () => {
     const tick = () =>
       app.inject({ method: 'POST', url: '/internal/jobs/tick', headers: { 'x-cron-secret': CRON } });
-    expect((await tick()).json().ran).toHaveLength(7);
+    expect((await tick()).json().ran).toHaveLength(8);
     expect((await tick()).json().ran).toEqual([]);
     clock.advance(5 * 60_000);
     expect((await tick()).json().ran).toEqual(['podcast', 'instagram_stories', 'deadline_reminders']);

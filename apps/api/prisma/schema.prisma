@@ -138,6 +138,7 @@ enum IntegrationId {
   apple
   instagram
   x
+  youtube
 }
 
 /// One row per News item. `dedupeKey` (e.g. "podcast:<guid>", "instagram:<media id>") makes every poll
@@ -145,7 +146,7 @@ enum IntegrationId {
 model NewsItem {
   id                 String    @id @default(cuid())
   dedupeKey          String    @unique
-  /// NewsSource: podcast | instagram_post | instagram_story | x_post | admin_update
+  /// NewsSource: podcast | instagram_post | instagram_story | x_post | admin_update | youtube_short | youtube_video
   source             String
   title              String?
   text               String?

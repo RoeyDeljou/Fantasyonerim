@@ -36,6 +36,8 @@ export function newsCopy(locale: Locale, source: NewsSource, items: readonly New
           instagram_story: `${n} סטוריז חדשים מ${BRAND.he}`,
           x_post: `${n} פוסטים חדשים ב-X`,
           admin_update: `${n} עדכונים חדשים מ${BRAND.he}`,
+          youtube_short: `▶️ ${n} שורטס חדשים ביוטיוב`,
+          youtube_video: `▶️ ${n} סרטונים חדשים ביוטיוב`,
         }[source]
       : {
           podcast: `🎙️ ${n} new episodes`,
@@ -43,6 +45,8 @@ export function newsCopy(locale: Locale, source: NewsSource, items: readonly New
           instagram_story: `${n} new stories from ${BRAND.en}`,
           x_post: `${n} new posts on X`,
           admin_update: `${n} new updates from ${BRAND.en}`,
+          youtube_short: `▶️ ${n} new Shorts on YouTube`,
+          youtube_video: `▶️ ${n} new videos on YouTube`,
         }[source];
     const body = snippet(first.title ?? first.text) || (he ? 'פתחו את הפיד' : 'Open the feed');
     return { title, body };
@@ -65,6 +69,16 @@ export function newsCopy(locale: Locale, source: NewsSource, items: readonly New
       };
     case 'x_post':
       return { title: he ? 'פוסט חדש ב-X' : 'New post on X', body: snippet(first.text) || BRAND[locale] };
+    case 'youtube_short':
+      return {
+        title: he ? '▶️ שורט חדש ביוטיוב' : '▶️ New Short on YouTube',
+        body: snippet(first.title ?? first.text) || BRAND[locale],
+      };
+    case 'youtube_video':
+      return {
+        title: he ? '▶️ סרטון חדש ביוטיוב' : '▶️ New on YouTube',
+        body: snippet(first.title ?? first.text) || BRAND[locale],
+      };
     case 'admin_update':
       return {
         title: first.title ?? (he ? `עדכון מ${BRAND.he}` : `Update from ${BRAND.en}`),

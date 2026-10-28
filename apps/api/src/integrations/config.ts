@@ -1,4 +1,9 @@
-import { parseApplePodcastId, parseSpotifyShowId, parseXUsername } from '@fant/integrations';
+import {
+  parseApplePodcastId,
+  parseSpotifyShowId,
+  parseXUsername,
+  parseYouTubeChannel,
+} from '@fant/integrations';
 import { IntegrationIdSchema, type IntegrationId } from '@fant/shared';
 
 /**
@@ -8,6 +13,10 @@ import { IntegrationIdSchema, type IntegrationId } from '@fant/shared';
 
 /** The Instagram account the OAuth connect flow must prefer (NOT pod_fantasyonerim). */
 export const EXPECTED_INSTAGRAM_USERNAME = 'fantasyonerimfpl';
+
+/** The client's YouTube channel, pre-resolved so it works out of the box (no admin step, no lookup). */
+export const CLIENT_YOUTUBE_CHANNEL = 'https://www.youtube.com/@Fantasyonerim';
+export const CLIENT_YOUTUBE_CHANNEL_ID = 'UCGjQpoCQcIMtirSjDW1IfxA';
 
 export type SettingNormalizer = (
   value: string,
@@ -123,6 +132,26 @@ export const INTEGRATIONS: Readonly<Record<IntegrationId, IntegrationDefinition>
     secretKeys: ['bearerToken', 'apiKey', 'apiSecret', 'accessToken', 'accessSecret'],
     paidFeature: true,
     isConfigured: (s, secrets) => has(s, 'username', 'userId') && has(secrets, 'bearerToken'),
+  },
+  youtube: {
+    id: 'youtube',
+    platform: 'YouTube',
+    defaultEnabled: true,
+    defaultSettings: { channel: CLIENT_YOUTUBE_CHANNEL, channelId: CLIENT_YOUTUBE_CHANNEL_ID },
+    editable: {
+      channel: (value) =>
+        parseYouTubeChannel(value) === null
+          ? {
+              ok: false,
+              message:
+                'must be the YouTube channel: @handle, a youtube.com/@handle or /channel/UC… link, or the UC… id',
+            }
+          : { ok: true, value: value.trim() },
+    },
+    readOnly: ['channelId'],
+    secretKeys: [],
+    paidFeature: false,
+    isConfigured: (s) => has(s, 'channelId'),
   },
 };
 

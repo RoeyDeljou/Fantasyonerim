@@ -21,6 +21,17 @@ export interface MediaDraft {
   posterSourceUrl: string | null;
   width: number | null;
   height: number | null;
+  /**
+   * A smaller rendition that always exists, to re-host when `sourceUrl` can't be downloaded (YouTube:
+   * `oar2.jpg` / `hq720.jpg` are not generated for every upload; `hqdefault.jpg` always is).
+   */
+  fallback?: MediaFallback | null;
+}
+
+export interface MediaFallback {
+  sourceUrl: string;
+  width: number | null;
+  height: number | null;
 }
 
 export interface NewsItemDraft {
@@ -122,12 +133,18 @@ export interface EpisodeRef {
   episodeNumber: number | null;
 }
 
-/** Links found by resolvers, keyed by `EpisodeRef.dedupeKey`. */
-export type ResolvedPodcastLinks = Map<string, { spotify?: string; apple?: string }>;
+/** Platforms that can add a link to an RSS episode. */
+export type PodcastLinkPlatform = 'spotify' | 'apple' | 'youtube';
 
-/** Resolves platform links for episodes. Spotify/Apple may list an episode minutes–hours after RSS. */
+/** Links found by resolvers, keyed by `EpisodeRef.dedupeKey`. */
+export type ResolvedPodcastLinks = Map<string, Partial<Record<PodcastLinkPlatform, string>>>;
+
+/**
+ * Resolves platform links for episodes. Spotify/Apple may list an episode minutes–hours after RSS;
+ * YouTube (the full-episode video) can come even later.
+ */
 export interface PodcastLinkResolver {
-  readonly platform: 'spotify' | 'apple';
+  readonly platform: PodcastLinkPlatform;
   /** Keyed by `EpisodeRef.dedupeKey`; episodes not (yet) listed on the platform are simply absent. */
   resolve(episodes: readonly EpisodeRef[]): Promise<ResolvedPodcastLinks>;
 }

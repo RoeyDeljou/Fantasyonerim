@@ -12,6 +12,10 @@ export const NewsSourceSchema = z.enum([
   'instagram_story',
   'x_post',
   'admin_update',
+  /** A YouTube Short (vertical, ≤ 60 s). */
+  'youtube_short',
+  /** A regular YouTube upload that isn't a podcast episode (episodes get a YouTube link on their card instead). */
+  'youtube_video',
 ]);
 export type NewsSource = z.infer<typeof NewsSourceSchema>;
 
@@ -31,6 +35,8 @@ export const NewsLinksSchema = z.object({
   apple: z.string().url().nullable(),
   instagram: z.string().url().nullable(),
   x: z.string().url().nullable(),
+  /** Watch on YouTube: the matching video for an episode, or the video/short itself. */
+  youtube: z.string().url().nullable().optional(),
   /** Direct audio enclosure from the podcast RSS. Stored only — never played in the app (client decision). */
   audio: z.string().url().nullable(),
   /** Generic link (admin updates), rendered as an "open link" button. */
@@ -135,7 +141,7 @@ export const AdminPushResultSchema = z.object({ recipients: z.number().int(), de
 export type AdminPushResult = z.infer<typeof AdminPushResultSchema>;
 
 // ---------- admin: integrations ----------
-export const IntegrationIdSchema = z.enum(['podcast_rss', 'spotify', 'apple', 'instagram', 'x']);
+export const IntegrationIdSchema = z.enum(['podcast_rss', 'spotify', 'apple', 'instagram', 'x', 'youtube']);
 export type IntegrationId = z.infer<typeof IntegrationIdSchema>;
 
 export const IntegrationStatusSchema = z.object({
@@ -171,7 +177,7 @@ export const IntegrationUpdateBodySchema = z.object({
   enabled: z.boolean(),
   /**
    * Non-secret settings. podcast_rss: rssUrl · spotify: showId · apple: podcastId · x: username (userId resolved
-   * server-side) · instagram: set by OAuth (igUserId, username, pageId).
+   * server-side) · youtube: channel (handle, channel URL or UC… id; channelId resolved server-side) · instagram: set by OAuth (igUserId, username, pageId).
    */
   settings: z.record(z.string(), z.string().trim().max(500).nullable()),
   /**

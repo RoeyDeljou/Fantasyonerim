@@ -8,7 +8,7 @@ import { fmt, useI18n } from '@/i18n';
 import type { Messages } from '@/i18n';
 import { navigateExternal } from '@/lib/external';
 import { api, isApiError } from '@/lib/api';
-import { applePodcastId, expiresWithin, spotifyShowId, xUsername } from '@/lib/newsFormat';
+import { applePodcastId, expiresWithin, spotifyShowId, xUsername, youtubeChannel } from '@/lib/newsFormat';
 import {
   useAdminPush,
   useDisconnectInstagram,
@@ -30,6 +30,7 @@ import {
   SendIcon,
   SpotifyIcon,
   XBrandIcon,
+  YouTubeIcon,
 } from '@/components/icons';
 import { RelativeTime } from '@/components/news/parts';
 import { Collapsible, SectionHeading, StatusDot } from '@/components/Collapsible';
@@ -49,7 +50,7 @@ import {
 
 type I = Messages['integrations'];
 
-const ORDER: readonly IntegrationId[] = ['podcast_rss', 'apple', 'spotify', 'instagram', 'x'];
+const ORDER: readonly IntegrationId[] = ['podcast_rss', 'apple', 'spotify', 'youtube', 'instagram', 'x'];
 const EXPECTED_IG = 'fantasyonerimfpl';
 
 const ICONS: Record<IntegrationId, ReactNode> = {
@@ -58,6 +59,7 @@ const ICONS: Record<IntegrationId, ReactNode> = {
   spotify: <SpotifyIcon size={20} />,
   instagram: <CameraIcon size={20} />,
   x: <XBrandIcon size={18} />,
+  youtube: <YouTubeIcon size={20} />,
 };
 
 interface FieldDef {
@@ -120,6 +122,16 @@ const SETTINGS: Record<IntegrationId, readonly FieldDef[]> = {
       placeholder: '@Fantasyonerim',
     },
   ],
+  youtube: [
+    {
+      key: 'channel',
+      label: 'youtubeChannel',
+      help: 'youtubeChannelHelp',
+      parse: youtubeChannel,
+      invalid: 'invalidChannel',
+      placeholder: 'youtube.com/@channel',
+    },
+  ],
 };
 
 const SECRETS: Record<IntegrationId, ReadonlyArray<{ key: string; label: keyof I }>> = {
@@ -137,6 +149,7 @@ const SECRETS: Record<IntegrationId, ReadonlyArray<{ key: string; label: keyof I
     { key: 'accessToken', label: 'accessToken' },
     { key: 'accessSecret', label: 'accessSecret' },
   ],
+  youtube: [],
 };
 
 type Status = 'active' | 'disabled' | 'needsSetup' | 'error';
@@ -403,7 +416,7 @@ function SettingsForm({ status: s }: { status: IntegrationStatus }) {
           label={it[f.label]}
           hint={f.help ? it[f.help] : undefined}
           dir="ltr"
-          inputMode={f.key === 'podcastId' ? 'url' : undefined}
+          inputMode={f.key === 'podcastId' || f.key === 'channel' ? 'url' : undefined}
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}

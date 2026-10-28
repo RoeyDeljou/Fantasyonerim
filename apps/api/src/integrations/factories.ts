@@ -8,9 +8,12 @@ import {
   createSpotifyLinkResolver,
   createXPublisher,
   createXSource,
+  createYouTubeLinkResolver,
+  createYouTubeSource,
   fetchSpotifyEpisodeThumbnail,
   resolveEpisodeLinks,
   resolveXUser,
+  resolveYouTubeChannel,
 } from '@fant/integrations';
 
 /**
@@ -30,6 +33,9 @@ export interface IntegrationFactories {
   resolveXUser: typeof resolveXUser;
   createXPublisher: typeof createXPublisher;
   fetchSpotifyEpisodeThumbnail: typeof fetchSpotifyEpisodeThumbnail;
+  resolveYouTubeChannel: typeof resolveYouTubeChannel;
+  createYouTubeSource: typeof createYouTubeSource;
+  createYouTubeLinkResolver: typeof createYouTubeLinkResolver;
 }
 
 export const realIntegrations: IntegrationFactories = {
@@ -45,4 +51,7 @@ export const realIntegrations: IntegrationFactories = {
   resolveXUser,
   createXPublisher,
   fetchSpotifyEpisodeThumbnail,
+  resolveYouTubeChannel,
+  createYouTubeSource,
+  createYouTubeLinkResolver,
 };

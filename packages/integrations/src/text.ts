@@ -124,3 +124,21 @@ export function titleKeys(title: string): string[] {
   const stripped = normalizeTitle(title, { stripEpisodePrefix: true });
   return full === stripped || stripped === '' ? [full] : [full, stripped];
 }
+
+/**
+ * Already-plain text (YouTube descriptions, captions) → tidy plain text: line endings normalized,
+ * trailing whitespace per line removed, at most one blank line between paragraphs, trimmed.
+ * Line breaks are kept (unlike `htmlToPlainText`, where source newlines are insignificant).
+ * Returns null when nothing is left.
+ */
+export function tidyPlainText(input: string | null | undefined): string | null {
+  if (input === null || input === undefined) return null;
+  const s = input
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[ \t\u00a0]+$/u, ''))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return s === '' ? null : s;
+}

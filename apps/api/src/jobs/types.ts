@@ -6,6 +6,7 @@ export type JobName =
   | 'instagram_posts'
   | 'instagram_stories'
   | 'x'
+  | 'youtube'
   | 'deadline_reminders'
   | 'gameweek_summary'
   | 'cleanup';

@@ -4,9 +4,16 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import type { NewsItem } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
+import type { Messages } from '@/i18n';
 import { openExternal } from '@/lib/external';
 import { setListenPref, useListenPref } from '@/lib/localState';
-import { episodeTitle, formatDuration, relativeParts } from '@/lib/newsFormat';
+import {
+  episodeTitle,
+  formatDuration,
+  relativeParts,
+  youtubeThumbnailUrl,
+  youtubeVideoId,
+} from '@/lib/newsFormat';
 import { useHideNews } from '@/lib/queries';
 import { BottomSheet } from '@/components/BottomSheet';
 import { Logo } from '@/components/AppShell';
@@ -22,10 +29,12 @@ import {
   SpotifyIcon,
   XBrandIcon,
   ExternalIcon,
+  YouTubeIcon,
 } from '@/components/icons';
 import { Badge, Button, IconButton, InlineError, Spinner, cx, errorMessage } from '@/components/ui';
 import { MediaCarousel, MediaGrid } from './Media';
 import { ExpandableText, ExternalButton, MediaImage, RelativeTime, useNow } from './parts';
+import { YouTubePlayer } from './YouTube';
 
 type FeedSource = Exclude<NewsItem['source'], 'instagram_story'>;
 
@@ -34,6 +43,8 @@ const SOURCE_ICON: Record<FeedSource, ReactNode> = {
   instagram_post: <CameraIcon size={12} strokeWidth={2.4} />,
   x_post: <XBrandIcon size={11} />,
   admin_update: <MegaphoneIcon size={12} strokeWidth={2.4} />,
+  youtube_short: <YouTubeIcon size={12} strokeWidth={2.4} />,
+  youtube_video: <YouTubeIcon size={12} strokeWidth={2.4} />,
 };
 
 function CardHeader({ item, isAdmin }: { item: NewsItem; isAdmin: boolean }) {
@@ -44,6 +55,8 @@ function CardHeader({ item, isAdmin }: { item: NewsItem; isAdmin: boolean }) {
     instagram_post: t.news.sourceInstagram,
     x_post: t.news.sourceX,
     admin_update: t.news.sourceAdmin,
+    youtube_short: t.news.sourceYoutube,
+    youtube_video: t.news.sourceYoutube,
   }[source];
   return (
     <header className="flex items-center gap-2.5">
@@ -136,7 +149,13 @@ function CardFrame({
 
 // ---------- podcast ----------
 
-type Platform = 'spotify' | 'apple';
+type Platform = 'spotify' | 'apple' | 'youtube';
+
+function PlatformIcon({ platform, size }: { platform: Platform; size: number }) {
+  if (platform === 'spotify') return <SpotifyIcon size={size} />;
+  if (platform === 'apple') return <ApplePodcastsIcon size={size} />;
+  return <YouTubeIcon size={size} />;
+}
 
 /** Wider than this (w/h) = an episode thumbnail (16:9), shown full width instead of as a square tile. */
 const WIDE_COVER = 1.2;
@@ -144,8 +163,8 @@ const WIDE_COVER = 1.2;
 const MAX_COVER_RATIO = 2;
 
 /**
- * No in-app audio (owner decision): every listen happens on Spotify / Apple so it counts in their creator
- * stats. "Listen" opens the only available platform directly, the remembered one, or a chooser sheet.
+ * No in-app audio (owner decision): every listen happens on Spotify / Apple / YouTube so it counts in their
+ * creator stats. "Listen" opens the only available platform directly, the remembered one, or a chooser sheet.
  */
 function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
   const { t, f } = useI18n();
@@ -168,6 +187,7 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
   const links: Array<{ platform: Platform; url: string }> = [];
   if (item.links.spotify) links.push({ platform: 'spotify', url: item.links.spotify });
   if (item.links.apple) links.push({ platform: 'apple', url: item.links.apple });
+  if (item.links.youtube) links.push({ platform: 'youtube', url: item.links.youtube });
 
   const listen = () => {
     const only = links.length === 1 ? links[0] : undefined;
@@ -275,15 +295,17 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
             <HeadphonesIcon size={20} />
             {t.listen.listen}
           </Button>
-          <div className="grid grid-cols-2 gap-2">
-            {links.map((l) => (
+          {/* Two per row; an odd last button (only one, or YouTube as the third) spans the full width. */}
+          <div className="grid grid-cols-2 gap-2" data-testid="platform-buttons">
+            {links.map((l, i) => (
               <ExternalButton
                 key={l.platform}
                 href={l.url}
-                icon={l.platform === 'spotify' ? <SpotifyIcon size={18} /> : <ApplePodcastsIcon size={18} />}
-                className={links.length === 1 ? 'col-span-2' : undefined}
+                icon={<PlatformIcon platform={l.platform} size={18} />}
+                className={i === links.length - 1 && links.length % 2 === 1 ? 'col-span-2' : undefined}
+                data-platform={l.platform}
               >
-                {l.platform === 'spotify' ? t.socials.spotify : t.socials.apple}
+                {platformLabel(t, l.platform, 'button')}
               </ExternalButton>
             ))}
           </div>
@@ -300,6 +322,12 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
       <ListenSheet open={choosing} onClose={() => setChoosing(false)} links={links} title={title} />
     </CardFrame>
   );
+}
+
+function platformLabel(t: Messages, p: Platform, where: 'button' | 'sheet'): string {
+  if (p === 'spotify') return t.socials.spotify;
+  if (p === 'apple') return t.socials.apple;
+  return where === 'button' ? t.listen.watchOnYoutube : t.socials.youtube;
 }
 
 function ListenSheet({
@@ -338,9 +366,9 @@ function ListenSheet({
             className="flex min-h-16 items-center gap-3 rounded-2xl border border-line bg-surface-2 px-4 text-base font-bold text-ink hover:bg-surface-3"
           >
             <span className="flex size-10 items-center justify-center rounded-full bg-primary text-on-primary">
-              {l.platform === 'spotify' ? <SpotifyIcon size={22} /> : <ApplePodcastsIcon size={22} />}
+              <PlatformIcon platform={l.platform} size={22} />
             </span>
-            <span className="flex-1">{l.platform === 'spotify' ? t.socials.spotify : t.socials.apple}</span>
+            <span className="flex-1">{platformLabel(t, l.platform, 'sheet')}</span>
             <ChevronEndIcon className="text-muted" />
           </a>
         ))}
@@ -409,6 +437,8 @@ function AdminUpdateCard({ item, isAdmin, highlighted }: CardProps) {
   if (item.links.instagram)
     links.push({ href: item.links.instagram, label: t.socials.instagram, icon: <CameraIcon size={18} /> });
   if (item.links.x) links.push({ href: item.links.x, label: t.socials.x, icon: <XBrandIcon size={16} /> });
+  if (item.links.youtube)
+    links.push({ href: item.links.youtube, label: t.socials.youtube, icon: <YouTubeIcon size={18} /> });
   if (item.links.web)
     links.push({ href: item.links.web, label: t.socials.web, icon: <ExternalIcon size={16} /> });
   return (
@@ -443,6 +473,74 @@ function AdminUpdateCard({ item, isAdmin, highlighted }: CardProps) {
   );
 }
 
+// ---------- youtube ----------
+
+/**
+ * Shorts (9:16) and regular uploads (16:9). Played inline through the official embed (so it counts as a YouTube
+ * view), one at a time; the iframe only loads after the tap.
+ */
+function YouTubeCard({ item, isAdmin, highlighted }: CardProps) {
+  const { t, f } = useI18n();
+  const shape = item.source === 'youtube_short' ? 'short' : 'video';
+  const url = item.links.youtube ?? null;
+  const id = url ? youtubeVideoId(url) : null;
+  const media = item.media[0];
+  const thumbnail =
+    (media?.kind === 'image' ? media.url : (media?.posterUrl ?? null)) ??
+    (id ? youtubeThumbnailUrl(id) : null);
+  const title = item.title ?? '';
+  const now = useNow();
+  const headerShowsDate = now === 0 || relativeParts(item.publishedAt, now) === null;
+  return (
+    <CardFrame item={item} highlighted={highlighted}>
+      <CardHeader item={item} isAdmin={isAdmin} />
+      {id && thumbnail ? (
+        <YouTubePlayer playerKey={item.id} videoId={id} thumbnail={thumbnail} title={title} shape={shape} />
+      ) : (
+        thumbnail && (
+          <div
+            className={cx(
+              'overflow-hidden rounded-2xl bg-story-bg',
+              shape === 'short' ? 'mx-auto aspect-[9/16] w-full max-w-72' : 'aspect-video w-full',
+            )}
+          >
+            <MediaImage src={thumbnail} alt="" className="size-full object-cover" />
+          </div>
+        )
+      )}
+      {(title || !headerShowsDate) && (
+        <div className="flex flex-col gap-1">
+          {title && (
+            <h2
+              dir="auto"
+              className="name-start line-clamp-2 text-base leading-snug font-bold text-ink"
+              data-testid="youtube-title"
+            >
+              {title}
+            </h2>
+          )}
+          {!headerShowsDate && (
+            <time dateTime={item.publishedAt} className="text-xs text-muted">
+              {f.date(item.publishedAt)}
+            </time>
+          )}
+        </div>
+      )}
+      {item.text && <ExpandableText text={item.text} platform="none" lines={3} />}
+      {url && (
+        <ExternalButton
+          href={url}
+          icon={<YouTubeIcon size={18} />}
+          tone="outline"
+          data-testid="open-in-youtube"
+        >
+          {t.news.openInYoutube}
+        </ExternalButton>
+      )}
+    </CardFrame>
+  );
+}
+
 interface CardProps {
   item: NewsItem;
   isAdmin: boolean;
@@ -470,6 +568,9 @@ export function NewsCard({
       return <XCard {...props} />;
     case 'admin_update':
       return <AdminUpdateCard {...props} />;
+    case 'youtube_short':
+    case 'youtube_video':
+      return <YouTubeCard {...props} />;
   }
 }
 

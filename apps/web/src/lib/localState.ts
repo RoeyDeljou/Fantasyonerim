@@ -78,12 +78,12 @@ export function snoozePushPrompt(now: number): void {
 // ---------- podcast app choice ----------
 
 /** "Where to listen": ask every time, or always open the chosen platform (changeable in Profile). */
-export type ListenPref = 'ask' | 'spotify' | 'apple';
+export type ListenPref = 'ask' | 'spotify' | 'apple' | 'youtube';
 const listenListeners = new Set<() => void>();
 
 function readListen(): ListenPref {
   const v = readPref(KEYS.listenApp);
-  return v === 'spotify' || v === 'apple' ? v : 'ask';
+  return v === 'spotify' || v === 'apple' || v === 'youtube' ? v : 'ask';
 }
 
 export function setListenPref(p: ListenPref): void {

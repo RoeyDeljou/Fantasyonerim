@@ -183,7 +183,18 @@ export function fakeIntegrations() {
   const igPosts = new ScriptedSource('instagram_post');
   const igStories = new ScriptedSource('instagram_story');
   const x = new ScriptedSource('x_post');
-  const resolved: { links: ResolvedPodcastLinks; calls: EpisodeRef[][] } = { links: new Map(), calls: [] };
+  const youtube = new ScriptedSource('youtube_video');
+  const resolved: { links: ResolvedPodcastLinks; calls: EpisodeRef[][]; platforms: string[][] } = {
+    links: new Map(),
+    calls: [],
+    platforms: [],
+  };
+  /** What the fake YouTube link resolver finds (episode dedupeKey → { youtube: watch URL }). */
+  const youtubeLinks: { links: ResolvedPodcastLinks; calls: EpisodeRef[][]; channelIds: string[] } = {
+    links: new Map(),
+    calls: [],
+    channelIds: [],
+  };
   const appleResolver: PodcastLinkResolver = { platform: 'apple', resolve: async () => new Map() };
   const factories: Partial<IntegrationFactories> = {
     createPodcastSource: podcast.create as IntegrationFactories['createPodcastSource'],
@@ -191,13 +202,29 @@ export function fakeIntegrations() {
     createInstagramStoriesSource: igStories.create as IntegrationFactories['createInstagramStoriesSource'],
     createXSource: x.create as IntegrationFactories['createXSource'],
     createAppleLinkResolver: () => appleResolver,
-    resolveEpisodeLinks: async (refs) => {
+    resolveEpisodeLinks: async (refs, resolvers) => {
       resolved.calls.push([...refs]);
+      resolved.platforms.push(resolvers.map((r) => r.platform));
       return { links: resolved.links, warnings: [] };
     },
     resolveXUser: async ({ username }) => ({ id: '4242', username: username.replace(/^@/, ''), name: 'X' }),
     // No network in tests: episodes have no video thumbnail unless a test overrides this.
     fetchSpotifyEpisodeThumbnail: async () => null,
+    createYouTubeSource: youtube.create as IntegrationFactories['createYouTubeSource'],
+    createYouTubeLinkResolver: ({ channelId }) => {
+      youtubeLinks.channelIds.push(channelId);
+      return {
+        platform: 'youtube',
+        resolve: async (episodes) => {
+          youtubeLinks.calls.push([...episodes]);
+          return youtubeLinks.links;
+        },
+      };
+    },
+    resolveYouTubeChannel: async (input) =>
+      input.startsWith('UC')
+        ? { channelId: input, handle: null }
+        : { channelId: 'UCresolvedFakeChannel0000', handle: input.replace(/^.*@/, '') },
   };
-  return { factories, podcast, igPosts, igStories, x, resolved };
+  return { factories, podcast, igPosts, igStories, x, youtube, youtubeLinks, resolved };
 }

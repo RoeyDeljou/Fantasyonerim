@@ -9,6 +9,7 @@ Integrations card shows what went wrong and what to do; the other sources keep w
 | Podcast RSS           | Nothing                               | Free             |
 | Apple Podcasts        | Nothing                               | Free             |
 | Spotify               | Nothing (set up by the developer)     | Free             |
+| YouTube               | Nothing (already connected)           | Free             |
 | Instagram             | One-time Meta app + "Connect" (below) | Free             |
 | X (read + live posts) | Optional — only if you want it        | Paid (X charges) |
 | WhatsApp              | Deferred — not part of this release   | —                |
@@ -44,6 +45,22 @@ The accounts the app follows are listed in [CLIENT_ACCOUNTS.md](CLIENT_ACCOUNTS.
 2. Admin console → Integrations → Spotify → paste both into the secret fields → Save. Once keys are saved in the
    console they win over the server variables, so also update `SPOTIFY_CLIENT_*` on Render to keep them in sync
    (optional).
+
+## 3b. YouTube (Shorts, videos, episode links) — automatic, nothing to do
+
+Already connected to **@Fantasyonerim** (`https://www.youtube.com/@Fantasyonerim`, channel id
+`UCGjQpoCQcIMtirSjDW1IfxA`). No account, key or quota is needed — the app reads the channel's public feed every
+10 minutes:
+
+- **Shorts** and **regular videos** appear in News (with a notification for new ones; the first import is silent).
+- **Full-episode videos** don't get their own card: the matching podcast episode gets a "Watch on YouTube" button
+  instead.
+- Limits of the free feed: only the newest 15 uploads are visible, so older episodes have no YouTube button.
+
+If the channel ever changes: admin console → Integrations → YouTube → paste `@handle`, the channel link or the
+`UC…` id. If the console says it couldn't look the channel up from the server (YouTube sometimes shows servers a
+consent page), paste the `UC…` id instead — it's in the channel link `youtube.com/channel/UC…` (YouTube → the
+channel → About → Share channel → Copy channel ID).
 
 ## 4. Instagram (posts + stories) — one-time setup, free
 
@@ -144,5 +161,6 @@ is built so WhatsApp can be added later as one more target.
 | podcast_rss | `rssUrl`                                 | —                                                                   |
 | apple       | `podcastId`                              | —                                                                   |
 | spotify     | `showId`                                 | `clientId`, `clientSecret` (seeded from `SPOTIFY_CLIENT_*`)         |
+| youtube     | `channel` (→ `channelId`, resolved)      | —                                                                   |
 | instagram   | `igUserId`, `username`, `pageId` (OAuth) | `accessToken` (OAuth); server env `META_APP_ID`, `META_APP_SECRET`  |
 | x           | `username`, `userId`                     | `bearerToken`, `apiKey`, `apiSecret`, `accessToken`, `accessSecret` |

@@ -173,6 +173,7 @@ function ProfileInner() {
               { value: 'ask', label: t.listen.prefAsk },
               { value: 'spotify', label: t.socials.spotify },
               { value: 'apple', label: 'Apple' },
+              { value: 'youtube', label: t.socials.youtube },
             ]}
           />
         </div>

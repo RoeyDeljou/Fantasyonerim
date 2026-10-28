@@ -1,4 +1,9 @@
-import type { EpisodeRef, PodcastLinkResolver, ResolvedPodcastLinks } from '@fant/integrations';
+import type {
+  EpisodeRef,
+  PodcastLinkPlatform,
+  PodcastLinkResolver,
+  ResolvedPodcastLinks,
+} from '@fant/integrations';
 import { PodcastMetaSchema, type IntegrationId } from '@fant/shared';
 import { Prisma } from '@prisma/client';
 import type { AppContext } from '../context.js';
@@ -11,6 +16,7 @@ import {
 import { readLinks } from '../news/serialize.js';
 import { runContentSource, runSummary } from './content.js';
 import { fillEpisodeThumbnails, thumbnailSummary } from './episodeThumbnails.js';
+import { FEED_OLDEST_STATE_KEY, YOUTUBE_MATCH_WINDOW_MS } from './youtube.js';
 import { MINUTE, type Job, type JobRunContext } from './types.js';
 
 /** Spotify/Apple list an episode later than the RSS: re-resolve recent episodes missing a link. */
@@ -20,7 +26,7 @@ export const RELINK_RECENT_EPISODES = 15;
 const PODCAST_PREFIX = 'podcast:';
 
 interface TrackedResolver {
-  id: Extract<IntegrationId, 'apple' | 'spotify'>;
+  id: Extract<IntegrationId, 'apple' | 'spotify' | 'youtube'>;
   resolver: PodcastLinkResolver;
   outcome: { called: boolean; error: string | null };
 }
@@ -48,6 +54,7 @@ function buildResolvers(
   app: AppContext,
   apple: LoadedIntegration,
   spotify: LoadedIntegration,
+  youtube: LoadedIntegration,
 ): TrackedResolver[] {
   const out: TrackedResolver[] = [];
   if (apple.active) {
@@ -76,6 +83,17 @@ function buildResolvers(
       ),
     );
   }
+  if (youtube.active) {
+    out.push(
+      track(
+        'youtube',
+        app.integrations.createYouTubeLinkResolver(
+          { channelId: youtube.settings['channelId'] ?? '' },
+          app.integrationCtx,
+        ),
+      ),
+    );
+  }
   return out;
 }
 
@@ -83,6 +101,17 @@ function buildResolvers(
 async function recordResolvers(app: AppContext, resolvers: readonly TrackedResolver[]): Promise<void> {
   for (const r of resolvers) {
     if (!r.outcome.called) continue;
+    if (r.id === 'youtube') {
+      // YouTube's row also carries its own job's status (imported Shorts/videos): only a failed link lookup
+      // is recorded here; a success is reported by the youtube job itself.
+      if (r.outcome.error !== null) {
+        await recordIntegrationRun(app.prisma, 'youtube', app.clock.now(), {
+          ok: false,
+          error: r.outcome.error,
+        });
+      }
+      continue;
+    }
     const linkKey = r.id === 'apple' ? 'apple' : 'spotify';
     const rows = await app.prisma.$queryRaw<{ n: bigint }[]>(Prisma.sql`
       SELECT count(*)::bigint AS n FROM "NewsItem"
@@ -107,12 +136,18 @@ async function relinkRecent(ctx: JobRunContext, resolvers: readonly TrackedResol
     orderBy: { publishedAt: 'desc' },
     take: RELINK_RECENT_EPISODES,
   });
-  const wanted = new Set(resolvers.map((r) => r.resolver.platform));
-  const missing = recent.filter((item) => {
+  // Per platform: only resolvers with an episode actually missing their link are called (episodes 1–55 will
+  // never be in YouTube's 15-upload feed, which must not make every relink call Spotify and Apple too).
+  const youtubeFrom = await youtubeMatchableFrom(ctx);
+  const missingFor = (item: (typeof recent)[number], platform: PodcastLinkPlatform): boolean => {
     const links = readLinks(item.links);
-    return (wanted.has('apple') && links.apple === null) || (wanted.has('spotify') && links.spotify === null);
-  });
-  if (missing.length === 0) return 0;
+    if (platform === 'apple') return links.apple === null;
+    if (platform === 'spotify') return links.spotify === null;
+    return (links.youtube ?? null) === null && (youtubeFrom === null || item.publishedAt >= youtubeFrom);
+  };
+  const active = resolvers.filter((r) => recent.some((item) => missingFor(item, r.resolver.platform)));
+  if (active.length === 0) return 0;
+  const missing = recent.filter((item) => active.some((r) => missingFor(item, r.resolver.platform)));
 
   // Every recent episode is passed (not only the missing ones) so date-only matching can see rivals.
   const refs: EpisodeRef[] = recent.flatMap((item) => {
@@ -130,9 +165,25 @@ async function relinkRecent(ctx: JobRunContext, resolvers: readonly TrackedResol
   });
   const { links } = await app.integrations.resolveEpisodeLinks(
     refs,
-    resolvers.map((r) => r.resolver),
+    active.map((r) => r.resolver),
   );
   return applyLinks(app, missing, links);
+}
+
+/**
+ * Episodes published before this can't match anything in YouTube's current feed: the oldest upload the youtube
+ * job saw in it (its job state), minus the 7-day match window (a video can go up days after the audio).
+ * null = not known yet (no skipping).
+ */
+async function youtubeMatchableFrom(ctx: JobRunContext): Promise<Date | null> {
+  const lease = await ctx.app.prisma.jobLease.findUnique({ where: { name: 'youtube' } });
+  const state = lease?.state;
+  const oldest =
+    state !== null && typeof state === 'object' && !Array.isArray(state)
+      ? state[FEED_OLDEST_STATE_KEY]
+      : undefined;
+  if (typeof oldest !== 'number' || !Number.isFinite(oldest)) return null;
+  return new Date(oldest - YOUTUBE_MATCH_WINDOW_MS);
 }
 
 async function applyLinks(
@@ -145,12 +196,21 @@ async function applyLinks(
     const f = found.get(item.dedupeKey);
     if (f === undefined) continue;
     const current = readLinks(item.links);
+    // Never overwrites a known link.
+    const youtube = current.youtube ?? f.youtube ?? null;
     const next = {
       ...current,
       spotify: current.spotify ?? f.spotify ?? null,
       apple: current.apple ?? f.apple ?? null,
+      ...(youtube === null ? {} : { youtube }),
     };
-    if (next.spotify === current.spotify && next.apple === current.apple) continue;
+    if (
+      next.spotify === current.spotify &&
+      next.apple === current.apple &&
+      (next.youtube ?? null) === (current.youtube ?? null)
+    ) {
+      continue;
+    }
     await app.prisma.newsItem.update({ where: { id: item.id }, data: { links: next } });
     changed += 1;
   }
@@ -163,14 +223,15 @@ export const podcastJob: Job = {
   async run(ctx) {
     const { app } = ctx;
     const key = app.config.secretsKey;
-    const [rss, apple, spotify] = await Promise.all([
+    const [rss, apple, spotify, youtube] = await Promise.all([
       loadIntegration(app.prisma, key, 'podcast_rss'),
       loadIntegration(app.prisma, key, 'apple'),
       loadIntegration(app.prisma, key, 'spotify'),
+      loadIntegration(app.prisma, key, 'youtube'),
     ]);
     if (!rss.active) return { summary: 'podcast RSS disabled or not configured' };
 
-    const feedResolvers = buildResolvers(app, apple, spotify);
+    const feedResolvers = buildResolvers(app, apple, spotify, youtube);
     const source = app.integrations.createPodcastSource(
       { rssUrl: rss.settings['rssUrl'] ?? '', resolvers: feedResolvers.map((r) => r.resolver) },
       app.integrationCtx,
@@ -187,7 +248,7 @@ export const podcastJob: Job = {
     if (feedResolved) {
       state['lastRelinkAt'] = nowMs;
     } else if (result.ok && (ctx.force || nowMs - lastRelink >= RELINK_EVERY_MS)) {
-      const relinkResolvers = buildResolvers(app, apple, spotify);
+      const relinkResolvers = buildResolvers(app, apple, spotify, youtube);
       if (relinkResolvers.length > 0) {
         relinked = await relinkRecent(ctx, relinkResolvers);
         await recordResolvers(app, relinkResolvers);
