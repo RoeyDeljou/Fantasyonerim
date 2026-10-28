@@ -6,6 +6,7 @@ import type { Gameweek, Me } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import { isApiError } from '@/lib/api';
 import { isBannedError, useBanned } from '@/lib/banned';
+import { useDraft } from '@/lib/drafts';
 import { useBootstrap, useCreatePost, useEntry, usePicks } from '@/lib/queries';
 import { BottomSheet } from '@/components/BottomSheet';
 import { ImageIcon, InfoIcon, SendIcon } from '@/components/icons';
@@ -61,7 +62,8 @@ function ComposerForm({ me, onDone }: { me: Me; onDone(): void }) {
   const create = useCreatePost();
   const textId = useId();
   const counterId = useId();
-  const [text, setText] = useState('');
+  // Persisted until sent: survives a "new version" reload or the sheet being closed by mistake.
+  const [text, setText] = useDraft('community.post');
   const photo = usePhotoUpload();
   const upload = photo.upload;
   const [shareTeam, setShareTeam] = useState(false);
@@ -88,6 +90,7 @@ function ComposerForm({ me, onDone }: { me: Me; onDone(): void }) {
       },
       {
         onSuccess: () => {
+          setText('');
           notify(c.posted);
           window.scrollTo({ top: 0, behavior: 'smooth' });
           onDone();

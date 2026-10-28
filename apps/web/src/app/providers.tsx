@@ -9,15 +9,21 @@ import { SessionProvider, useSession } from '@/lib/session';
 import { resyncPush } from '@/lib/push';
 import { makeQueryClient } from '@/lib/queries';
 import { registerServiceWorker, wireInstallPrompt } from '@/lib/pwa';
+import { wireQueryFocus } from '@/lib/resume';
+import { startUpdateWatcher, wireChunkErrorRecovery } from '@/lib/updates';
 import { clearFlash, useFlashMessage } from '@/lib/flash';
 import { Toast } from '@/components/ui';
+import { UpdateToast } from '@/components/UpdateToast';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(makeQueryClient);
 
   useEffect(() => {
+    wireQueryFocus(); // resume → refetch stale data (also in the native shell)
+    wireChunkErrorRecovery(); // web only, like the two below
     wireInstallPrompt();
     registerServiceWorker();
+    startUpdateWatcher();
   }, []);
 
   return (
@@ -28,6 +34,7 @@ export function Providers({ children }: { children: ReactNode }) {
             <PushSync />
             {children}
             <FlashToast />
+            <UpdateToast />
           </SessionProvider>
         </ThemeProvider>
       </I18nProvider>

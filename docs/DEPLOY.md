@@ -95,6 +95,56 @@ Trigger it once by hand (Actions → Jobs tick → Run workflow) and check it re
 6. Admins for Dor and Itay: admin console → Admins → create an invite link per person and send it to them. Each
    link works once, for 7 days; opening it lets them sign up with name + Team ID and they are admins from the start.
 
+## How updates reach installed apps
+
+Every Vercel deploy reaches phones that installed the PWA to the home screen (iOS Safari, Android Chrome) by
+itself: no reinstall, no manual refresh, nothing to do on deploy. How it works (`apps/web/src/lib/updates.ts`):
+
+1. **Each build has an id.** `next.config.ts` sets `NEXT_PUBLIC_BUILD_ID` = commit sha + build time (so a redeploy
+   of the same commit counts as new). The `postbuild` step (`scripts/stamp-build.mjs`) writes `out/version.json`
+   (`{ buildId, builtAt }`) and stamps the id into `out/sw.js`. The id is also on `<html data-build>` and shown in
+   Profile next to the version.
+2. **The app checks.** It checks on every resume (`visibilitychange`, `pageshow`, window `focus`, plus a
+   heartbeat that notices a page iOS froze for days) and every 15 minutes while it is open. Each check calls
+   `registration.update()` and fetches `/version.json` with `cache: 'no-store'`. `vercel.json` serves it
+   `no-store`, and the service worker never intercepts it.
+3. **Update policy** when the id differs:
+   - just reopened, going to the background, or idle for a minute → reload now (on resume the old screen shows
+     for a moment, then the new one);
+   - the user is writing (a textarea with text, a focused field with content, a filled field in an open sheet)
+     → a small toast, "גרסה חדשה זמינה — רענון" / "New version — refresh". The app reloads once the draft is gone
+     and the user pauses for 4 s, or right away on a tap. Post, comment and live-update drafts are also kept in
+     `sessionStorage` (`lib/drafts.ts`), so a reload never loses them;
+   - in use but not typing (scrolling a feed) → the same toast, then a reload after a minute idle or on the next
+     resume/background.
+4. **No loops.** The app auto-reloads at most once per target build, and at most 3 times, in 10 minutes
+   (`sessionStorage`). If `version.json` still differs after that one reload (a CDN still rolling out, or HTML
+   from the offline cache), it stops and tries again after the window.
+5. **The service worker updates itself.** The stamped `sw.js` is byte-different on every deploy, so the browser
+   installs it. It calls `skipWaiting` on install, and the page also posts `SKIP_WAITING` to any worker left
+   waiting. Chrome evaluates `skipWaiting` only once, so a new worker that arrived while the old one was busy
+   could otherwise stay waiting. Then `clients.claim`. Cache names carry the build id, and activation deletes
+   every other cache. HTML is network-first: a cached page is used only offline, or when the network takes
+   longer than 4 s _and_ a cached copy exists. `/_next/static` is cache-first, and only 2xx responses are
+   cached, so a 404 is never pinned. The page's own `fetch()` calls (Next's RSC payloads and prefetches) and
+   `/version.json` are never intercepted. Every intercepted request settles as soon as the page aborts it, so a
+   cancelled request can never keep the old worker busy and block the next deploy.
+6. **Chunk errors after a deploy.** A page from the previous build that lazy-loads a chunk the new deploy no
+   longer serves (404, `ChunkLoadError`, "Failed to fetch dynamically imported module") reloads once to the same
+   URL. Three handlers catch it: window `error`/`unhandledrejection`, the `app/error.tsx` and
+   `app/global-error.tsx` boundaries, and an inline `<head>` guard for failures before hydration. It reloads once
+   per build, so a broken deploy shows the error screen instead of looping.
+7. **Data is fresh on reopen.** TanStack Query's focus manager is fed the same resume signals, so News, stories,
+   live scores, the Table, My Team and Community refetch within a second of reopening (when older than their
+   15–60 s `staleTime`). Polling pauses while hidden and resumes on return.
+
+The manifest keeps `id: "/"`, `start_url: "/"`, `scope: "/"`. **Never change `id`**: it would orphan existing
+installs. All of this is off in `next dev` and in the Capacitor shell (`isNativeShell()`). Store builds ship
+their bundle inside the app and update through the stores.
+
+**Checking a deploy:** open `https://<web>/version.json`. Its `buildId` should match Profile → version on a phone
+after you reopen the app.
+
 ## Local development
 
 ```bash

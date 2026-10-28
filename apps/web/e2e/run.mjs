@@ -1,4 +1,4 @@
-/* global document */
+/* global document, window, navigator, caches, Event, PromiseRejectionEvent */
 // End-to-end suite for the web app: real apps/api (FPL_MODE=demo) + the static export, driven by Playwright.
 //
 //   npm run e2e -w @fant/web
@@ -9,7 +9,8 @@
 //   3. boots apps/api on :4100 in demo mode (offline, deterministic FPL data) and serves the export on :5100
 //   4. runs the user journeys below at a 390×844 phone viewport and fails on any unexpected console error
 //
-// Env overrides: E2E_DATABASE_URL, E2E_API_PORT, E2E_WEB_PORT, E2E_SKIP_BUILD=1, E2E_SKIP_DB_RESET=1, E2E_HEADED=1.
+// Env overrides: E2E_DATABASE_URL, E2E_API_PORT, E2E_WEB_PORT, E2E_SKIP_BUILD=1, E2E_SKIP_DB_RESET=1, E2E_HEADED=1,
+// E2E_ONLY_UPDATES=1 (register, then only the app-update journeys).
 import { spawn, spawnSync } from 'node:child_process';
 import { createECDH, randomBytes } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
@@ -127,6 +128,8 @@ function buildWeb() {
       cwd: WEB_DIR,
       env: { ...process.env, NEXT_PUBLIC_API_URL: API, FANT_E2E_DIST: DIST, NEXT_TELEMETRY_DISABLED: '1' },
     });
+    // the same post-build step as `npm run build` (version.json + build-stamped sw.js)
+    run('node', ['scripts/stamp-build.mjs', DIST], { cwd: WEB_DIR });
   } finally {
     if (envBackup !== null) writeFileSync(envFile, envBackup);
   }
@@ -231,9 +234,18 @@ const TYPES = {
   '.png': 'image/png',
   '.ico': 'image/x-icon',
   '.webmanifest': 'application/manifest+json',
+  '.json': 'application/json',
   '.txt': 'text/plain',
   '.woff2': 'font/woff2',
 };
+
+/**
+ * "Deploy" simulation for the update journeys: while set, every text file is served with the build id `from`
+ * replaced by `to` — HTML (<html data-build>), version.json and a byte-different sw.js, i.e. what a new deploy looks
+ * like to an installed app, without a second `next build`.
+ */
+const deploy = { from: null, to: null };
+const SWAPPED = new Set(['.html', '.js', '.txt', '.json']);
 
 function startStatic() {
   const root = path.join(WEB_DIR, DIST);
@@ -245,8 +257,17 @@ function startStatic() {
       // fall through to 404
     }
     try {
-      const data = await readFile(file);
-      res.writeHead(200, { 'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream' });
+      let data = await readFile(file);
+      const ext = path.extname(file);
+      if (deploy.from && deploy.to && SWAPPED.has(ext)) {
+        data = Buffer.from(data.toString('utf8').replaceAll(deploy.from, deploy.to));
+      }
+      res.writeHead(200, {
+        'content-type': TYPES[ext] ?? 'application/octet-stream',
+        // like vercel.json: the update check and the worker are never served from the HTTP cache
+        ...(file.endsWith('version.json') ? { 'cache-control': 'no-store, max-age=0' } : {}),
+        ...(file.endsWith('sw.js') ? { 'cache-control': 'no-cache' } : {}),
+      });
       res.end(data);
     } catch {
       res.writeHead(404, { 'content-type': 'text/html' });
@@ -349,6 +370,12 @@ async function journeys(browser) {
     await page.getByRole('button', { name: 'שמרתי, יאללה' }).click();
     await page.waitForURL('**/news/');
   });
+
+  if (process.env.E2E_ONLY_UPDATES) {
+    await updateJourneys(user);
+    await user.close();
+    return;
+  }
 
   await step('reload keeps the session', async () => {
     await page.reload();
@@ -1463,8 +1490,222 @@ async function journeys(browser) {
     },
   );
 
+  await updateJourneys(user);
+
   await adminCtx.close();
   await user.close();
+}
+
+// ---------- updates reaching installed apps (src/lib/updates.ts) ----------
+
+/** Pretend the page went to the background / came back (headless pages are always "visible"). */
+async function setVisibility(p, state) {
+  await p.evaluate((s) => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => s });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => s === 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, state);
+}
+
+async function resume(p) {
+  await setVisibility(p, 'hidden');
+  await setVisibility(p, 'visible');
+}
+
+const buildOf = (p) => p.evaluate(() => document.documentElement.dataset.build ?? null);
+
+/** Polls across reloads (an evaluate in a page that is navigating just throws). */
+async function waitForBuild(p, id, ms = 20_000) {
+  const until = Date.now() + ms;
+  let seen = null;
+  while (Date.now() < until) {
+    try {
+      seen = await buildOf(p);
+      if (seen === id && (await p.evaluate(() => document.readyState)) === 'complete') return;
+    } catch {
+      // navigating
+    }
+    await sleep(200);
+  }
+  throw new Error(`expected build ${id}, still on ${seen}`);
+}
+
+/** Counts document loads of a page (`framenavigated` would also count Next's same-document replaceState). */
+function countLoads(p) {
+  const c = { n: 0 };
+  p.on('load', () => c.n++);
+  return c;
+}
+
+/** Timestamps of a page's document loads and update checks (`/version.json` fetches). */
+function trackChecks(p) {
+  const t = { load: Date.now(), check: 0 };
+  p.on('load', () => (t.load = Date.now()));
+  p.on('request', (r) => {
+    if (r.url() === `${WEB}/version.json`) t.check = Date.now();
+  });
+  return t;
+}
+
+/** The watcher checks once ~3 s after boot and throttles resume checks to one per 5 s: let that settle. */
+async function bootCheckDone(t) {
+  const until = Date.now() + 15_000;
+  while (t.check <= t.load && Date.now() < until) await sleep(100);
+  assert(t.check > t.load, 'the app checks /version.json after boot');
+  await sleep(Math.max(0, t.check + 5_500 - Date.now()));
+}
+
+async function updateJourneys(ctx) {
+  const up = await ctx.newPage();
+  watch(up, 'updates');
+  const loads = countLoads(up);
+  const checks = trackChecks(up);
+  deploy.from = null;
+  deploy.to = null;
+
+  let A = '';
+  let B = '';
+  let C = '';
+  await step(
+    'a deploy reaches an open app on resume: version.json differs → reload into the new build',
+    async () => {
+      await up.goto(`${WEB}/news/`);
+      await up.locator('[data-testid=news-card]').first().waitFor();
+      await up.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
+      A = (await buildOf(up)) ?? '';
+      assert(A, 'the HTML carries its build id');
+      const v = await (await globalThis.fetch(`${WEB}/version.json`)).json();
+      assert(v.buildId === A, `version.json ${v.buildId} ≠ html ${A}`);
+      const sw = await (await globalThis.fetch(`${WEB}/sw.js`)).text();
+      assert(sw.includes(`const BUILD_ID = '${A}'`), 'sw.js is stamped with the build id');
+      await bootCheckDone(checks);
+      assert((await buildOf(up)) === A, 'no reload while nothing changed');
+
+      B = `e2eb-${A}`;
+      deploy.from = A;
+      deploy.to = B;
+      const before = loads.n;
+      await resume(up);
+      await waitForBuild(up, B);
+      await up.locator('[data-testid=news-card]').first().waitFor();
+      assert(loads.n === before + 1, `exactly one reload (got ${loads.n - before})`);
+      // The new worker took over and purged the previous deploy's caches.
+      let keys = [];
+      for (const until = Date.now() + 15_000; Date.now() < until; await sleep(300)) {
+        keys = await up.evaluate(() => caches.keys());
+        if (keys.includes(`fant-${B}-shell`) && !keys.some((k) => k.startsWith(`fant-${A}-`))) break;
+      }
+      assert(
+        keys.includes(`fant-${B}-shell`) && !keys.some((k) => k.startsWith(`fant-${A}-`)),
+        `caches after the update: ${keys.join(', ')}`,
+      );
+      const settled = await up.evaluate(() =>
+        navigator.serviceWorker.getRegistration().then((r) => !!r?.active && !r.waiting && !r.installing),
+      );
+      assert(settled, 'the new worker is active, none left waiting');
+      await bootCheckDone(checks);
+      assert(loads.n === before + 1, 'no second reload once on the new build');
+    },
+  );
+
+  const DRAFT = 'טיוטה שלא נשלחה e2e — draft';
+  await step(
+    'a deploy while a post is being typed: toast instead of reload, the draft survives',
+    async () => {
+      await up.goto(`${WEB}/community/`);
+      await up.getByTestId('composer-open').click();
+      const box = up.locator('dialog[open] [data-testid=composer] textarea');
+      await box.fill(DRAFT);
+      await bootCheckDone(checks);
+      C = `e2ec-${A}`;
+      deploy.to = C;
+      const before = loads.n;
+      await resume(up);
+      await up.getByTestId('update-toast').waitFor();
+      await up.getByTestId('update-toast').getByText('גרסה חדשה זמינה — רענון').waitFor();
+      await sleep(6_000); // well past the settle delay: still typing → still no reload
+      assert(loads.n === before, 'must not reload over a draft');
+      assert((await box.inputValue()) === DRAFT, 'the typed text is untouched');
+      assert((await buildOf(up)) === B, 'still on the old build');
+      // Done with it (sheet closed, nothing left on screen): the app updates by itself a moment later…
+      await up.keyboard.press('Escape');
+      await waitForBuild(up, C);
+      assert(loads.n === before + 1, `one reload after the draft was put away (got ${loads.n - before})`);
+      // …and the draft is still there when the composer is reopened.
+      await up.getByTestId('composer-open').click();
+      const again = up.locator('dialog[open] [data-testid=composer] textarea');
+      await again.waitFor();
+      assert(
+        (await again.inputValue()) === DRAFT,
+        `draft restored after the reload: "${await again.inputValue()}"`,
+      );
+      await again.fill('');
+      await up.keyboard.press('Escape');
+    },
+  );
+
+  await step(
+    'a chunk of a vanished build fails to load → one reload to the same URL, never a loop',
+    async () => {
+      await up.goto(`${WEB}/table/`);
+      await bootCheckDone(checks);
+      const url = up.url();
+      const before = loads.n;
+      const missing = () =>
+        up.evaluate(() => {
+          const s = document.createElement('script');
+          s.src = `/_next/static/chunks/e2e-gone-${Date.now()}.js`;
+          document.head.appendChild(s);
+        });
+      await missing();
+      const until = Date.now() + 10_000;
+      while (loads.n === before && Date.now() < until) await sleep(100);
+      assert(loads.n === before + 1, 'one reload after the chunk 404');
+      await waitForBuild(up, C);
+      assert(up.url() === url, `same URL after the reload (${up.url()})`);
+      // Still failing after that reload (a real outage): no more reloads — neither for a script tag…
+      await missing();
+      // …nor for a webpack-style ChunkLoadError surfacing as an unhandled rejection.
+      await up.evaluate(() => {
+        const err = Object.assign(new Error('Loading chunk 999 failed.'), { name: 'ChunkLoadError' });
+        const promise = Promise.reject(err);
+        promise.catch(() => undefined);
+        window.dispatchEvent(new PromiseRejectionEvent('unhandledrejection', { promise, reason: err }));
+      });
+      await sleep(3_000);
+      assert(loads.n === before + 1, `no reload loop (got ${loads.n - before} reloads)`);
+    },
+  );
+
+  await step('reopening the app refetches News (focus wiring covers iOS resume)', async () => {
+    const p = await ctx.newPage();
+    watch(p, 'resume');
+    await p.clock.install();
+    const feedCalls = [];
+    p.on('request', (r) => {
+      const u = new URL(r.url());
+      if (u.origin === API && u.pathname === '/v1/news' && u.searchParams.get('limit') === '15') {
+        feedCalls.push(Date.now());
+      }
+    });
+    await p.goto(`${WEB}/news/`);
+    await p.locator('[data-testid=news-card]').first().waitFor();
+    const initial = feedCalls.length;
+    assert(initial >= 1, 'feed loaded');
+    await setVisibility(p, 'hidden');
+    await p.clock.fastForward('03:00'); // away for a few minutes: the cached feed is stale now
+    await sleep(500);
+    assert(feedCalls.length === initial, 'no refetch while hidden');
+    await setVisibility(p, 'visible');
+    const until = Date.now() + 5_000;
+    while (feedCalls.length === initial && Date.now() < until) await sleep(100);
+    assert(feedCalls.length > initial, 'News refetched within seconds of reopening');
+    await p.close();
+  });
+
+  deploy.from = null;
+  deploy.to = null;
+  await up.close();
 }
 
 // ---------- main ----------

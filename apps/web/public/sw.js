@@ -1,8 +1,16 @@
 /* Fantasyonerim service worker — offline app shell + push notifications.
- * API calls (cross-origin, NEXT_PUBLIC_API_URL) are never intercepted or cached. */
-const VERSION = 'fant-v3';
+ * API calls (cross-origin, NEXT_PUBLIC_API_URL) are never intercepted or cached.
+ *
+ * Updates: scripts/stamp-build.mjs replaces __BUILD_ID__ in out/sw.js on every build, so each deploy ships a
+ * byte-different worker (the browser installs it on the next registration.update(), which src/lib/updates.ts calls
+ * on resume and every 15 min) with fresh cache names — activate() deletes every older cache. HTML is always
+ * network-first, so an old shell is only ever served offline. /version.json is never intercepted. */
+const BUILD_ID = '__BUILD_ID__';
+const VERSION = `fant-${BUILD_ID}`;
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
+/** A navigation that takes longer than this falls back to the cached page — but only if there is one. */
+const NETWORK_TIMEOUT_MS = 4000;
 const SHELL_URLS = [
   '/',
   '/onboarding/',
@@ -23,35 +31,77 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(SHELL_CACHE)
-      .then((cache) => cache.addAll(SHELL_URLS))
+      // `reload`: bypass the HTTP cache so the new worker never precaches the previous deploy's HTML.
+      .then((cache) => cache.addAll(SHELL_URLS.map((u) => new Request(u, { cache: 'reload' }))))
       .then(() => self.skipWaiting()),
   );
+});
+
+// The page asks a waiting worker to take over (lib/updates.ts). install() already calls skipWaiting(), but Chrome
+// only evaluates it once: if the old worker was busy right then, the new one can stay "waiting" for good.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => !k.startsWith(VERSION)).map((k) => caches.delete(k))))
+      // Everything but this build's two caches goes (exact names: one build id may be a prefix of another).
+      .then((keys) =>
+        Promise.all(
+          keys.filter((k) => k !== SHELL_CACHE && k !== RUNTIME_CACHE).map((k) => caches.delete(k)),
+        ),
+      )
       .then(() => self.clients.claim()),
   );
 });
 
+async function cachedFallback(request) {
+  return (
+    (await caches.match(request, { ignoreSearch: true })) ||
+    (request.mode === 'navigate' ? await caches.match('/') : undefined)
+  );
+}
+
+/**
+ * Network first. The cache is a fallback only when the network fails, or is slower than NETWORK_TIMEOUT_MS *and*
+ * a cached copy exists (the network response still refreshes the cache in the background). No cached copy → wait
+ * for the network however long it takes.
+ */
 async function networkFirst(request) {
-  const cache = await caches.open(RUNTIME_CACHE);
-  try {
-    const response = await fetch(request);
-    if (response.ok) cache.put(request, response.clone());
+  const network = fetch(request).then((response) => {
+    if (response.ok) {
+      // Clone now (before the page reads the body), store fire-and-forget: never hold the response back on the
+      // cache write, and never extend the event with it (see untilAborted below).
+      const copy = response.clone();
+      caches
+        .open(RUNTIME_CACHE)
+        .then((cache) => cache.put(request, copy))
+        .catch(() => undefined);
+    }
     return response;
+  });
+  network.catch(() => undefined); // a failure after the cached copy was already served is not an error
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(resolve, NETWORK_TIMEOUT_MS, 'timeout');
+  });
+  try {
+    const first = await Promise.race([network, timeout]);
+    if (first !== 'timeout') return first;
+    const cached = await cachedFallback(request);
+    return cached || (await network);
   } catch (err) {
-    const cached =
-      (await caches.match(request, { ignoreSearch: true })) ||
-      (request.mode === 'navigate' ? await caches.match('/') : undefined);
+    const cached = await cachedFallback(request);
     if (cached) return cached;
     throw err;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
+/** Content-hashed assets. Only 2xx responses are cached, so a 404 for a chunk of an older deploy is never pinned. */
 async function cacheFirst(request) {
   const cached = await caches.match(request);
   if (cached) return cached;
@@ -63,16 +113,38 @@ async function cacheFirst(request) {
   return response;
 }
 
+/**
+ * Settles as soon as the page gives up on the request (navigated away, router prefetch cancelled). A fetch event
+ * that never settles keeps this worker "busy": the next deploy's worker then can't activate despite skipWaiting(),
+ * and Chrome holds new navigations until it does — so no intercepted request may outlive its page.
+ */
+function untilAborted(request) {
+  return new Promise((resolve) => {
+    const { signal } = request;
+    if (!signal) return;
+    if (signal.aborted) resolve(Response.error());
+    else signal.addEventListener('abort', () => resolve(Response.error()), { once: true });
+  });
+}
+
+function respond(event, handler) {
+  event.respondWith(Promise.race([handler(event.request), untilAborted(event.request)]));
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // API + image CDNs: straight to network
+  if (url.pathname === '/version.json') return; // the update check must always see the live deploy
   if (url.pathname.startsWith('/_next/static/')) {
-    event.respondWith(cacheFirst(request)); // content-hashed, immutable
+    respond(event, cacheFirst); // content-hashed, immutable
     return;
   }
-  event.respondWith(networkFirst(request));
+  // The page's own fetch() calls (Next's RSC payloads and link prefetches) go straight to the network: the router
+  // cancels them freely, and when one fails offline it falls back to a full navigation — served below.
+  if (request.mode !== 'navigate' && request.destination === '') return;
+  respond(event, networkFirst); // pages, icons, manifest
 });
 
 // ---------- push ----------

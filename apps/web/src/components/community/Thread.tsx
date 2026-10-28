@@ -5,6 +5,7 @@ import type { Comment, PostId } from '@fant/shared';
 import { useI18n } from '@/i18n';
 import { isApiError } from '@/lib/api';
 import { isBannedError, useBanned } from '@/lib/banned';
+import { useDraft } from '@/lib/drafts';
 import { useComments, useCreateComment, useDeleteComment, useMe, usePost } from '@/lib/queries';
 import { ChatIcon, ChevronStartIcon, RefreshIcon, SendIcon } from '@/components/icons';
 import { LinkifiedText } from '@/components/news/parts';
@@ -184,7 +185,7 @@ function CommentBar({ postId, disabled }: { postId: PostId; disabled: boolean })
   const { t } = useI18n();
   const c = t.community;
   const create = useCreateComment(postId);
-  const [text, setText] = useState('');
+  const [text, setText] = useDraft(`community.comment.${postId}`);
   const ref = useRef<HTMLTextAreaElement>(null);
   const id = useId();
   const inset = useKeyboardInset();

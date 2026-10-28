@@ -33,6 +33,13 @@ export const en: Messages = {
     no: 'No',
     optional: 'optional',
   },
+  updates: {
+    available: 'New version — refresh',
+    availableHint: "You'll pick up where you left off — anything you typed is kept.",
+    staleTitle: 'The app was updated',
+    staleBody: 'A new version came out while the app was open. Refreshing loads it.',
+    reload: 'Refresh the app',
+  },
   errors: {
     notFound: "We couldn't find what you were looking for.",
     badRequest: 'Some details are invalid. Check them and try again.',

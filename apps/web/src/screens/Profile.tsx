@@ -44,7 +44,10 @@ import {
   errorMessage,
 } from '@/components/ui';
 
-const APP_VERSION = '0.1.0';
+/** App version + the deploy's build id (support: "which version are you on?"). */
+const APP_VERSION = process.env.NEXT_PUBLIC_BUILD_ID
+  ? `0.1.0 · ${process.env.NEXT_PUBLIC_BUILD_ID}`
+  : '0.1.0';
 
 export function ProfileScreen() {
   const { t } = useI18n();
@@ -212,7 +215,9 @@ function ProfileInner() {
         )}
       </Card>
       <DeleteAccountCard />
-      <p className="text-center text-xs text-muted">{fmt(t.profile.version, { v: APP_VERSION })}</p>
+      <p className="text-center text-xs text-muted" dir="ltr" data-testid="app-version">
+        {fmt(t.profile.version, { v: APP_VERSION })}
+      </p>
     </div>
   );
 }

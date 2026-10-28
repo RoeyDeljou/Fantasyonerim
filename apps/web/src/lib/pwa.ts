@@ -84,9 +84,13 @@ export function registerServiceWorker(): void {
   if (process.env.NODE_ENV !== 'production') return;
   if (isNativeShell()) return;
   const register = () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err: unknown) => {
-      console.warn('service worker registration failed', err);
-    });
+    // updateViaCache 'none': update checks (lib/updates.ts calls registration.update() on resume and every 15 min)
+    // always hit the network for sw.js, which every deploy stamps with its build id.
+    navigator.serviceWorker
+      .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+      .catch((err: unknown) => {
+        console.warn('service worker registration failed', err);
+      });
   };
   if (document.readyState === 'complete') register();
   else window.addEventListener('load', register, { once: true });

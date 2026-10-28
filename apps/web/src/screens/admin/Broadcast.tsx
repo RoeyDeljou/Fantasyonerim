@@ -14,6 +14,7 @@ import type {
 } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import type { Messages } from '@/i18n';
+import { useDraft } from '@/lib/drafts';
 import { openExternal } from '@/lib/external';
 import { readBroadcastTargets, writeBroadcastTargets } from '@/lib/localState';
 import { useBootstrap, useBroadcastHistory, useBroadcastTargets, useSendBroadcast } from '@/lib/queries';
@@ -138,8 +139,9 @@ function Composer({ onSent }: { onSent(r: BroadcastResult): void }) {
   const textId = useId();
   const counterId = useId();
   const textRef = useRef<HTMLTextAreaElement>(null);
-  const [title, setTitle] = useState('');
-  const [text, setText] = useState('');
+  // Persisted until sent: a deploy mid-match must never eat a half-written live update.
+  const [title, setTitle] = useDraft('broadcast.title');
+  const [text, setText] = useDraft('broadcast.text');
   const [chosen, setChosen] = useState<BroadcastTarget[]>(initialTargets);
   const [confirm, setConfirm] = useState(false);
   const [tried, setTried] = useState(false);
@@ -215,6 +217,8 @@ function Composer({ onSent }: { onSent(r: BroadcastResult): void }) {
     send.mutate(parsed.data, {
       onSuccess: (r) => {
         writeBroadcastTargets(targets);
+        setTitle('');
+        setText('');
         setConfirm(false);
         onSent(r);
         window.scrollTo({ top: 0, behavior: 'smooth' });
