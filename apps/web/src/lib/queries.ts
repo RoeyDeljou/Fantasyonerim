@@ -29,6 +29,7 @@ import type {
   IntegrationList,
   IntegrationStatus,
   IntegrationUpdateBody,
+  NewsFilter,
   NewsItemId,
   NewsPage,
   NotificationPrefs,
@@ -71,7 +72,11 @@ export const qk = {
   adminCaptainBattle: ['admin', 'captain-battle'] as const,
   admins: ['admin', 'admins'] as const,
   news: ['news', 'feed'] as const,
-  newsHead: ['news', 'head'] as const,
+  /** null = the "All" feed (the original key, so its persisted copy carries over). */
+  newsFeed: (filter: NewsFilter | null) => (filter ? (['news', 'feed', filter] as const) : qk.news),
+  newsHead: (filter: NewsFilter | null) =>
+    filter ? (['news', 'head', filter] as const) : (['news', 'head'] as const),
+  newsFilters: ['news', 'filters'] as const,
   stories: ['news', 'stories'] as const,
   newsItem: (id: NewsItemId) => ['news', 'item', id] as const,
   notificationPrefs: ['me', 'notification-prefs'] as const,
@@ -118,6 +123,7 @@ const PERSISTED_PREFIXES: readonly (readonly string[])[] = [
   ['league'],
   ['news', 'feed'],
   ['news', 'stories'],
+  ['news', 'filters'],
   ['community', 'feed'],
 ];
 
@@ -354,10 +360,10 @@ export function useCreateAdmin() {
 // ---------- news ----------
 
 /** The feed: cursor-paginated, newest first. Refetches on focus; the "new posts" pill uses `useNewsHead`. */
-export function useNewsFeed() {
+export function useNewsFeed(filter: NewsFilter | null = null) {
   return useInfiniteQuery({
-    queryKey: qk.news,
-    queryFn: ({ pageParam, signal }) => api.news(pageParam, NEWS_PAGE_SIZE, { signal }),
+    queryKey: qk.newsFeed(filter),
+    queryFn: ({ pageParam, signal }) => api.news(pageParam, NEWS_PAGE_SIZE, { signal }, filter),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last: NewsPage) => last.nextCursor ?? undefined,
     staleTime: 60_000,
@@ -365,15 +371,24 @@ export function useNewsFeed() {
 }
 
 /** Light poll of the first page (paused while hidden) — compared with the feed to offer "new posts". */
-export function useNewsHead(enabled: boolean) {
+export function useNewsHead(enabled: boolean, filter: NewsFilter | null = null) {
   return useQuery({
-    queryKey: qk.newsHead,
-    queryFn: ({ signal }) => api.news(undefined, 5, { signal }),
+    queryKey: qk.newsHead(filter),
+    queryFn: ({ signal }) => api.news(undefined, 5, { signal }, filter),
     enabled,
     refetchInterval: NEWS_HEAD_POLL_MS,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     staleTime: 0,
+  });
+}
+
+/** Which filter chips have content (plus "All", always shown by the screen). */
+export function useNewsFilters() {
+  return useQuery({
+    queryKey: qk.newsFilters,
+    queryFn: ({ signal }) => api.newsFilters({ signal }),
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -401,7 +416,8 @@ export function useHideNews() {
   return useMutation({
     mutationFn: (id: NewsItemId) => api.admin.hideNews(id),
     onSuccess: (_v, id) => {
-      qc.setQueryData<InfiniteData<NewsPage, string | undefined>>(qk.news, (data) =>
+      // Every feed (All + each filter) shares the ['news', 'feed'] prefix.
+      qc.setQueriesData<InfiniteData<NewsPage, string | undefined>>({ queryKey: qk.news }, (data) =>
         data
           ? { ...data, pages: data.pages.map((p) => ({ ...p, items: p.items.filter((i) => i.id !== id) })) }
           : data,

@@ -10,6 +10,7 @@ import { CameraIcon, CloseIcon, MuteIcon, VolumeIcon } from '@/components/icons'
 import { Logo } from '@/components/AppShell';
 import { Spinner, cx } from '@/components/ui';
 import { RelativeTime } from './parts';
+import { SourceBadge } from './SourceBadge';
 
 const IMAGE_MS = 5000;
 const HOLD_MS = 220;
@@ -289,7 +290,14 @@ export function StoryViewer({
             ))}
           </div>
           <div className="flex items-center gap-2 ps-1">
-            <Logo size={32} />
+            <span className="relative shrink-0">
+              <Logo size={32} />
+              <SourceBadge
+                kind="instagram"
+                size={20}
+                className="absolute -end-1 -bottom-1 border-2 border-story-bg"
+              />
+            </span>
             <span className="text-sm font-bold">{t.app.name}</span>
             <RelativeTime iso={story.publishedAt} className="text-sm text-story-ink/75" />
             {paused && <span className="text-xs text-story-ink/75">· {t.story.paused}</span>}

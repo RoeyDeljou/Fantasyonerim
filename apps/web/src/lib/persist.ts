@@ -16,6 +16,8 @@ import {
   LeagueStandingsSchema,
   LiveLeagueSchema,
   MeSchema,
+  NewsFilterSchema,
+  NewsFiltersSchema,
   NewsPageSchema,
   PublicConfigSchema,
   StoriesSchema,
@@ -63,8 +65,12 @@ function kindOf(key: QueryKey): Kind | null {
   if (a === 'news' && key.length === 2) {
     if (b === 'feed') return { schema: NewsPageSchema, infinite: true };
     if (b === 'stories') return { schema: StoriesSchema };
+    if (b === 'filters') return { schema: NewsFiltersSchema };
     return null;
   }
+  // A filter chip's own feed, e.g. ['news', 'feed', 'shorts'].
+  if (a === 'news' && b === 'feed' && key.length === 3 && NewsFilterSchema.safeParse(c).success)
+    return { schema: NewsPageSchema, infinite: true };
   if (a === 'community' && b === 'feed' && c === 'all')
     return { schema: CommunityPageSchema, infinite: true };
   return null;

@@ -52,6 +52,27 @@
   --story-shade: rgb(0 0 0 / 0.55);
   --media-scrim: rgb(0 0 0 / 0.45);
   --on-media: #ffffff;
+  /*
+   * News source badges (avatar dot + filter chips): bold, platform-recognisable colours, white glyph.
+   * Glyph contrast: YouTube 4.0:1 · podcast 14.2:1 · X 21:1 · Instagram ≥ 3.5:1 where the glyph sits.
+   * `-text` = the source label next to it (≥ 4.5:1 on the card surface). `-ring` separates dark badges from a
+   * dark surface (transparent in light mode).
+   */
+  --src-on: #ffffff;
+  --src-youtube: #ff0000;
+  --src-youtube-text: #d00000;
+  --src-podcast: #3d185b;
+  --src-podcast-text: #3d185b;
+  --src-x: #000000;
+  --src-x-text: #000000;
+  --src-instagram-from: #f58529;
+  --src-instagram-via: #dd2a7b;
+  --src-instagram-to: #8134af;
+  --src-instagram-text: #c13584;
+  --src-ring: transparent;
+  /* Team updates stay brand mint in both themes (dark mode: mint is the primary). */
+  --src-admin: #c7efd5;
+  --src-admin-on: #2a0f40;
 }
 
 :root[data-theme='dark'] {
@@ -91,6 +112,12 @@
   --story-shade: rgb(0 0 0 / 0.55);
   --media-scrim: rgb(0 0 0 / 0.45);
   --on-media: #ffffff;
+  --src-podcast: #8b5cf6; /* brighter than the purple surface; white glyph 4.2:1 */
+  --src-podcast-text: #b89cff;
+  --src-youtube-text: #ff6b6b;
+  --src-x-text: #f6f4f5;
+  --src-instagram-text: #f58ac0;
+  --src-ring: rgb(246 244 245 / 0.8);
 }
 
 /* No-JS fallback: follow the system when no explicit theme was set. */
@@ -125,5 +152,11 @@
     --chip-label: rgb(21 10 31 / 0.88);
     --theme-color: #150a1f;
     --story-ring-seen: #5a4370;
+    --src-podcast: #8b5cf6; /* brighter than the purple surface; white glyph 4.2:1 */
+    --src-podcast-text: #b89cff;
+    --src-youtube-text: #ff6b6b;
+    --src-x-text: #f6f4f5;
+    --src-instagram-text: #f58ac0;
+    --src-ring: rgb(246 244 245 / 0.8);
   }
 }

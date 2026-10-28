@@ -132,15 +132,15 @@ async function injectYouTube(ctx) {
   await ctx.route(
     (u) => u.origin === API && u.pathname === '/v1/news',
     async (r) => {
-      if (r.request().method() !== 'GET' || new URL(r.request().url()).searchParams.get('cursor')) {
-        return r.continue();
-      }
+      const params = new URL(r.request().url()).searchParams;
+      if (r.request().method() !== 'GET' || params.get('cursor')) return r.continue();
+      const filter = params.get('filter');
       const res = await r.fetch();
       const body = await res.json();
       const items = body.items.map((i) =>
         i.id === EP.both.id ? { ...i, links: { ...i.links, youtube: YT.episodeUrl } } : i,
       );
-      items.push(
+      const extra = [
         ytItem(
           'youtube_short',
           YT.short,
@@ -150,9 +150,22 @@ async function injectYouTube(ctx) {
           1920,
         ),
         ytItem('youtube_video', YT.video, 'סרטון e2e', 50, 1280, 720),
-      );
+      ];
+      const want = { shorts: 'youtube_short', videos: 'youtube_video' }[filter ?? ''];
+      items.push(...extra.filter((i) => !filter || i.source === want));
       items.sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt));
       await r.fulfill({ response: res, json: { ...body, items } });
+    },
+  );
+  // The injected items make "Shorts" and "Videos" non-empty, so their chips are listed too.
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/news/filters',
+    async (r) => {
+      const res = await r.fetch();
+      const body = await res.json();
+      const have = new Set([...body.filters, 'shorts', 'videos']);
+      const order = ['episodes', 'shorts', 'videos', 'instagram', 'x', 'updates'];
+      await r.fulfill({ response: res, json: { filters: order.filter((f) => have.has(f)) } });
     },
   );
 }
@@ -590,6 +603,109 @@ async function journeys(browser) {
       assert((await page.locator('iframe').count()) === 1, 'only one YouTube player at a time');
       assert((await card.locator('iframe').count()) === 0, 'the Short was unloaded');
       await noHorizontalScroll(page, 'news with YouTube');
+    },
+  );
+
+  await step(
+    'filter chips come from /v1/news/filters; Shorts shows only Shorts and survives a reload',
+    async () => {
+      const filters = await page.request.get(`${API}/v1/news/filters`).then((r) => r.json());
+      const row = page.getByTestId('news-filters');
+      await row.locator('[data-filter=shorts]').waitFor();
+      const chips = await row.locator('button').evaluateAll((bs) => bs.map((b) => b.dataset.filter));
+      // page.request bypasses the context routes: the API's own list, plus the two injected YouTube filters.
+      const have = new Set([...filters.filters, 'shorts', 'videos']);
+      const expected = [
+        'all',
+        ...['episodes', 'shorts', 'videos', 'instagram', 'x', 'updates'].filter((f) => have.has(f)),
+      ];
+      assert(
+        chips.join(',') === expected.join(','),
+        `chips: ${chips.join(',')} (expected ${expected.join(',')})`,
+      );
+      assert(chips[0] === 'all' && chips.includes('episodes'), `chips: ${chips.join(',')}`);
+      assert(
+        (await row.locator('[data-filter=all]').getAttribute('aria-pressed')) === 'true',
+        'All is the default',
+      );
+      await row.locator('[data-filter=shorts]').getByText('שורטס').waitFor();
+      for (const b of await row.locator('button').all()) {
+        const box = await b.boundingBox();
+        assert(box && box.height >= 44, 'chip is a 44px touch target');
+      }
+      // RTL: the row starts at the right edge.
+      const first = await row.locator('[data-filter=all]').boundingBox();
+      const second = await row.locator('button').nth(1).boundingBox();
+      assert(first && second && first.x > second.x, 'RTL chip order runs right-to-left');
+
+      const calls = [];
+      const onReq = (r) => {
+        const u = new URL(r.url());
+        if (u.origin === API && u.pathname === '/v1/news') calls.push(u.searchParams.get('filter'));
+      };
+      page.on('request', onReq);
+      await row.locator('[data-filter=shorts]').click();
+      await page.locator(`#news-${YT.short.id}`).waitFor();
+      assert(
+        (await row.locator('[data-filter=shorts]').getAttribute('aria-pressed')) === 'true',
+        'Shorts pressed',
+      );
+      const sources = await page
+        .locator('[data-testid=news-feed] [data-testid=news-card]')
+        .evaluateAll((cs) => cs.map((c) => c.getAttribute('data-source')));
+      assert(
+        sources.length > 0 && sources.every((s) => s === 'youtube_short'),
+        `sources: ${sources.join(',')}`,
+      );
+      assert(calls.includes('shorts'), `/v1/news calls: ${calls.join(',')}`);
+      const bg = await row
+        .locator('[data-filter=shorts]')
+        .evaluate((b) => getComputedStyle(b).backgroundColor);
+      assert(bg !== 'rgba(0, 0, 0, 0)', 'selected chip is filled');
+      await noHorizontalScroll(page, 'news filtered');
+
+      await page.reload();
+      await page.getByTestId('news-filters').locator('[data-filter=shorts][aria-pressed=true]').waitFor();
+      await page.locator(`#news-${YT.short.id}`).waitFor();
+      assert((await page.locator('[data-source=podcast]').count()) === 0, 'still filtered after reload');
+      page.off('request', onReq);
+
+      // Keyboard: arrow moves focus along the row, Enter selects.
+      await page.getByTestId('news-filters').locator('[data-filter=all]').focus();
+      await page.keyboard.press('ArrowLeft'); // RTL: forward
+      const focused = await page.evaluate(() => document.activeElement?.getAttribute('data-filter'));
+      assert(focused === chips[1], `focus moved to ${focused}`);
+      await page.getByTestId('news-filters').locator('[data-filter=all]').focus();
+      await page.keyboard.press('Enter');
+      await page.getByTestId('news-filters').locator('[data-filter=all][aria-pressed=true]').waitFor();
+      await page.locator('[data-source=podcast]').first().waitFor();
+    },
+  );
+
+  await step(
+    'source badges have their own colours (YouTube red, podcast purple, dark-mode purple)',
+    async () => {
+      const bgOf = (sel) =>
+        page
+          .locator(sel)
+          .first()
+          .evaluate((el) => getComputedStyle(el).backgroundColor);
+      const yt = await bgOf(`#news-${YT.short.id} header [data-testid=source-badge]`);
+      assert(yt === 'rgb(255, 0, 0)', `YouTube badge ${yt}`);
+      const pod = await bgOf(`#news-${EP.both.id} header [data-testid=source-badge]`);
+      assert(pod === 'rgb(61, 24, 91)', `podcast badge (light) ${pod}`);
+      const glyph = await page
+        .locator(`#news-${YT.short.id} header [data-testid=source-badge]`)
+        .evaluate((el) => getComputedStyle(el).color);
+      assert(glyph === 'rgb(255, 255, 255)', `badge glyph ${glyph}`);
+      await page.evaluate(() => globalThis.localStorage.setItem('fant.theme', 'dark'));
+      await page.reload();
+      await page.locator(`#news-${EP.both.id} header [data-testid=source-badge]`).waitFor();
+      const podDark = await bgOf(`#news-${EP.both.id} header [data-testid=source-badge]`);
+      assert(podDark === 'rgb(139, 92, 246)', `podcast badge (dark) ${podDark}`);
+      await page.evaluate(() => globalThis.localStorage.removeItem('fant.theme'));
+      await page.reload();
+      await page.locator('[data-source=podcast]').first().waitFor();
     },
   );
 

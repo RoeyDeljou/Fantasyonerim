@@ -242,3 +242,49 @@ html:has(dialog.story[open]) {
     transform: scale(1);
   }
 }
+
+/* ---------- News source badges (colours: theme.css --src-*) ---------- */
+.src-badge {
+  background: var(--src-bg);
+  color: var(--src-on);
+  box-shadow: inset 0 0 0 1px var(--src-badge-ring, transparent);
+}
+.src-badge[data-src='youtube'] {
+  --src-bg: var(--src-youtube);
+}
+.src-badge[data-src='podcast'] {
+  --src-bg: var(--src-podcast);
+  --src-badge-ring: var(--src-ring);
+}
+.src-badge[data-src='x'] {
+  --src-bg: var(--src-x);
+  --src-badge-ring: var(--src-ring);
+}
+.src-badge[data-src='instagram'] {
+  --src-bg: linear-gradient(
+    45deg,
+    var(--src-instagram-from) 0%,
+    var(--src-instagram-via) 40%,
+    var(--src-instagram-to) 100%
+  );
+}
+.src-badge[data-src='admin'] {
+  --src-bg: var(--src-admin);
+  color: var(--src-admin-on);
+  --src-badge-ring: var(--line);
+}
+.src-label[data-src='youtube'] {
+  color: var(--src-youtube-text);
+}
+.src-label[data-src='podcast'] {
+  color: var(--src-podcast-text);
+}
+.src-label[data-src='x'] {
+  color: var(--src-x-text);
+}
+.src-label[data-src='instagram'] {
+  color: var(--src-instagram-text);
+}
+.src-label[data-src='admin'] {
+  color: var(--primary);
+}

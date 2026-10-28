@@ -2,19 +2,21 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { NewsItemIdSchema } from '@fant/shared';
-import type { NewsItem } from '@fant/shared';
+import type { NewsFilter, NewsItem } from '@fant/shared';
 import { useI18n } from '@/i18n';
-import { pushPromptSnoozed, snoozePushPrompt } from '@/lib/localState';
+import { pushPromptSnoozed, setNewsFilterPref, snoozePushPrompt, useNewsFilterPref } from '@/lib/localState';
 import { enablePush, usePushState } from '@/lib/push';
 import type { PushError } from '@/lib/push';
-import { useMe, useNewsFeed, useNewsHead, useNewsItem } from '@/lib/queries';
+import { useMe, useNewsFeed, useNewsFilters, useNewsHead, useNewsItem } from '@/lib/queries';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { AppShell, ShellSkeleton } from '@/components/AppShell';
 import { BottomSheet } from '@/components/BottomSheet';
 import { IosInstallSteps } from '@/components/InstallGuide';
 import { pushErrorText } from '@/components/NotificationsCard';
 import { ArrowUpIcon, BellIcon, CloseIcon, MicIcon, RefreshIcon } from '@/components/icons';
+import { FilterChips } from '@/components/news/FilterChips';
 import { NewsCard, NewsCardSkeleton } from '@/components/news/NewsCards';
+import { SourceBadge, filterKind } from '@/components/news/SourceBadge';
 import { ProfileHeader } from '@/components/news/ProfileHeader';
 import {
   Button,
@@ -45,13 +47,32 @@ function NewsInner() {
     const p = NewsItemIdSchema.safeParse(itemParam);
     return p.success ? p.data : null;
   }, [itemParam]);
+  const pref = useNewsFilterPref();
+  const filters = useNewsFilters();
+  // Only chips the API lists (a failed /filters call = "All" only). While it loads, trust the saved chip.
+  const available: readonly NewsFilter[] = filters.data?.filters ?? [];
+  const filter: NewsFilter | null =
+    pref === 'all'
+      ? null
+      : filters.data
+        ? available.includes(pref)
+          ? pref
+          : null
+        : filters.isError
+          ? null
+          : pref;
 
   return (
     <div className="flex flex-col gap-4">
       <ProfileHeader />
       <PushPrompt />
       {itemId && <Highlighted id={itemId} isAdmin={isAdmin} onClose={() => setItemParam(null)} />}
-      <Feed isAdmin={isAdmin} skipId={itemId} />
+      <FilterChips
+        filters={filters.data ? available : filter ? [filter] : []}
+        value={filter ?? 'all'}
+        onChange={setNewsFilterPref}
+      />
+      <Feed key={filter ?? 'all'} isAdmin={isAdmin} skipId={itemId} filter={filter} />
     </div>
   );
 }
@@ -171,10 +192,18 @@ function PushPrompt() {
 
 // ---------- feed ----------
 
-function Feed({ isAdmin, skipId }: { isAdmin: boolean; skipId: NewsItem['id'] | null }) {
+function Feed({
+  isAdmin,
+  skipId,
+  filter,
+}: {
+  isAdmin: boolean;
+  skipId: NewsItem['id'] | null;
+  filter: NewsFilter | null;
+}) {
   const { t } = useI18n();
-  const feed = useNewsFeed();
-  const head = useNewsHead(feed.isSuccess);
+  const feed = useNewsFeed(filter);
+  const head = useNewsHead(feed.isSuccess, filter);
   const sentinel = useRef<HTMLDivElement>(null);
 
   const items = useMemo(() => {
@@ -223,6 +252,22 @@ function Feed({ isAdmin, skipId }: { isAdmin: boolean; skipId: NewsItem['id'] | 
   }
   // A failed *next page* keeps the loaded pages (status is "error" but data is present).
   if (!feed.data) return <ErrorState error={feed.error} onRetry={() => feed.refetch()} />;
+  if (items.length === 0 && filter) {
+    return (
+      <div data-testid="news-filter-empty">
+        <EmptyState
+          icon={<SourceBadge kind={filterKind(filter)} size={24} />}
+          title={t.news[`empty_${filter}`]}
+          body={t.news.emptyFilterBody}
+          action={
+            <Button variant="secondary" onClick={() => setNewsFilterPref('all')}>
+              {t.news.showAll}
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
   if (items.length === 0 && !skipId) {
     return (
       <EmptyState

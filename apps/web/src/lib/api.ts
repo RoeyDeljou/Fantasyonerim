@@ -19,6 +19,7 @@ import {
   IntegrationListSchema,
   IntegrationStatusSchema,
   NewsItemSchema,
+  NewsFiltersSchema,
   NewsPageSchema,
   NotificationPrefsSchema,
   OAuthStartSchema,
@@ -66,6 +67,8 @@ import type {
   AdminNewsBody,
   AdminPushBody,
   AdminPushResult,
+  NewsFilter,
+  NewsFilters,
   IntegrationId,
   IntegrationList,
   IntegrationStatus,
@@ -301,8 +304,19 @@ export const api = {
   captainBattle: (o: Signal = {}): Promise<CaptainBattle> =>
     request('GET', '/v1/captain-battle', CaptainBattleSchema, o),
 
-  news: (cursor: string | undefined, limit: number, o: Signal = {}): Promise<NewsPage> =>
-    request('GET', '/v1/news', NewsPageSchema, { ...o, query: { cursor, limit } }),
+  /** `filter` omitted = everything (the "All" chip). */
+  news: (
+    cursor: string | undefined,
+    limit: number,
+    o: Signal = {},
+    filter?: NewsFilter | null,
+  ): Promise<NewsPage> =>
+    request('GET', '/v1/news', NewsPageSchema, {
+      ...o,
+      query: { cursor, limit, filter: filter ?? undefined },
+    }),
+  newsFilters: (o: Signal = {}): Promise<NewsFilters> =>
+    request('GET', '/v1/news/filters', NewsFiltersSchema, o),
   stories: (o: Signal = {}): Promise<Stories> => request('GET', '/v1/news/stories', StoriesSchema, o),
   newsItem: (id: NewsItemId, o: Signal = {}): Promise<NewsItem> =>
     request('GET', `/v1/news/${encodeURIComponent(id)}`, NewsItemSchema, o),

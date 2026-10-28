@@ -29,6 +29,7 @@ import {
 } from '@/components/icons';
 import { AuthorAvatar, AuthorLine } from '@/components/community/parts';
 import { MediaImage, RelativeTime } from '@/components/news/parts';
+import { SourceBadge, SourceLabel, sourceKind, sourceLabel } from '@/components/news/SourceBadge';
 import { Collapsible, loadProblem, saveProblem } from '@/components/Collapsible';
 import {
   Badge,
@@ -464,16 +465,6 @@ function HiddenNewsSection({ onDone }: { onDone(msg: string): void }) {
   const m = t.moderation;
   const hidden = useHiddenNews(true);
   const restore = useRestoreNews();
-  const sourceLabel = (s: NewsItem['source']) =>
-    ({
-      podcast: t.news.sourcePodcast,
-      instagram_post: t.news.sourceInstagram,
-      instagram_story: t.news.sourceInstagram,
-      x_post: t.news.sourceX,
-      admin_update: t.news.sourceAdmin,
-      youtube_short: t.news.sourceYoutube,
-      youtube_video: t.news.sourceYoutube,
-    })[s];
 
   const n = hidden.data?.items.length ?? 0;
   return (
@@ -525,8 +516,13 @@ function HiddenNewsSection({ onDone }: { onDone(msg: string): void }) {
                   <span dir="auto" className="name-start line-clamp-2 text-sm font-semibold text-ink">
                     {newsTitle(t, item)}
                   </span>
-                  <span className="text-xs text-muted">
-                    {sourceLabel(item.source)} · {m.hiddenAt} <RelativeTime iso={hiddenAt} />
+                  <span className="flex min-w-0 items-center gap-1 text-xs text-muted">
+                    <SourceBadge kind={sourceKind(item.source)} size={16} />
+                    <SourceLabel kind={sourceKind(item.source)}>{sourceLabel(t, item.source)}</SourceLabel>
+                    <span aria-hidden="true">·</span>
+                    <span className="truncate">
+                      {m.hiddenAt} <RelativeTime iso={hiddenAt} />
+                    </span>
                   </span>
                 </div>
                 <Button

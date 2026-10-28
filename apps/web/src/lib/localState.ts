@@ -1,8 +1,8 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import { BroadcastTargetSchema } from '@fant/shared';
-import type { BroadcastTarget } from '@fant/shared';
+import { BroadcastTargetSchema, NewsFilterSchema } from '@fant/shared';
+import type { BroadcastTarget, NewsFilter } from '@fant/shared';
 import { readPref, removePref, writePref } from './prefs';
 import { clearPersistedQueries } from './persist';
 
@@ -15,6 +15,7 @@ const KEYS = {
   seenStories: 'fant.news.seenStories',
   pushPromptDismissedAt: 'fant.news.pushPromptDismissedAt',
   listenApp: 'fant.news.listenApp',
+  newsFilter: 'fant.news.filter',
   broadcastTargets: 'fant.admin.broadcastTargets',
   adminCards: 'fant.admin.cards',
 } as const;
@@ -102,6 +103,33 @@ export function useListenPref(): ListenPref {
   );
 }
 
+// ---------- News filter chip ----------
+
+/** The selected chip ('all' = no filter); survives reopening the app. */
+export type NewsFilterPref = NewsFilter | 'all';
+const filterListeners = new Set<() => void>();
+
+function readNewsFilter(): NewsFilterPref {
+  const p = NewsFilterSchema.safeParse(readPref(KEYS.newsFilter));
+  return p.success ? p.data : 'all';
+}
+
+export function setNewsFilterPref(f: NewsFilterPref): void {
+  writePref(KEYS.newsFilter, f);
+  filterListeners.forEach((l) => l());
+}
+
+export function useNewsFilterPref(): NewsFilterPref {
+  return useSyncExternalStore(
+    (cb) => {
+      filterListeners.add(cb);
+      return () => filterListeners.delete(cb);
+    },
+    readNewsFilter,
+    () => 'all',
+  );
+}
+
 // ---------- live update composer: the last chosen targets ----------
 
 /** The targets the admin picked last time (null = never sent from this device). */
@@ -146,4 +174,5 @@ export function clearAccountLocalState(): void {
   seenCache = null;
   seenListeners.forEach((l) => l());
   listenListeners.forEach((l) => l());
+  filterListeners.forEach((l) => l());
 }

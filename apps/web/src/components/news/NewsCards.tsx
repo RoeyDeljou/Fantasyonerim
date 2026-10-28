@@ -25,7 +25,6 @@ import {
   EyeOffIcon,
   HeadphonesIcon,
   MegaphoneIcon,
-  MicIcon,
   SpotifyIcon,
   XBrandIcon,
   ExternalIcon,
@@ -35,44 +34,25 @@ import { Badge, Button, IconButton, InlineError, Spinner, cx, errorMessage } fro
 import { MediaCarousel, MediaGrid } from './Media';
 import { ExpandableText, ExternalButton, MediaImage, RelativeTime, useNow } from './parts';
 import { YouTubePlayer } from './YouTube';
-
-type FeedSource = Exclude<NewsItem['source'], 'instagram_story'>;
-
-const SOURCE_ICON: Record<FeedSource, ReactNode> = {
-  podcast: <MicIcon size={12} strokeWidth={2.4} />,
-  instagram_post: <CameraIcon size={12} strokeWidth={2.4} />,
-  x_post: <XBrandIcon size={11} />,
-  admin_update: <MegaphoneIcon size={12} strokeWidth={2.4} />,
-  youtube_short: <YouTubeIcon size={12} strokeWidth={2.4} />,
-  youtube_video: <YouTubeIcon size={12} strokeWidth={2.4} />,
-};
+import { SourceBadge, SourceLabel, sourceKind, sourceLabel } from './SourceBadge';
 
 function CardHeader({ item, isAdmin }: { item: NewsItem; isAdmin: boolean }) {
   const { t } = useI18n();
-  const source: FeedSource = item.source === 'instagram_story' ? 'instagram_post' : item.source;
-  const label = {
-    podcast: t.news.sourcePodcast,
-    instagram_post: t.news.sourceInstagram,
-    x_post: t.news.sourceX,
-    admin_update: t.news.sourceAdmin,
-    youtube_short: t.news.sourceYoutube,
-    youtube_video: t.news.sourceYoutube,
-  }[source];
+  const kind = sourceKind(item.source);
   return (
     <header className="flex items-center gap-2.5">
       <span className="relative shrink-0">
         <Logo size={40} />
-        <span
-          className="absolute -end-1 -bottom-1 flex size-5 items-center justify-center rounded-full border-2 border-surface bg-primary text-on-primary"
-          aria-hidden="true"
-        >
-          {SOURCE_ICON[source]}
-        </span>
+        <SourceBadge
+          kind={kind}
+          size={24}
+          className="absolute -end-1.5 -bottom-1.5 border-2 border-surface"
+        />
       </span>
       <div className="flex min-w-0 flex-1 flex-col leading-tight">
         <span className="truncate text-[15px] font-bold text-ink">{t.app.name}</span>
         <span className="flex min-w-0 items-center gap-1 text-xs text-muted">
-          <span className="truncate">{label}</span>
+          <SourceLabel kind={kind}>{sourceLabel(t, item.source)}</SourceLabel>
           <span aria-hidden="true">·</span>
           <RelativeTime iso={item.publishedAt} className="shrink-0" />
         </span>

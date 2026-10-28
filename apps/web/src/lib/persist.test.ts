@@ -35,6 +35,10 @@ const page = (cursor: string | null) => ({ items: [], nextCursor: cursor });
 describe('query cache persistence', () => {
   it('persists only the allow-list — never admin data, the recovery code or invite previews', () => {
     expect(isPersistedKey(['news', 'feed'])).toBe(true);
+    expect(isPersistedKey(['news', 'feed', 'shorts'])).toBe(true);
+    expect(isPersistedKey(['news', 'filters'])).toBe(true);
+    expect(isPersistedKey(['news', 'feed', 'bogus'])).toBe(false);
+    expect(isPersistedKey(['news', 'head', 'shorts'])).toBe(false);
     expect(isPersistedKey(['me'])).toBe(true);
     expect(isPersistedKey(['community', 'feed', 'all'])).toBe(true);
     expect(isPersistedKey(['fpl', 'picks', 1, 9])).toBe(true);
