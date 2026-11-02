@@ -27,6 +27,11 @@ export const NewsMediaSchema = z.object({
   posterUrl: z.string().url().nullable(),
   width: z.number().int().positive().nullable(),
   height: z.number().int().positive().nullable(),
+  /**
+   * Smaller re-encoded copies of an image (e.g. 320 / 640 px wide) for `srcset`, smallest first. Absent for videos
+   * and for images that are already small. `url` stays the full-size original.
+   */
+  variants: z.array(z.object({ url: z.string().url(), width: z.number().int().positive() })).optional(),
 });
 export type NewsMedia = z.infer<typeof NewsMediaSchema>;
 

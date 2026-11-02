@@ -22,6 +22,8 @@ export const UploadedImageSchema = z.object({
   url: z.string().url(),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
+  /** Smaller copies for `srcset`, smallest first (see NewsMedia.variants). */
+  variants: z.array(z.object({ url: z.string().url(), width: z.number().int().positive() })).optional(),
 });
 export type UploadedImage = z.infer<typeof UploadedImageSchema>;
 
