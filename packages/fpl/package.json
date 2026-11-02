@@ -13,7 +13,8 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc --noEmit -p tsconfig.test.json"
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "bench": "node --expose-gc --max-semi-space-size=256 --import tsx bench/fpl-bench.ts"
   },
   "dependencies": {
     "@fant/shared": "0.1.0",

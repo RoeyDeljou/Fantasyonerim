@@ -1,8 +1,17 @@
 export * from './service.js';
-export { createFplService, FPL_CACHE_TTL, LIVE_LEAGUE_CONCURRENCY, STANDINGS_PAGE_SIZE } from './client.js';
-export type { CreateFplServiceExtras } from './client.js';
+export {
+  createFplService,
+  FPL_CACHE_LIMITS,
+  FPL_CACHE_TTL,
+  FPL_REFRESH_AHEAD_RATIO,
+  FPL_STALE_IF_ERROR,
+  LIVE_LEAGUE_CONCURRENCY,
+  STANDINGS_PAGE_SIZE,
+} from './client.js';
+export type { CreateFplServiceExtras, FplCacheResource } from './client.js';
+export { FplBackoff, type FplBackoffOptions } from './backoff.js';
 export { DEFAULT_BASE_URL, DEFAULT_USER_AGENT } from './http.js';
-export { TtlCache, mapWithConcurrency } from './cache.js';
+export { LruMap, TtlCache, mapWithConcurrency, type CachePolicy, type TtlCacheOptions } from './cache.js';
 export { bonusFromBps, type BpsScore } from './bonus.js';
 export {
   computeLivePoints,

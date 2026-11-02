@@ -275,6 +275,9 @@ model NotificationLog {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, key])
+  /// live_alerts counts this GW's alerts every 2 minutes during matches: a range on createdAt (since the GW's
+  /// deadline) instead of a scan of the season-long log.
+  @@index([createdAt])
 }
 
 /// Lease per background job so two instances / ticks never run the same job concurrently.

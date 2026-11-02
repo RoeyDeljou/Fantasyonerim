@@ -189,6 +189,7 @@ export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth
         where: { id },
         data: { bannedAt: target.bannedAt ?? ctx.clock.now(), banReason: reason },
       });
+      ctx.forgetUser(id);
       return reply.code(204).send();
     });
 
@@ -198,6 +199,7 @@ export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth
         where: { id },
         data: { bannedAt: null, banReason: null },
       });
+      ctx.forgetUser(id);
       if (updated.count === 0) throw notFound('This user does not exist');
       return reply.code(204).send();
     });

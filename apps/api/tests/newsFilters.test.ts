@@ -36,6 +36,8 @@ async function add(source: string, extra: { hiddenAt?: Date; suppressed?: boolea
       ...extra,
     },
   });
+  // Written straight to the DB (ingest and admin routes invalidate the shared News pages themselves).
+  app.hot.invalidateNews();
   return row.id;
 }
 

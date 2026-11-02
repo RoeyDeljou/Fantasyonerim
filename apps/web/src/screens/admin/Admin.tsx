@@ -82,9 +82,12 @@ export function AdminScreen() {
   return (
     <AdminFrame title={t.admin.title}>
       <AdminGuard>
-        <Suspense fallback={<Skeleton className="h-64" />}>
-          <AdminViews />
-        </Suspense>
+        {/* data-admin-console: scripts/perf-budget.mjs fails the build if this marker shows up in a fan route's JS. */}
+        <div data-admin-console="">
+          <Suspense fallback={<Skeleton className="h-64" />}>
+            <AdminViews />
+          </Suspense>
+        </div>
       </AdminGuard>
     </AdminFrame>
   );

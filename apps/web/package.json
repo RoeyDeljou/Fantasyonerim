@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
-    "postbuild": "node scripts/stamp-build.mjs out",
+    "postbuild": "node scripts/stamp-build.mjs out && node scripts/perf-budget.mjs out",
+    "perf:budget": "node scripts/perf-budget.mjs",
     "typecheck": "tsc --noEmit",
     "icons": "node scripts/generate-icons.mjs",
     "e2e": "node e2e/run.mjs"

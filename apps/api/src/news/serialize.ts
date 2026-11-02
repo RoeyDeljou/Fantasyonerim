@@ -9,7 +9,9 @@ import type { NewsItem as NewsItemRow, NewsMedia } from '@prisma/client';
 import { mapMediaUrl, type MediaUrlMapper } from '../media/publicUrl.js';
 import { serialize } from '../validate.js';
 
-export type NewsItemWithMedia = NewsItemRow & { media: NewsMedia[] };
+/** The media columns the serializer reads (routes select only these). */
+export type NewsMediaFields = Pick<NewsMedia, 'order' | 'kind' | 'url' | 'posterUrl' | 'width' | 'height'>;
+export type NewsItemWithMedia = NewsItemRow & { media: NewsMediaFields[] };
 
 export const EMPTY_LINKS: NewsLinks = {
   spotify: null,

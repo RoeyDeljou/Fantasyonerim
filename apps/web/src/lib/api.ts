@@ -113,6 +113,7 @@ import type {
   CreateAdminInviteBody,
 } from '@fant/shared';
 import { tokenStore } from './tokenStore';
+import { takeEarlyResponse } from './earlyFetch';
 
 /** `@fant/shared` exports these schemas but not their inferred types. */
 export type AdminAccount = ReturnType<typeof AdminAccountSchema.parse>;
@@ -198,9 +199,12 @@ async function request<T>(
   if (opts.body !== undefined) headers['content-type'] = 'application/json';
   if (token) headers.authorization = `Bearer ${token}`;
 
-  let res: Response;
+  let res: Response | null = null;
+  // Already requested by the inline <head> script while the bundle was downloading (lib/earlyFetch.ts)?
+  const early = method === 'GET' ? takeEarlyResponse(url.pathname + url.search, token) : null;
+  if (early) res = await early.catch(() => null); // failed early → fetched normally below
   try {
-    res = await fetch(url, {
+    res ??= await fetch(url, {
       method,
       headers,
       body: opts.body === undefined ? null : JSON.stringify(opts.body),

@@ -10,7 +10,7 @@ Legend: 🌐 public · 👤 signed-in user · 🛡 admin
 
 | Method  | Path                             | Auth                    | Body / query                | Response                                                                 |
 | ------- | -------------------------------- | ----------------------- | --------------------------- | ------------------------------------------------------------------------ |
-| GET     | `/health`                        | 🌐                      | –                           | `{ ok: true }`                                                           |
+| GET     | `/health`                        | 🌐                      | –                           | `{ ok: true, fpl?: 'ok'\|'degraded'\|'updating' }` (no error details)    |
 | GET     | `/v1/config`                     | 🌐                      | –                           | `PublicConfig`                                                           |
 | POST    | `/v1/auth/register`              | 🌐                      | `RegisterBody`              | `AuthResponse` (201) · 404 unknown Team ID · 409 team already registered |
 | POST    | `/v1/auth/recover`               | 🌐                      | `RecoverBody`               | `AuthResponse` · 401 wrong code                                          |

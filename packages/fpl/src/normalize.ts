@@ -164,6 +164,8 @@ const FIXTURE_STAT_ORDER: readonly string[] = FixtureStatIdSchema.options;
 export function mapFixtureDetail(input: {
   fixture: RawFixture;
   live: RawLive | null;
+  /** This fixture's lines from `fixtureLinesOf(live)` (precomputed once per live payload); else derived. */
+  lines?: readonly FixturePlayerLine[];
   teamOfPlayer: ReadonlyMap<number, number>;
   nowMs: number;
   onUnknownStat?: (identifier: string) => void;
@@ -196,24 +198,21 @@ export function mapFixtureDetail(input: {
   }
 
   const players: { playerId: number; teamId: number; minutes: number; points: number }[] = [];
-  if (started && live) {
-    for (const el of live.elements) {
-      const entries = el.explain.filter((x) => x.fixture === f.id);
-      if (entries.length === 0) continue;
-      let minutes = 0;
-      let points = 0;
-      for (const entry of entries)
-        for (const st of entry.stats) {
-          points += st.points;
-          if (st.identifier === 'minutes') minutes += st.value;
-        }
-      if (minutes <= 0) continue;
-      const bootstrapTeam = teamOfPlayer.get(el.id);
+  const lines = started ? (input.lines ?? (live ? (fixtureLinesOf(live).get(f.id) ?? []) : null)) : null;
+  if (lines) {
+    for (const line of lines) {
+      if (line.minutes <= 0) continue;
+      const bootstrapTeam = teamOfPlayer.get(line.playerId);
       const teamId =
-        sideOf.get(el.id) ??
+        sideOf.get(line.playerId) ??
         (bootstrapTeam === f.team_h || bootstrapTeam === f.team_a ? bootstrapTeam : undefined);
       if (teamId === undefined) continue;
-      players.push({ playerId: el.id, teamId, minutes: Math.round(minutes), points });
+      players.push({
+        playerId: line.playerId,
+        teamId,
+        minutes: Math.round(line.minutes),
+        points: line.points,
+      });
     }
     players.sort((x, y) => y.points - x.points || y.minutes - x.minutes || x.playerId - y.playerId);
   }
@@ -224,6 +223,49 @@ export function mapFixtureDetail(input: {
     players,
     updatedAt: new Date(input.nowMs).toISOString(),
   });
+}
+
+/** One player's return from ONE fixture (its `explain` entry for that fixture), before any filtering. */
+export interface FixturePlayerLine {
+  playerId: number;
+  minutes: number;
+  points: number;
+}
+
+/**
+ * One pass over a GW live payload → per fixture id, every player's minutes and points from that fixture's
+ * `explain` only (a DGW player's other fixture is never mixed in). Computed once per live payload so a
+ * match sheet is O(players in the fixture) instead of O(all GW elements).
+ */
+export function fixtureLinesOf(live: RawLive): Map<number, FixturePlayerLine[]> {
+  const byFixture = new Map<number, FixturePlayerLine[]>();
+  for (const el of live.elements) {
+    let current: FixturePlayerLine | null = null;
+    let currentFixture = -1;
+    for (const entry of el.explain) {
+      // Entries for the same fixture (rare, but FPL has split them) are summed into one line.
+      if (current === null || entry.fixture !== currentFixture) {
+        let list = byFixture.get(entry.fixture);
+        if (!list) {
+          list = [];
+          byFixture.set(entry.fixture, list);
+        }
+        // Elements are visited one at a time, so this player's line (if any) is the list's last.
+        const last = list[list.length - 1];
+        current = last !== undefined && last.playerId === el.id ? last : null;
+        if (!current) {
+          current = { playerId: el.id, minutes: 0, points: 0 };
+          list.push(current);
+        }
+        currentFixture = entry.fixture;
+      }
+      for (const st of entry.stats) {
+        current.points += st.points;
+        if (st.identifier === 'minutes') current.minutes += st.value;
+      }
+    }
+  }
+  return byFixture;
 }
 
 export function mapEntry(raw: RawEntry): EntrySummary {
@@ -254,14 +296,15 @@ export function mapPicks(
   entryId: number,
   event: number,
   raw: RawPicks,
-  history: RawEntryHistory,
+  /** `chipsUsedOf(history)` — mapped once per history fetch. */
+  chipsUsed: readonly { chip: Chip; event: number }[],
 ): EntryPicks {
   const eh = raw.entry_history;
   return EntryPicksSchema.parse({
     entryId,
     event,
     activeChip: toChip(raw.active_chip),
-    chipsUsed: chipsUsedOf(history),
+    chipsUsed,
     picks: [...raw.picks]
       .sort((a, b) => a.position - b.position)
       .map((p) => ({

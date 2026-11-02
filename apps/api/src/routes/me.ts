@@ -40,6 +40,7 @@ export function meRoutes(
         ...(body.locale !== undefined ? { locale: body.locale } : {}),
       },
     });
+    ctx.forgetUser(user.id);
     return serialize(MeSchema, toMe(updated));
   });
 
@@ -48,6 +49,7 @@ export function meRoutes(
     const { user } = await auth.requireUser(request);
     parseInput(DeleteAccountBodySchema, request.body);
     await deleteAccount(ctx, user.id);
+    ctx.forgetUser(user.id);
     return reply.code(204).send();
   });
 
@@ -61,6 +63,7 @@ export function meRoutes(
       await claimInvite(tx, body.token, user, ctx.clock.now());
       return tx.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } });
     });
+    ctx.forgetUser(user.id);
     return serialize(MeSchema, toMe(updated));
   });
 

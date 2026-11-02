@@ -2,11 +2,21 @@ import { Prisma } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.js';
+import { isQuietHour, QUIET_JOBS_EVERY_MS } from '../perf/keepAlive.js';
 import { MINUTE, type Job, type JobName } from './types.js';
 
 export type JobRunStatus = 'ok' | 'failed' | 'locked' | 'not_due' | 'unknown';
 
 const DEFAULT_LEASE_MS = 10 * MINUTE;
+/** Jobs that write News items (ingest, YouTube linking, story expiry). */
+const NEWS_JOBS: ReadonlySet<JobName> = new Set<JobName>([
+  'podcast',
+  'youtube',
+  'instagram_posts',
+  'instagram_stories',
+  'x',
+  'cleanup',
+]);
 const EPOCH = new Date(0);
 const StateSchema = z.record(z.string(), z.unknown());
 
@@ -17,6 +27,7 @@ const StateSchema = z.record(z.string(), z.unknown());
  */
 export class JobRunner {
   private readonly jobs = new Map<JobName, Job>();
+  private lastQuietRunAt = -Infinity;
 
   constructor(
     private readonly ctx: AppContext,
@@ -71,9 +82,12 @@ export class JobRunner {
           ...(outcome?.state !== undefined ? { state: outcome.state as Prisma.InputJsonObject } : {}),
         },
       });
+      // Content jobs change the News feed: the shared hot pages are rebuilt on the next request.
+      if (NEWS_JOBS.has(name)) this.ctx.hot.invalidateNews();
       this.log.info({ job: name, ms: Date.now() - started, summary: outcome?.summary }, 'job ok');
       return 'ok';
     } catch (err) {
+      if (NEWS_JOBS.has(name)) this.ctx.hot.invalidateNews(); // a partial import is still new news
       const message = err instanceof Error ? err.message : String(err);
       await prisma.jobLease
         .update({ where: { name }, data: { lockedUntil: EPOCH, lastError: message.slice(0, 1000) } })
@@ -85,8 +99,19 @@ export class JobRunner {
 
   /** Runs every due job one after another (bounded memory on small hosts). Returns the jobs that ran. */
   async runDue(): Promise<JobName[]> {
+    const now = this.ctx.clock.now();
+    // Quiet hours (night, Israel time): jobs run at most every 30 min so Neon can suspend in between.
+    if (isQuietHour(now, this.ctx.config.keepAlive?.quietHours)) {
+      if (now.getTime() - this.lastQuietRunAt < QUIET_JOBS_EVERY_MS) return [];
+      this.lastQuietRunAt = now.getTime();
+    }
+    // One read of every lease first: a tick where nothing is due costs one query instead of two per job.
+    const leases = await this.ctx.prisma.jobLease.findMany({ select: { name: true, lastRunAt: true } });
+    const lastRun = new Map(leases.map((l) => [l.name, l.lastRunAt?.getTime() ?? null]));
     const ran: JobName[] = [];
-    for (const name of this.jobs.keys()) {
+    for (const [name, job] of this.jobs) {
+      const last = lastRun.get(name);
+      if (last !== undefined && last !== null && last > now.getTime() - job.everyMs) continue;
       const status = await this.run(name).catch((err: unknown) => {
         this.log.error({ job: name, err }, 'job lease failed');
         return 'failed' as const;

@@ -1,6 +1,14 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import type { ReactNode } from 'react';
 import { useI18n } from '@/i18n';
 import { linkify } from '@/lib/newsFormat';
@@ -188,32 +196,41 @@ export function ExternalButton({
 
 // ---------- media ----------
 
+/**
+ * True inside the first card of a feed: its media is what the screen is waiting for (the LCP), so it loads
+ * eagerly at high priority. Every other image is lazy, so a long feed never competes with the first screen.
+ */
+export const MediaPriority = createContext(false);
+
 /** An <img> that degrades to a tinted block (re-hosted media may still 404 on a bad sync). */
 export function MediaImage({
   src,
   alt,
   className,
-  loading = 'lazy',
+  loading,
   fallback,
   onLoad,
 }: {
   src: string;
   alt: string;
   className?: string;
+  /** Default: eager inside <MediaPriority value>, lazy everywhere else. */
   loading?: 'lazy' | 'eager';
   fallback?: ReactNode;
   /** Gets the loaded element (e.g. to read its natural size). */
   onLoad?: ((img: HTMLImageElement) => void) | undefined;
 }) {
   const [failed, setFailed] = useState(false);
+  const priority = useContext(MediaPriority) && loading !== 'lazy';
   useEffect(() => setFailed(false), [src]);
   if (failed) return fallback ?? <div aria-hidden="true" className={cx('bg-surface-2', className)} />;
   return (
     <img
       src={src}
       alt={alt}
-      loading={loading}
-      decoding="async"
+      loading={priority ? 'eager' : (loading ?? 'lazy')}
+      fetchPriority={priority ? 'high' : undefined}
+      decoding={priority ? 'auto' : 'async'}
       draggable={false}
       onError={() => setFailed(true)}
       onLoad={onLoad ? (e) => onLoad(e.currentTarget) : undefined}

@@ -1,8 +1,11 @@
 'use client';
 
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import { removeOldestQuery } from '@tanstack/react-query-persist-client';
-import type { PersistedClient, PersistQueryClientOptions } from '@tanstack/react-query-persist-client';
+import type {
+  PersistedClient,
+  Persister,
+  PersistQueryClientOptions,
+} from '@tanstack/react-query-persist-client';
 import { dehydrate } from '@tanstack/react-query';
 import type { Query, QueryClient, QueryKey } from '@tanstack/react-query';
 import {
@@ -155,20 +158,47 @@ function safeStorage(): Storage | undefined {
   }
 }
 
-export function serialize(client: PersistedClient): string {
-  // Infinite feeds: only the first page goes to disk.
-  const queries = client.clientState.queries.map((q) => {
-    const data = q.state.data;
-    if (!isInfinite(data) || data.pages.length <= KEEP_PAGES) return q;
-    return {
-      ...q,
-      state: {
-        ...q.state,
-        data: { pages: data.pages.slice(0, KEEP_PAGES), pageParams: data.pageParams.slice(0, KEEP_PAGES) },
-      },
-    };
+/**
+ * JSON of a query's data, cached by object identity. TanStack Query keeps unchanged data referentially equal across
+ * refetches (structural sharing), so a save after a poll or a next page only stringifies what actually changed —
+ * not the whole bootstrap (hundreds of KB) every time. That full re-stringify was a 100+ ms main-thread task while
+ * scrolling a feed on a mid-range phone.
+ */
+const dataJson = new WeakMap<object, string>();
+function jsonOf(v: unknown): string {
+  if (typeof v !== 'object' || v === null) return JSON.stringify(v) ?? 'null';
+  let json = dataJson.get(v);
+  if (json === undefined) {
+    json = JSON.stringify(v);
+    dataJson.set(v, json);
+  }
+  return json;
+}
+
+/** Infinite feeds: only the first page goes to disk (cached on that page object). */
+function dataToJson(data: unknown): string {
+  if (!isInfinite(data)) return jsonOf(data);
+  const pages = data.pages.slice(0, KEEP_PAGES).map(jsonOf).join(',');
+  return `{"pages":[${pages}],"pageParams":${JSON.stringify(data.pageParams.slice(0, KEEP_PAGES))}}`;
+}
+
+const DATA_SLOT = '"__fant_data__"';
+
+/** The persisted queries as a JSON array (everything but `buster` / `timestamp`). */
+function queriesJson(client: PersistedClient): string {
+  const parts = client.clientState.queries.map((q) => {
+    const shell = JSON.stringify({ ...q, state: { ...q.state, data: '__fant_data__' } });
+    return shell.replace(DATA_SLOT, () => dataToJson(q.state.data));
   });
-  return JSON.stringify({ ...client, clientState: { ...client.clientState, queries } });
+  return `[${parts.join(',')}]`;
+}
+
+function wrap(client: PersistedClient, queries: string): string {
+  return `{"buster":${JSON.stringify(client.buster)},"timestamp":${JSON.stringify(client.timestamp)},"clientState":{"mutations":[],"queries":${queries}}}`;
+}
+
+export function serialize(client: PersistedClient): string {
+  return wrap(client, queriesJson(client));
 }
 
 export function deserialize(raw: string): PersistedClient {
@@ -184,14 +214,68 @@ export function deserialize(raw: string): PersistedClient {
 
 const storage = safeStorage();
 
-export const persister = createSyncStoragePersister({
-  storage,
-  key: PERSIST_KEY,
-  throttleTime: 1_000,
-  serialize,
-  deserialize,
-  retry: removeOldestQuery,
-});
+/**
+ * The queries part last written, to skip a write when nothing kept on the device changed (the stored timestamp
+ * then stays at the last real change, which is what the 7-day max age should count from anyway).
+ */
+let lastWritten: string | null = null;
+
+/** Writes now; on a quota error drops the oldest query and tries again (like the stock persister's `retry`). */
+function save(client: PersistedClient): void {
+  if (!storage) return;
+  let current: PersistedClient | undefined = client;
+  let errorCount = 0;
+  while (current) {
+    const queries = queriesJson(current);
+    if (queries === lastWritten) return;
+    try {
+      storage.setItem(PERSIST_KEY, wrap(current, queries));
+      lastWritten = queries;
+      return;
+    } catch (error) {
+      errorCount++;
+      current = removeOldestQuery({
+        persistedClient: current,
+        error: error instanceof Error ? error : new Error(String(error)),
+        errorCount,
+      });
+    }
+  }
+}
+
+/** At most one save per THROTTLE_MS, run when the main thread is idle (never in the middle of a scroll frame). */
+const THROTTLE_MS = 1_000;
+let pending: PersistedClient | null = null;
+let scheduled = false;
+function scheduleSave(client: PersistedClient): void {
+  pending = client;
+  if (scheduled) return;
+  scheduled = true;
+  setTimeout(() => {
+    const run = () => {
+      scheduled = false;
+      const c = pending;
+      pending = null;
+      if (c) save(c);
+    };
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 2_000 });
+    else run();
+  }, THROTTLE_MS);
+}
+
+export const persister: Persister = {
+  persistClient: (client) => {
+    if (storage) scheduleSave(client);
+  },
+  restoreClient: () => {
+    const raw = storage?.getItem(PERSIST_KEY);
+    return raw ? deserialize(raw) : undefined;
+  },
+  removeClient: () => {
+    lastWritten = null;
+    storage?.removeItem(PERSIST_KEY);
+  },
+};
 
 /** One cache per deploy: a new build never reads data written by an older one. */
 export const PERSIST_BUSTER = process.env.NEXT_PUBLIC_BUILD_ID ?? 'dev';
@@ -208,6 +292,8 @@ export const persistOptions: Omit<PersistQueryClientOptions, 'queryClient'> = {
 
 /** Signed out / account deleted: forget everything that was kept on this device. */
 export function clearPersistedQueries(): void {
+  lastWritten = null;
+  pending = null;
   try {
     window.localStorage.removeItem(PERSIST_KEY);
   } catch {
@@ -222,16 +308,12 @@ export function clearPersistedQueries(): void {
  */
 export function flushPersistedQueries(queryClient: QueryClient): void {
   if (!storage) return;
-  const client: PersistedClient = {
+  pending = null; // supersedes a throttled save that hasn't run yet
+  save({
     buster: PERSIST_BUSTER,
     timestamp: Date.now(),
     clientState: dehydrate(queryClient, persistOptions.dehydrateOptions),
-  };
-  try {
-    storage.setItem(PERSIST_KEY, serialize(client));
-  } catch {
-    // quota: the throttled persister (which drops the oldest queries and retries) still runs if the page lives on
-  }
+  });
 }
 
 /** Flush on every way the app goes away: hidden (tab switch, app switcher, iOS freeze) and page unload. */

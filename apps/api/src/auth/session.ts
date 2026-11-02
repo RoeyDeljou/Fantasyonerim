@@ -8,6 +8,13 @@ import { generateSessionToken, hashToken } from './tokens.js';
 export const SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 /** The sliding-expiry DB write happens at most once per hour per session. */
 export const SESSION_TOUCH_INTERVAL_MS = 60 * 60 * 1000;
+/**
+ * A resolved session is reused from memory for this long by GET/HEAD requests (every poll carries the bearer
+ * token, and the rate limiter keys on it). Logout, ban, account deletion, profile/role changes evict it at once
+ * (`auth.forgetUser`); writes and admin routes always re-read the user from the database.
+ */
+export const SESSION_CACHE_TTL_MS = 5 * 60 * 1000;
+export const SESSION_CACHE_MAX = 5000;
 
 export interface AuthContext {
   user: User;
@@ -20,6 +27,8 @@ export interface Auth {
   requireUser(request: FastifyRequest): Promise<AuthContext>;
   requireAdmin(request: FastifyRequest): Promise<AuthContext>;
   issueSession(userId: string, request: FastifyRequest): Promise<string>;
+  /** Evicts every cached session of a user (after a change to the user or their sessions). */
+  forgetUser(userId: string): void;
 }
 
 function bearerToken(request: FastifyRequest): string | null {
@@ -31,12 +40,59 @@ function bearerToken(request: FastifyRequest): string | null {
 
 export function createAuth(ctx: AppContext): Auth {
   const cache = new WeakMap<FastifyRequest, Promise<AuthContext | null>>();
+  // tokenHash → resolved session (bounded LRU by insertion order).
+  const sessions = new Map<string, { at: number; value: AuthContext }>();
+  // One database lookup per token at a time (a poll round fires 2–3 requests at once).
+  const loading = new Map<string, Promise<AuthContext | null>>();
+  // Bumped by forgetUser: a lookup that started before an eviction must not put the old session back.
+  let generation = 0;
 
-  async function lookup(request: FastifyRequest): Promise<AuthContext | null> {
+  async function lookup(request: FastifyRequest, fresh = false): Promise<AuthContext | null> {
     const token = bearerToken(request);
     if (!token) return null;
+    const tokenHash = hashToken(token);
+    const nowMs = ctx.clock.now().getTime();
+    // Reads (the polled traffic) may use the cached session; writes always re-read the user and session, so a
+    // ban, logout or role change applies to them immediately even if it was made outside this process.
+    const cacheable = !fresh && (request.method === 'GET' || request.method === 'HEAD');
+    const hit = cacheable ? sessions.get(tokenHash) : undefined;
+    if (
+      hit !== undefined &&
+      nowMs - hit.at < SESSION_CACHE_TTL_MS &&
+      hit.value.session.expiresAt.getTime() > nowMs
+    ) {
+      return hit.value;
+    }
+    sessions.delete(tokenHash);
+    const startedAt = generation;
+    let pending = cacheable ? loading.get(tokenHash) : undefined;
+    if (pending === undefined) {
+      const load = loadSession(tokenHash);
+      pending = load;
+      if (cacheable) {
+        loading.set(tokenHash, load);
+        void load
+          .finally(() => {
+            if (loading.get(tokenHash) === load) loading.delete(tokenHash);
+          })
+          .catch(() => undefined);
+      }
+    }
+    const found = await pending;
+    if (found !== null && cacheable && generation === startedAt) {
+      sessions.set(tokenHash, { at: nowMs, value: found });
+      while (sessions.size > SESSION_CACHE_MAX) {
+        const oldest = sessions.keys().next();
+        if (oldest.done) break;
+        sessions.delete(oldest.value);
+      }
+    }
+    return found;
+  }
+
+  async function loadSession(tokenHash: string): Promise<AuthContext | null> {
     const session = await ctx.prisma.session.findUnique({
-      where: { tokenHash: hashToken(token) },
+      where: { tokenHash },
       include: { user: true },
     });
     if (!session) return null;
@@ -73,9 +129,19 @@ export function createAuth(ctx: AppContext): Auth {
       return result;
     },
     async requireAdmin(request) {
-      const result = await auth.requireUser(request);
+      // Always from the database: a revoked admin loses access on their very next request.
+      const hasToken = bearerToken(request) !== null;
+      const result = await lookup(request, true);
+      if (!result)
+        throw unauthorized(hasToken ? 'Session expired or invalid — please sign in again' : undefined);
+      cache.set(request, Promise.resolve(result));
       if (result.user.role !== 'ADMIN') throw forbidden();
       return result;
+    },
+    forgetUser(userId) {
+      generation += 1;
+      loading.clear();
+      for (const [key, entry] of sessions) if (entry.value.user.id === userId) sessions.delete(key);
     },
     async issueSession(userId, request) {
       const token = generateSessionToken();

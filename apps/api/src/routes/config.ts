@@ -1,16 +1,22 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.js';
-import { derivedSocials, getLatestBattle, getSettings, toPublicConfig } from '../settings.js';
+import { CACHE_CONTROL, sendHot } from '../perf/http.js';
+import { createDbKeepAlive } from '../perf/keepAlive.js';
 
 export function configRoutes(app: FastifyInstance, ctx: AppContext): void {
-  app.get('/health', async () => ({ ok: true }));
+  const keepAlive = createDbKeepAlive(ctx);
 
-  app.get('/v1/config', async () => {
-    const [settings, battle, defaults] = await Promise.all([
-      getSettings(ctx.prisma),
-      getLatestBattle(ctx.prisma),
-      derivedSocials(ctx.prisma),
-    ]);
-    return toPublicConfig(settings, battle, defaults);
+  // Render's health check + the external 5-minute keep-alive. Also keeps Neon awake (SELECT 1 at most once a
+  // minute, outside quiet hours) and says whether FPL is answering — no error details.
+  app.get('/health', { config: { rateLimit: false } }, async (_request, reply) => {
+    keepAlive.touch();
+    reply.header('cache-control', 'no-store');
+    const fpl = ctx.fpl.getHealth?.();
+    return fpl === undefined ? { ok: true } : { ok: true, fpl: fpl.state };
+  });
+
+  app.get('/v1/config', async (request, reply) => {
+    const { body } = await ctx.hot.config();
+    return sendHot(request, reply, body, CACHE_CONTROL.config);
   });
 }

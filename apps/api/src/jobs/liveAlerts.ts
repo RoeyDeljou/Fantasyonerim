@@ -13,6 +13,7 @@ import { fetchAllPages, rankLiveLeague } from '../league/pages.js';
 import { PUSH_ICON } from '../news/pushNews.js';
 import { captainReturnCopy, liveFirstPlaceCopy, liveJumpCopy, type PushText } from '../push/copy.js';
 import { notify, prefValues, type PrefKey } from '../push/notify.js';
+import { createYielder } from '../perf/yield.js';
 import { getSettings } from '../settings.js';
 import { HOUR, MINUTE, type Job, type JobRunContext } from './types.js';
 
@@ -112,7 +113,9 @@ export const liveAlertsJob: Job = {
 
     const previous: LiveState = sameGw ? stored : { gw, wasLive: false, players: {}, users: {} };
     const names = new Map<number, string>(bootstrap.players.map((p) => [p.id, p.webName]));
-    const outcome = await observe(ctx, gw, previous, live, (id) => names.get(id) ?? `#${id}`);
+    const deadlineTime = bootstrap.events.find((e) => e.id === gw)?.deadlineTime;
+    const deadline = deadlineTime === undefined ? null : new Date(deadlineTime);
+    const outcome = await observe(ctx, gw, previous, live, (id) => names.get(id) ?? `#${id}`, deadline);
     const sent = await send(ctx, gw, outcome.alerts);
     return {
       summary: `GW${gw}${live ? '' : ' (final pass)'}: ${sameGw ? '' : 'baseline, '}${
@@ -139,6 +142,7 @@ async function observe(
   previous: LiveState,
   live: boolean,
   playerName: (id: number) => string,
+  deadline: Date | null,
 ): Promise<Observation> {
   const { app } = ctx;
   const nowMs = ctx.now.getTime();
@@ -163,10 +167,12 @@ async function observe(
 
   // Captains: the live engine's effective captain (vice when the captain didn't play; TC alike).
   const captains = new Map<string, CaptainNow | null>();
+  const yieldNow = createYielder();
   await mapWithConcurrency(
     people.filter((p) => p.prefs.captain),
     LIVE_ENTRY_CONCURRENCY,
     async (person) => {
+      await yieldNow();
       try {
         const entry = await app.fpl.getEntryLive(person.entryId, gw);
         const pick = entry.picks.find((p) => p.effectiveMultiplier >= 2);
@@ -200,7 +206,7 @@ async function observe(
     }
   }
 
-  const alreadySent = await liveAlertCounts(ctx, gw);
+  const alreadySent = await liveAlertCounts(ctx, gw, deadline);
   const alerts: PlannedAlert[] = [];
   const nextUsers: Record<string, UserState> = {};
   const nextPlayers: LiveState['players'] = {};
@@ -316,10 +322,17 @@ function range(from: number, to: number): number[] {
 }
 
 /** Live alerts each user already got this GW (from the dedupe log, so it survives restarts). */
-async function liveAlertCounts(ctx: JobRunContext, gw: Gameweek): Promise<Map<string, number>> {
+async function liveAlertCounts(
+  ctx: JobRunContext,
+  gw: Gameweek,
+  deadline: Date | null,
+): Promise<Map<string, number>> {
+  // A GW's live alerts only exist after its deadline: the range on createdAt (indexed) keeps this to the current
+  // GW's rows instead of the season-long log. A day of margin for clock skew between the API and the database.
+  const since = deadline === null ? null : new Date(deadline.getTime() - 24 * HOUR);
   const rows = await ctx.app.prisma.notificationLog.groupBy({
     by: ['userId'],
-    where: { key: { startsWith: `live:${gw}:` } },
+    where: { key: { startsWith: `live:${gw}:` }, ...(since === null ? {} : { createdAt: { gte: since } }) },
     _count: { _all: true },
   });
   return new Map(rows.map((r) => [r.userId, r._count._all]));

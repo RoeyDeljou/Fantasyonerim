@@ -15,16 +15,19 @@ import {
   registerUser,
   resetDb,
   TEST_DATABASE_URL,
+  type TestClock,
 } from './helpers.js';
+import { HOT_POLICY } from '../src/perf/hotData.js';
 
 const prisma = createTestPrisma();
 let app: FastifyInstance;
 let fpl: FakeFplService;
+let clock: TestClock;
 
 beforeAll(() => migrateTestDb());
 beforeEach(async () => {
   await resetDb(prisma);
-  ({ app, fpl } = await buildTestApp(prisma));
+  ({ app, fpl, clock } = await buildTestApp(prisma));
   fpl.playerPoints.set(1, 6).set(2, 13).set(3, 2).set(4, 9);
 });
 afterAll(async () => {
@@ -157,6 +160,8 @@ describe('GET /v1/captain-battle', () => {
     fpl.bootstrap = makeBootstrap(10, 11);
     fpl.picks.set('777:10', makePicks(777, 10, 2, 3)); // Dor: TC Haaland (13) → 39
     fpl.picks.set('888:10', makePicks(888, 10, 1, 2)); // Itay: Salah (6) → 12
+    // The shared battle is recomputed once its hot copy has aged out (FPL data is cached for minutes anyway).
+    clock.advance(HOT_POLICY.live.freshMs + HOT_POLICY.live.staleMs);
     fpl.calls = [];
     const battle = await getBattle();
     expect(battle.event).toBe(10);

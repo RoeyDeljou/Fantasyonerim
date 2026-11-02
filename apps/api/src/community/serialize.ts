@@ -16,15 +16,32 @@ import type {
 import type { MediaUrlMapper } from '../media/publicUrl.js';
 import { serialize } from '../validate.js';
 
-/** Every post query includes these relations. */
-export const POST_INCLUDE = { author: true, image: true } as const satisfies Prisma.CommunityPostInclude;
-export const COMMENT_INCLUDE = { author: true } as const satisfies Prisma.CommentInclude;
+/** The author columns a post/comment shows (never the whole User row). */
+const AUTHOR_SELECT = {
+  id: true,
+  name: true,
+  entryId: true,
+  teamName: true,
+  role: true,
+} as const satisfies Prisma.UserSelect;
+const IMAGE_SELECT = { url: true, width: true, height: true } as const satisfies Prisma.UploadSelect;
 
-export type PostWithRelations = PostRow & { author: User; image: Upload | null };
-export type CommentWithAuthor = CommentRow & { author: User };
+/** Every post query includes these relations. */
+export const POST_INCLUDE = {
+  author: { select: AUTHOR_SELECT },
+  image: { select: IMAGE_SELECT },
+} as const satisfies Prisma.CommunityPostInclude;
+export const COMMENT_INCLUDE = { author: { select: AUTHOR_SELECT } } as const satisfies Prisma.CommentInclude;
+
+export type AuthorFields = Pick<User, keyof typeof AUTHOR_SELECT>;
+export type PostWithRelations = PostRow & {
+  author: AuthorFields;
+  image: Pick<Upload, keyof typeof IMAGE_SELECT> | null;
+};
+export type CommentWithAuthor = CommentRow & { author: AuthorFields };
 
 /** Raw author fields; branded by the CommunityPost / Comment schema in serialize(). */
-export function toAuthor(user: User) {
+export function toAuthor(user: AuthorFields) {
   return {
     id: user.id,
     name: user.name,

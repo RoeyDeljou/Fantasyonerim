@@ -3,7 +3,9 @@
 import { useMemo } from 'react';
 import {
   QueryClient,
+  infiniteQueryOptions,
   keepPreviousData,
+  queryOptions,
   skipToken,
   useInfiniteQuery,
   useMutation,
@@ -20,6 +22,8 @@ import type {
   FplPlayerId,
   FplTeamId,
   Gameweek,
+  LeagueStandings,
+  LiveLeague,
   Me,
   PlTeam,
   Player,
@@ -157,20 +161,99 @@ export function anyLive(fixtures: readonly Fixture[] | undefined): boolean {
 
 // ---------- public / FPL ----------
 
-export function useConfig() {
-  return useQuery({
+// Query options shared by the hooks below and the tab prefetcher (lib/prefetch.ts), so a prefetched entry is
+// exactly the one the screen reads.
+
+export const configQuery = () =>
+  queryOptions({
     queryKey: qk.config,
     queryFn: ({ signal }) => api.config({ signal }),
     staleTime: 5 * 60_000,
   });
-}
 
-export function useBootstrap() {
-  return useQuery({
+export const bootstrapQuery = () =>
+  queryOptions({
     queryKey: qk.bootstrap,
     queryFn: ({ signal }) => api.bootstrap({ signal }),
     staleTime: 10 * 60_000,
   });
+
+export const meQuery = () =>
+  queryOptions({ queryKey: qk.me, queryFn: ({ signal }) => api.me({ signal }), staleTime: 60_000 });
+
+export const fixturesQuery = (event: Gameweek) =>
+  queryOptions({ queryKey: qk.fixtures(event), queryFn: ({ signal }) => api.fixtures(event, { signal }) });
+
+export const entryQuery = (id: FplEntryId) =>
+  queryOptions({
+    queryKey: qk.entry(id),
+    queryFn: ({ signal }) => api.entry(id, { signal }),
+    staleTime: 60_000,
+  });
+
+export const picksQuery = (id: FplEntryId, event: Gameweek) =>
+  queryOptions({
+    queryKey: qk.picks(id, event),
+    queryFn: ({ signal }) => api.picks(id, event, { signal }),
+    staleTime: 60_000,
+  });
+
+export const standingsQuery = () =>
+  infiniteQueryOptions({
+    queryKey: qk.standings,
+    queryFn: ({ pageParam, signal }) => api.standings(pageParam, { signal }),
+    initialPageParam: 1,
+    getNextPageParam: (last: LeagueStandings) => (last.hasNext ? last.page + 1 : undefined),
+    staleTime: 60_000,
+  });
+
+export const liveLeagueQuery = () =>
+  infiniteQueryOptions({
+    queryKey: qk.liveLeague,
+    queryFn: ({ pageParam, signal }) => api.liveLeague(pageParam, { signal }),
+    initialPageParam: 1,
+    getNextPageParam: (last: LiveLeague) => (last.hasNext ? last.page + 1 : undefined),
+    staleTime: 15_000,
+  });
+
+export const newsFeedQuery = (filter: NewsFilter | null) =>
+  infiniteQueryOptions({
+    queryKey: qk.newsFeed(filter),
+    queryFn: ({ pageParam, signal }) => api.news(pageParam, NEWS_PAGE_SIZE, { signal }, filter),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: NewsPage) => last.nextCursor ?? undefined,
+    staleTime: 60_000,
+  });
+
+export const storiesQuery = () =>
+  queryOptions({ queryKey: qk.stories, queryFn: ({ signal }) => api.stories({ signal }), staleTime: 60_000 });
+
+export const newsFiltersQuery = () =>
+  queryOptions({
+    queryKey: qk.newsFilters,
+    queryFn: ({ signal }) => api.newsFilters({ signal }),
+    staleTime: 5 * 60_000,
+  });
+
+export const communityFeedQuery = (authorId: UserId | null) =>
+  infiniteQueryOptions({
+    queryKey: qk.communityFeed(authorId),
+    queryFn: ({ pageParam, signal }) =>
+      api.community.posts(
+        { cursor: pageParam, limit: COMMUNITY_PAGE_SIZE, authorId: authorId ?? undefined },
+        { signal },
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: CommunityPage) => last.nextCursor ?? undefined,
+    staleTime: 30_000,
+  });
+
+export function useConfig() {
+  return useQuery(configQuery());
+}
+
+export function useBootstrap() {
+  return useQuery(bootstrapQuery());
 }
 
 export interface FplIndex {
@@ -271,24 +354,16 @@ export function useEntryLive(id: FplEntryId | null, event: Gameweek | null, refe
 
 /** League queries only run once /v1/config says a league is set (avoids 404s on a fresh install). */
 export function useStandings(enabled: boolean) {
-  return useInfiniteQuery({
-    queryKey: qk.standings,
-    queryFn: enabled ? ({ pageParam, signal }) => api.standings(pageParam, { signal }) : skipToken,
-    initialPageParam: 1,
-    getNextPageParam: (last) => (last.hasNext ? last.page + 1 : undefined),
-    staleTime: 60_000,
-  });
+  const o = standingsQuery();
+  return useInfiniteQuery(enabled ? o : { ...o, queryFn: skipToken });
 }
 
 export function useLiveLeague(refetchInterval: number, enabled: boolean) {
+  const o = liveLeagueQuery();
   return useInfiniteQuery({
-    queryKey: qk.liveLeague,
-    queryFn: enabled ? ({ pageParam, signal }) => api.liveLeague(pageParam, { signal }) : skipToken,
-    initialPageParam: 1,
-    getNextPageParam: (last) => (last.hasNext ? last.page + 1 : undefined),
+    ...(enabled ? o : { ...o, queryFn: skipToken }),
     refetchInterval,
     refetchIntervalInBackground: false,
-    staleTime: 15_000,
   });
 }
 
@@ -305,12 +380,7 @@ export function useCaptainBattle(refetchInterval: number) {
 // ---------- me ----------
 
 export function useMe(enabled = true) {
-  return useQuery({
-    queryKey: qk.me,
-    queryFn: ({ signal }) => api.me({ signal }),
-    enabled,
-    staleTime: 60_000,
-  });
+  return useQuery({ ...meQuery(), enabled });
 }
 
 export function useRecoveryCode(enabled: boolean) {
@@ -388,13 +458,7 @@ export function useCreateAdmin() {
 
 /** The feed: cursor-paginated, newest first. Refetches on focus; the "new posts" pill uses `useNewsHead`. */
 export function useNewsFeed(filter: NewsFilter | null = null) {
-  return useInfiniteQuery({
-    queryKey: qk.newsFeed(filter),
-    queryFn: ({ pageParam, signal }) => api.news(pageParam, NEWS_PAGE_SIZE, { signal }, filter),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last: NewsPage) => last.nextCursor ?? undefined,
-    staleTime: 60_000,
-  });
+  return useInfiniteQuery(newsFeedQuery(filter));
 }
 
 /** Light poll of the first page (paused while hidden) — compared with the feed to offer "new posts". */
@@ -412,20 +476,14 @@ export function useNewsHead(enabled: boolean, filter: NewsFilter | null = null) 
 
 /** Which filter chips have content (plus "All", always shown by the screen). */
 export function useNewsFilters() {
-  return useQuery({
-    queryKey: qk.newsFilters,
-    queryFn: ({ signal }) => api.newsFilters({ signal }),
-    staleTime: 5 * 60_000,
-  });
+  return useQuery(newsFiltersQuery());
 }
 
 export function useStories() {
   return useQuery({
-    queryKey: qk.stories,
-    queryFn: ({ signal }) => api.stories({ signal }),
+    ...storiesQuery(),
     refetchInterval: STORIES_POLL_MS,
     refetchIntervalInBackground: false,
-    staleTime: 60_000,
   });
 }
 
@@ -551,19 +609,8 @@ type CommentsData = InfiniteData<CommentPage, string | undefined>;
 
 /** Newest first, cursor-paginated. `authorId` = one author's posts (Profile → My posts). */
 export function useCommunityFeed(authorId: UserId | null = null, enabled = true) {
-  return useInfiniteQuery({
-    queryKey: qk.communityFeed(authorId),
-    queryFn: enabled
-      ? ({ pageParam, signal }) =>
-          api.community.posts(
-            { cursor: pageParam, limit: COMMUNITY_PAGE_SIZE, authorId: authorId ?? undefined },
-            { signal },
-          )
-      : skipToken,
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last: CommunityPage) => last.nextCursor ?? undefined,
-    staleTime: 30_000,
-  });
+  const o = communityFeedQuery(authorId);
+  return useInfiniteQuery(enabled ? o : { ...o, queryFn: skipToken });
 }
 
 /** Light poll of the newest posts (paused while hidden) — compared with the feed to offer "new posts". */

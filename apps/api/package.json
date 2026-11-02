@@ -20,6 +20,7 @@
     "@fant/fpl": "0.1.0",
     "@fant/integrations": "0.1.0",
     "@fant/shared": "0.1.0",
+    "@fastify/compress": "^9.3.0",
     "@fastify/cors": "^11.3.1",
     "@fastify/multipart": "^10.1.6",
     "@fastify/rate-limit": "^11.2.1",

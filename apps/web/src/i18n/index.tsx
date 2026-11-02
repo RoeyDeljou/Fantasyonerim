@@ -1,17 +1,29 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Locale } from '@fant/shared';
 import { he } from './he';
 import type { Messages } from './he';
-import { en } from './en';
 import { PREF_KEYS, isLocale, readPref, writePref } from '@/lib/prefs';
 import { relativeParts } from '@/lib/newsFormat';
 
 export type { Messages };
 
-const DICTS: Record<Locale, Messages> = { he, en };
+/**
+ * Hebrew (the default, and what the static HTML is rendered in) ships with every page; English is its own chunk,
+ * fetched only by people who chose it — a fan in Hebrew never downloads it.
+ */
+const DICTS: Partial<Record<Locale, Messages>> = { he };
+let enLoad: Promise<Messages> | null = null;
+export function loadDictionary(locale: Locale): Promise<Messages> {
+  const ready = DICTS[locale];
+  if (ready) return Promise.resolve(ready);
+  enLoad ??= import('./en').then((m) => (DICTS.en = m.en));
+  return enLoad;
+}
+// Stored English: start fetching the dictionary as soon as this module runs, in parallel with hydration.
+if (typeof window !== 'undefined' && readPref(PREF_KEYS.locale) === 'en') void loadDictionary('en');
 /** Times are always shown in Israel time — the audience is Israeli, wherever the phone is. */
 export const DISPLAY_TIME_ZONE = 'Asia/Jerusalem';
 
@@ -40,6 +52,18 @@ export interface Formatters {
   /** "26 באוק׳" (adds the year when it isn't this year). */
   date(iso: string): string;
   dateTime(iso: string): string;
+}
+
+/** Intl formatters are costly to build: one per (locale, options), reused by every row of every list. */
+const numberFormats = new Map<string, Intl.NumberFormat>();
+function numberFormat(tag: string, min: number, max: number): Intl.NumberFormat {
+  const key = `${tag}|${min}|${max}`;
+  let nf = numberFormats.get(key);
+  if (!nf) {
+    nf = new Intl.NumberFormat(tag, { minimumFractionDigits: min, maximumFractionDigits: max });
+    numberFormats.set(key, nf);
+  }
+  return nf;
 }
 
 function makeFormatters(locale: Locale): Formatters {
@@ -84,15 +108,11 @@ function makeFormatters(locale: Locale): Formatters {
     // when the string lands in Hebrew text (also inside fmt() templates).
     num: (n) => (n < 0 ? `\u2066−${int.format(-n)}\u2069` : int.format(n)),
     rank: (n) => (n === null || n === undefined ? '—' : int.format(n)),
-    price: (t) =>
-      t === null || t === undefined
-        ? '—'
-        : `£${new Intl.NumberFormat(tag, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(t / 10)}m`,
-    decimal: (n, digits = 1) =>
-      new Intl.NumberFormat(tag, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n),
+    price: (t) => (t === null || t === undefined ? '—' : `£${numberFormat(tag, 1, 1).format(t / 10)}m`),
+    decimal: (n, digits = 1) => numberFormat(tag, digits, digits).format(n),
     time: (iso) => time.format(new Date(iso)),
     dayTime: (iso) => dayTime.format(new Date(iso)),
-    percent: (n) => `${new Intl.NumberFormat(tag, { maximumFractionDigits: 1 }).format(n)}%`,
+    percent: (n) => `${numberFormat(tag, 0, 1).format(n)}%`,
     relative: (iso, now = Date.now()) => {
       const p = relativeParts(iso, now);
       if (p === 'now') return rel.format(0, 'second');
@@ -123,23 +143,38 @@ export function applyLocaleToDocument(locale: Locale): void {
 export function I18nProvider({ children }: { children: ReactNode }) {
   // Static HTML is rendered in Hebrew; the stored choice is applied right after hydration.
   const [locale, setLocaleState] = useState<Locale>('he');
+  // The latest requested locale: a slow dictionary load never overrides a newer choice.
+  const wanted = useRef<Locale>('he');
+
+  const show = useCallback((next: Locale) => {
+    wanted.current = next;
+    void loadDictionary(next).then(
+      () => {
+        if (wanted.current === next) setLocaleState(next);
+      },
+      () => undefined, // offline before the chunk was ever cached: stay in the current language
+    );
+  }, []);
 
   useEffect(() => {
     const stored = readPref(PREF_KEYS.locale);
-    if (isLocale(stored) && stored !== 'he') setLocaleState(stored);
-  }, []);
+    if (isLocale(stored) && stored !== 'he') show(stored);
+  }, [show]);
 
-  const setLocale = useCallback((next: Locale) => {
-    writePref(PREF_KEYS.locale, next);
-    applyLocaleToDocument(next);
-    setLocaleState(next);
-  }, []);
+  const setLocale = useCallback(
+    (next: Locale) => {
+      writePref(PREF_KEYS.locale, next);
+      applyLocaleToDocument(next);
+      show(next);
+    },
+    [show],
+  );
 
   const value = useMemo<I18nValue>(
     () => ({
       locale,
       dir: locale === 'he' ? 'rtl' : 'ltr',
-      t: DICTS[locale],
+      t: DICTS[locale] ?? he,
       f: makeFormatters(locale),
       setLocale,
     }),

@@ -1,8 +1,12 @@
 /** User-perceived characters (grapheme clusters): an emoji like 🦁 or 👨‍👩‍👧 is one, never half a surrogate pair. */
+// One segmenter for the app: constructing an Intl.Segmenter is expensive (ICU break-iterator setup), and initials
+// run for every author in a feed — building one per call was most of the Community tab's first-render time.
+let segmenter: Intl.Segmenter | null = null;
+
 export function graphemes(s: string): string[] {
   if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
-    const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-    return Array.from(seg.segment(s), (x) => x.segment);
+    segmenter ??= new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    return Array.from(segmenter.segment(s), (x) => x.segment);
   }
   return Array.from(s); // code points — still never splits a surrogate pair
 }

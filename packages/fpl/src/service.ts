@@ -39,6 +39,30 @@ export interface FplService {
    * Empty stats/players before kick-off. Throws FplNotFoundError for an unknown fixture id.
    */
   getFixtureDetail(fixtureId: FplFixtureId): Promise<FixtureDetail>;
+  /**
+   * Upstream health: whether FPL is currently failing (429 / 503 "The game is being updated" / network)
+   * and the service is answering from its last good data. Optional so test fakes needn't implement it.
+   * The DTOs' `updatedAt` / `fetchedAt` carry the age of the data actually served.
+   */
+  getHealth?(): FplHealth;
+}
+
+/** Why FPL could not be used. `updating` = FPL's GW-update window (HTTP 503 / "The game is being updated."). */
+export type FplUnavailableKind =
+  'updating' | 'rate_limited' | 'server_error' | 'network' | 'bad_response' | 'backoff';
+
+export interface FplHealth {
+  /** `ok`: last FPL call succeeded. `updating`: FPL's update window. `degraded`: rate limit / errors. */
+  state: 'ok' | 'degraded' | 'updating';
+  /** True while FPL is failing: responses come from the last good data (see their `updatedAt`). */
+  stale: boolean;
+  /** Last successful FPL response (ISO), or null before the first one. */
+  lastSuccessAt: string | null;
+  /** Since when FPL has been failing (ISO), or null when healthy. */
+  failingSince: string | null;
+  /** While backing off, FPL is not called before this instant (ISO); null when not backing off. */
+  retryAt: string | null;
+  lastError: { kind: FplUnavailableKind; status: number | null; message: string; at: string } | null;
 }
 
 export class FplNotFoundError extends Error {
@@ -53,10 +77,21 @@ export class FplUnavailableError extends Error {
   constructor(
     message: string,
     readonly status: number | null,
+    /** Defaults from `status`: 503 → updating, 429 → rate_limited, null → network, other → server_error. */
+    readonly kind: FplUnavailableKind = defaultKind(status),
+    /** Server-requested wait (HTTP Retry-After), ms. */
+    readonly retryAfterMs: number | null = null,
   ) {
     super(message);
     this.name = 'FplUnavailableError';
   }
+}
+
+function defaultKind(status: number | null): FplUnavailableKind {
+  if (status === null) return 'network';
+  if (status === 503) return 'updating';
+  if (status === 429) return 'rate_limited';
+  return 'server_error';
 }
 
 export interface FplServiceOptions {

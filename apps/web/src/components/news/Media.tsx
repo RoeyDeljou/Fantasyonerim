@@ -59,14 +59,15 @@ export function VideoTile({ media, className }: { media: NewsMedia; className?: 
   );
 }
 
-function Slide({ media, alt, eager }: { media: NewsMedia; alt: string; eager: boolean }) {
+/** `later`: not the first slide — always lazy, even in the feed's first card. */
+function Slide({ media, alt, later }: { media: NewsMedia; alt: string; later: boolean }) {
   return media.kind === 'video' ? (
     <VideoTile media={media} className="size-full" />
   ) : (
     <MediaImage
       src={media.url}
       alt={alt}
-      loading={eager ? 'eager' : 'lazy'}
+      {...(later ? { loading: 'lazy' as const } : {})}
       className="size-full object-cover"
     />
   );
@@ -128,7 +129,7 @@ export function MediaCarousel({ media, alt }: { media: readonly NewsMedia[]; alt
             aria-roledescription="slide"
             aria-label={fmt(t.news.mediaOf, { i: i + 1, n: media.length })}
           >
-            <Slide media={m} alt={alt} eager={i === 0} />
+            <Slide media={m} alt={alt} later={i > 0} />
           </div>
         ))}
       </div>
@@ -192,7 +193,7 @@ export function MediaGrid({ media, alt }: { media: readonly NewsMedia[]; alt: st
         className="overflow-hidden rounded-2xl border border-line bg-surface-2"
         style={{ aspectRatio: String(ratio) } as CSSProperties}
       >
-        <Slide media={only} alt={alt} eager={false} />
+        <Slide media={only} alt={alt} later={false} />
       </div>
     );
   }
@@ -211,7 +212,7 @@ export function MediaGrid({ media, alt }: { media: readonly NewsMedia[]; alt: st
             items.length === 3 && i === 0 && 'row-span-2',
           )}
         >
-          <Slide media={m} alt={alt} eager={false} />
+          <Slide media={m} alt={alt} later={i > 0} />
         </div>
       ))}
     </div>

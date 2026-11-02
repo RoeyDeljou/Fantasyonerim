@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseQuietHours } from './perf/keepAlive.js';
 
 const DEFAULT_DEV_ORIGINS = 'http://localhost:3000,http://127.0.0.1:3000';
 
@@ -41,6 +42,25 @@ export const EnvSchema = z
     SECRETS_KEY: SecretsKeySchema.optional(),
     /** Guards POST /internal/jobs/tick (Phase 2). */
     CRON_SECRET: z.string().min(16).optional(),
+    /** Prisma connection pool size (`connection_limit`); an explicit one in DATABASE_URL wins. */
+    DB_POOL_SIZE: z.coerce.number().int().min(1).max(50).default(5),
+    /**
+     * Israel-time hours ("HH-HH") when the database may sleep: /health skips its `SELECT 1` keep-alive and jobs
+     * run at most every 30 min. "off" = always on. Default 02–07 (docs/PERFORMANCE.md has the Neon maths).
+     */
+    DB_QUIET_HOURS: z
+      .string()
+      .default('02-07')
+      .transform((v, ctx) => {
+        try {
+          return parseQuietHours(v);
+        } catch (err) {
+          ctx.addIssue({ code: 'custom', message: err instanceof Error ? err.message : 'invalid' });
+          return z.NEVER;
+        }
+      }),
+    /** Recompute the live league / captain battle / fixtures every 30 s while a fixture is live. */
+    PREWARM_ENABLED: z.stringbool().default(true),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
     // ---- Phase 2 ----

@@ -185,6 +185,7 @@ export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, p
         prisma.adminCredential.update({ where: { id: credential.id }, data: { passwordHash } }),
         prisma.session.deleteMany({ where: { userId: user.id, id: { not: session.id } } }),
       ]);
+      ctx.forgetUser(user.id);
       return reply.code(204).send();
     });
 

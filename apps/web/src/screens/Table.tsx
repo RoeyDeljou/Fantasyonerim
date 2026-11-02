@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, memo, useCallback } from 'react';
 import { FplEntryIdSchema } from '@fant/shared';
 import type { LeagueStandingRow } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
@@ -11,7 +11,7 @@ import { REFRESH_SCOPES } from '@/lib/refresh';
 import { AppShell, ShellSkeleton } from '@/components/AppShell';
 import { ArrowDownIcon, ArrowUpIcon, ClockIcon, DotIcon, TableIcon } from '@/components/icons';
 import { ChipIcon } from '@/components/team/ChipIcon';
-import { ManagerSheet } from '@/components/team/ManagerSheet';
+import { ManagerSheet } from '@/components/lazySheets';
 import {
   Button,
   EmptyState,
@@ -79,6 +79,10 @@ function TableInner() {
   const { interval } = useLivePollInterval();
   const [entryParam, setEntryParam] = useQueryParam('entry');
   const selectedId = FplEntryIdSchema.safeParse(entryParam ?? undefined);
+  const openEntry = useCallback(
+    (id: LeagueStandingRow['entryId']) => setEntryParam(String(id)),
+    [setEntryParam],
+  );
 
   const data = standings.data;
   if (config.isPending) return <SkeletonList rows={8} />;
@@ -125,39 +129,7 @@ function TableInner() {
           </div>
           <ol className="divide-y divide-line">
             {rows.map((r) => (
-              <li key={r.entryId}>
-                <button
-                  type="button"
-                  onClick={() => setEntryParam(String(r.entryId))}
-                  aria-label={fmt(t.table.openTeam, { name: r.managerName })}
-                  className={cx(
-                    'grid min-h-14 w-full grid-cols-[2.75rem_1fr_3rem_3.75rem] items-center gap-2 px-3 py-2 text-start hover:bg-surface-2',
-                    r.entryId === myEntry && 'bg-primary-soft',
-                  )}
-                >
-                  <span className="flex items-center gap-1 font-bold text-ink tabular">
-                    <Num value={r.rank} />
-                    <Movement rank={r.rank} lastRank={r.lastRank} />
-                  </span>
-                  <span className="flex min-w-0 flex-col">
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <span dir="auto" className="name-start min-w-0 truncate font-semibold text-ink">
-                        {r.entryName}
-                      </span>
-                      {r.activeChip && <ChipIcon chip={r.activeChip} />}
-                    </span>
-                    <span dir="auto" className="name-start truncate text-xs text-muted">
-                      {r.managerName}
-                    </span>
-                  </span>
-                  <span className="text-center font-semibold text-ink ">
-                    <Num value={r.eventTotal} />
-                  </span>
-                  <span className="text-end font-extrabold text-ink ">
-                    <Num value={r.total} />
-                  </span>
-                </button>
-              </li>
+              <StandingRow key={r.entryId} row={r} mine={r.entryId === myEntry} onOpen={openEntry} />
             ))}
           </ol>
         </div>
@@ -187,3 +159,54 @@ function TableInner() {
     </div>
   );
 }
+
+/**
+ * One standings row. Memoized (a refetch re-renders only rows that changed); `.table-row` lets the browser skip
+ * layout and paint of rows far off screen (globals.css), which keeps a 100+ manager league smooth to scroll.
+ */
+const StandingRow = memo(function StandingRow({
+  row: r,
+  mine,
+  onOpen,
+}: {
+  row: LeagueStandingRow;
+  mine: boolean;
+  onOpen(entryId: LeagueStandingRow['entryId']): void;
+}) {
+  const { t } = useI18n();
+  return (
+    <li className="table-row">
+      <button
+        type="button"
+        onClick={() => onOpen(r.entryId)}
+        aria-label={fmt(t.table.openTeam, { name: r.managerName })}
+        className={cx(
+          'grid min-h-14 w-full grid-cols-[2.75rem_1fr_3rem_3.75rem] items-center gap-2 px-3 py-2 text-start hover:bg-surface-2',
+          mine && 'bg-primary-soft',
+        )}
+      >
+        <span className="flex items-center gap-1 font-bold text-ink tabular">
+          <Num value={r.rank} />
+          <Movement rank={r.rank} lastRank={r.lastRank} />
+        </span>
+        <span className="flex min-w-0 flex-col">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span dir="auto" className="name-start min-w-0 truncate font-semibold text-ink">
+              {r.entryName}
+            </span>
+            {r.activeChip && <ChipIcon chip={r.activeChip} />}
+          </span>
+          <span dir="auto" className="name-start truncate text-xs text-muted">
+            {r.managerName}
+          </span>
+        </span>
+        <span className="text-center font-semibold text-ink ">
+          <Num value={r.eventTotal} />
+        </span>
+        <span className="text-end font-extrabold text-ink ">
+          <Num value={r.total} />
+        </span>
+      </button>
+    </li>
+  );
+});

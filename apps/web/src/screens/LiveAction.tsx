@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useRef } from 'react';
+import { Suspense, memo, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { FplEntryIdSchema, FplFixtureIdSchema } from '@fant/shared';
 import type { CaptainBattleRow, Fixture, LiveLeagueRow, PlTeam } from '@fant/shared';
@@ -22,8 +22,7 @@ import { REFRESH_SCOPES } from '@/lib/refresh';
 import { AppShell, ShellSkeleton } from '@/components/AppShell';
 import { ImageWithFallback, fplImage } from '@/components/FplImages';
 import { ClockIcon, ShirtIcon, TableIcon } from '@/components/icons';
-import { ManagerSheet } from '@/components/team/ManagerSheet';
-import { FixtureSheet } from '@/components/team/FixtureSheet';
+import { FixtureSheet, ManagerSheet } from '@/components/lazySheets';
 import { ChipIcon } from '@/components/team/ChipIcon';
 import { BonusBadge } from '@/components/team/BonusBadge';
 import { fixtureScoreText, fixtureStatusText } from '@/components/team/fixtureText';
@@ -261,6 +260,7 @@ function LiveTable({ index, interval }: { index: FplIndex; interval: number }) {
   const me = useMe();
   const [entryParam, setEntryParam] = useQueryParam('entry');
   const selectedId = FplEntryIdSchema.safeParse(entryParam ?? undefined);
+  const openEntry = useCallback((id: LiveLeagueRow['entryId']) => setEntryParam(String(id)), [setEntryParam]);
 
   let body;
   const data = league.data;
@@ -310,7 +310,7 @@ function LiveTable({ index, interval }: { index: FplIndex; interval: number }) {
                   row={r}
                   index={index}
                   mine={r.entryId === me.data?.entryId}
-                  onOpen={() => setEntryParam(String(r.entryId))}
+                  onOpen={openEntry}
                 />
               ))}
             </ol>
@@ -348,7 +348,8 @@ function LiveTable({ index, interval }: { index: FplIndex; interval: number }) {
   );
 }
 
-function LiveLeagueRowItem({
+/** Memoized: a 30 s live poll re-renders only the rows whose numbers moved (unchanged rows keep their identity). */
+const LiveLeagueRowItem = memo(function LiveLeagueRowItem({
   row: r,
   index,
   mine,
@@ -357,7 +358,7 @@ function LiveLeagueRowItem({
   row: LiveLeagueRow;
   index: FplIndex;
   mine: boolean;
-  onOpen(): void;
+  onOpen(entryId: LiveLeagueRow['entryId']): void;
 }) {
   const { t } = useI18n();
   // The armband goes to the vice when the captain didn't play — show who actually scores it.
@@ -365,10 +366,10 @@ function LiveLeagueRowItem({
   const captain = effectiveId ? index.players.get(effectiveId) : undefined;
   const viceTook = r.effectiveCaptainPlayerId !== null && r.effectiveCaptainPlayerId !== r.captainPlayerId;
   return (
-    <li>
+    <li className="table-row">
       <button
         type="button"
-        onClick={onOpen}
+        onClick={() => onOpen(r.entryId)}
         aria-label={fmt(t.table.openTeam, { name: r.managerName })}
         className={cx(
           'grid min-h-16 w-full grid-cols-[2.75rem_minmax(0,1fr)_3rem_3.75rem] items-center gap-2 px-3 py-2 text-start hover:bg-surface-2',
@@ -413,7 +414,7 @@ function LiveLeagueRowItem({
       </button>
     </li>
   );
-}
+});
 
 // ---------- captain battle ----------
 

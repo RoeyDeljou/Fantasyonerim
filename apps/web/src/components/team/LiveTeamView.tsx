@@ -12,7 +12,7 @@ import { Badge, Card, EmptyState, ErrorState, LiveDot, Num, SectionTitle, Skelet
 import { BonusBadge } from './BonusBadge';
 import { ChipIcon } from './ChipIcon';
 import { Pitch } from './Pitch';
-import { PlayerSheet } from './PlayerSheet';
+import { PlayerSheet } from '../lazySheets';
 import { fixtureStatusText, opponentText } from './fixtureText';
 
 /** My Team → Live: live GW points with auto-subs, provisional bonus and per-player status. */

@@ -107,6 +107,7 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, st
   app.post('/v1/auth/logout', async (request, reply) => {
     const { session } = await auth.requireUser(request);
     await prisma.session.deleteMany({ where: { id: session.id } });
+    ctx.forgetUser(session.userId);
     return reply.code(204).send();
   });
 }

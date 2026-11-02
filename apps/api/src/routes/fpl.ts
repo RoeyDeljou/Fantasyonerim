@@ -1,16 +1,14 @@
 import {
-  BootstrapSchema,
   EntryLiveSchema,
   EntryPicksSchema,
   EntrySummarySchema,
-  FixtureDetailSchema,
-  FixtureSchema,
+  type Fixture,
   type FixtureStatus,
 } from '@fant/shared';
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
 import type { AppContext } from '../context.js';
 import { resolveEvent } from '../gameweek.js';
+import { CACHE_CONTROL, sendHot } from '../perf/http.js';
 import { parseInput, serialize } from '../validate.js';
 import { EntryParamsSchema, EventQuerySchema, FixtureParamsSchema, cleanQuery } from './query.js';
 
@@ -25,42 +23,60 @@ export const FIXTURE_DETAIL_CACHE_CONTROL: Record<FixtureStatus, string> = {
   finished: 'public, max-age=600, stale-while-revalidate=600',
 };
 
-/** Thin proxy over FplService (which owns caching). The browser never calls FPL directly. */
+/** Fixture list caching: seconds while anything is in play, a minute otherwise. */
+export function fixturesCacheControl(fixtures: readonly Fixture[]): string {
+  return fixtures.some((f) => f.status === 'live' || f.status === 'finished_provisional')
+    ? FIXTURE_DETAIL_CACHE_CONTROL.live
+    : FIXTURE_DETAIL_CACHE_CONTROL.not_started;
+}
+
+/**
+ * Thin proxy over FplService (which owns FPL caching). Shared data (bootstrap, fixtures, match sheets) is
+ * serialized + compressed once per change for everybody (ctx.hot); per-entry data is built per request from
+ * FplService's shared caches and gets an ETag (304) from the conditional-GET hook.
+ */
 export function fplRoutes(app: FastifyInstance, ctx: AppContext): void {
-  const { fpl } = ctx;
+  const { fpl, hot } = ctx;
 
-  app.get('/v1/fpl/bootstrap', async () => serialize(BootstrapSchema, await fpl.getBootstrap(), 'Bootstrap'));
+  app.get('/v1/fpl/bootstrap', async (request, reply) => {
+    const { body } = await hot.bootstrap();
+    return sendHot(request, reply, body, CACHE_CONTROL.bootstrap);
+  });
 
-  app.get('/v1/fpl/fixtures', async (request) => {
+  app.get('/v1/fpl/fixtures', async (request, reply) => {
     const query = parseInput(EventQuerySchema, cleanQuery(request.query));
     const event = await resolveEvent(fpl, query.event);
-    return serialize(z.array(FixtureSchema), await fpl.getFixtures(event), 'Fixture[]');
+    const { value, body } = await hot.fixtures(event);
+    return sendHot(request, reply, body, fixturesCacheControl(value));
   });
 
   app.get('/v1/fpl/fixtures/:fixtureId', async (request, reply) => {
     const { fixtureId } = parseInput(FixtureParamsSchema, request.params);
     // Unknown fixture → FplNotFoundError → 404 (error handler).
-    const detail = serialize(FixtureDetailSchema, await fpl.getFixtureDetail(fixtureId), 'FixtureDetail');
-    reply.header('cache-control', FIXTURE_DETAIL_CACHE_CONTROL[detail.fixture.status]);
-    return detail;
+    const { value, body } = await hot.fixtureDetail(fixtureId);
+    return sendHot(request, reply, body, FIXTURE_DETAIL_CACHE_CONTROL[value.fixture.status]);
   });
 
-  app.get('/v1/fpl/entries/:entryId', async (request) => {
+  app.get('/v1/fpl/entries/:entryId', async (request, reply) => {
     const { entryId } = parseInput(EntryParamsSchema, request.params);
+    reply.header('cache-control', CACHE_CONTROL.fpl);
     return serialize(EntrySummarySchema, await fpl.getEntry(entryId), 'EntrySummary');
   });
 
-  app.get('/v1/fpl/entries/:entryId/picks', async (request) => {
+  app.get('/v1/fpl/entries/:entryId/picks', async (request, reply) => {
     const { entryId } = parseInput(EntryParamsSchema, request.params);
     const query = parseInput(EventQuerySchema, cleanQuery(request.query));
     const event = await resolveEvent(fpl, query.event);
+    reply.header('cache-control', CACHE_CONTROL.fpl);
     return serialize(EntryPicksSchema, await fpl.getEntryPicks(entryId, event), 'EntryPicks');
   });
 
-  app.get('/v1/fpl/entries/:entryId/live', async (request) => {
+  // My Team live: the shared GW context (FplService) + this entry's cached picks — cheap per request.
+  app.get('/v1/fpl/entries/:entryId/live', async (request, reply) => {
     const { entryId } = parseInput(EntryParamsSchema, request.params);
     const query = parseInput(EventQuerySchema, cleanQuery(request.query));
     const event = await resolveEvent(fpl, query.event);
+    reply.header('cache-control', CACHE_CONTROL.live);
     return serialize(EntryLiveSchema, await fpl.getEntryLive(entryId, event), 'EntryLive');
   });
 }

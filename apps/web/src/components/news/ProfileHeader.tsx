@@ -6,7 +6,7 @@ import { fmt, useI18n } from '@/i18n';
 import { useSeenStories } from '@/lib/localState';
 import { useStories } from '@/lib/queries';
 import { useNow } from './parts';
-import { StoryViewer } from './StoryViewer';
+import { StoryViewer } from '../lazySheets';
 
 /** Stories are shown for exactly 24 h: drop anything past `expiresAt` even before the next poll. */
 function activeStories(items: readonly NewsItem[] | undefined, now: number): NewsItem[] {

@@ -1,112 +1,8 @@
-import { PrismaClient } from '@prisma/client';
-import { buildApp } from './app.js';
-import { bootstrapAdmin } from './auth/bootstrapAdmin.js';
-import { loadEnv, parseOrigins } from './env.js';
-import { createFplFromEnv } from './fpl.js';
-import { ensureIntegrationRows, seedIntegrationSecrets } from './integrations/store.js';
-import { JobScheduler } from './jobs/runner.js';
-import { mediaUrlConfigFromEnv } from './media/publicUrl.js';
-import { LocalDiskMediaStore, S3MediaStore, type MediaStore } from './media/store.js';
-import { WebPushProvider } from './push/provider.js';
-import { devSecretsKey, parseSecretsKey } from './secrets.js';
+import { startServer } from './boot.js';
+import { loadEnv } from './env.js';
 
-const env = loadEnv();
+const { app, shutdown } = await startServer({ env: loadEnv() });
 
-const logger =
-  env.NODE_ENV === 'development'
-    ? { level: env.LOG_LEVEL, transport: { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss' } } }
-    : { level: env.LOG_LEVEL, redact: ['req.headers.authorization'] };
-// buildApp adds the safe `req` serializer (src/logging.ts): no query strings, no invite tokens in logged URLs.
-
-const prisma = new PrismaClient({ datasourceUrl: env.DATABASE_URL });
-// Non-fatal FPL data oddities go to the app logger (bound once the app exists).
-const fpl = createFplFromEnv(env, (message) => fplWarn(message));
-
-const apiPublicUrl = env.API_PUBLIC_URL ?? `http://localhost:${env.PORT}`;
-
-function createMediaStore(): MediaStore {
-  if (
-    env.MEDIA_STORE === 's3' &&
-    env.S3_ENDPOINT &&
-    env.S3_BUCKET &&
-    env.S3_ACCESS_KEY_ID &&
-    env.S3_SECRET_ACCESS_KEY &&
-    env.S3_PUBLIC_BASE_URL
-  ) {
-    return new S3MediaStore({
-      endpoint: env.S3_ENDPOINT,
-      region: env.S3_REGION,
-      bucket: env.S3_BUCKET,
-      accessKeyId: env.S3_ACCESS_KEY_ID,
-      secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-      publicBaseUrl: env.S3_PUBLIC_BASE_URL,
-    });
-  }
-  return new LocalDiskMediaStore(env.MEDIA_DIR, apiPublicUrl);
-}
-
-const vapid =
-  env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY && env.VAPID_SUBJECT
-    ? { publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT }
-    : null;
-
-const app = await buildApp({
-  prisma,
-  fpl,
-  logger,
-  media: createMediaStore(),
-  push:
-    vapid === null ? null : new WebPushProvider(vapid, (statusCode, message) => pushLog(statusCode, message)),
-  config: {
-    corsOrigins: parseOrigins(env.CORS_ORIGINS),
-    secretsKey: env.SECRETS_KEY ? parseSecretsKey(env.SECRETS_KEY) : devSecretsKey(),
-    trustProxy: env.TRUST_PROXY,
-    cronSecret: env.CRON_SECRET ?? null,
-    vapidPublicKey: vapid?.publicKey ?? null,
-    meta:
-      env.META_APP_ID && env.META_APP_SECRET
-        ? { appId: env.META_APP_ID, appSecret: env.META_APP_SECRET }
-        : null,
-    apiPublicUrl,
-    webAppUrl: env.WEB_APP_URL ?? null,
-    ...mediaUrlConfigFromEnv(env),
-  },
-});
-
-function fplWarn(message: string): void {
-  app.log.warn({ fpl: message }, 'FPL data warning');
-}
-
-function pushLog(statusCode: number | null, message: string): void {
-  app.log.warn({ statusCode, message }, 'web push send failed');
-}
-
-if (!vapid) app.log.warn('VAPID_* not set — push notifications are disabled');
-// Client defaults (podcast RSS + Apple enabled) exist from the first boot, so the feed fills by itself.
-await ensureIntegrationRows(prisma);
-// Deploy-time credentials (never committed) configure a fresh database without manual re-entry.
-const secretsKey = env.SECRETS_KEY ? parseSecretsKey(env.SECRETS_KEY) : devSecretsKey();
-const seeded = await seedIntegrationSecrets(prisma, secretsKey, {
-  ...(env.SPOTIFY_CLIENT_ID && env.SPOTIFY_CLIENT_SECRET
-    ? { spotify: { clientId: env.SPOTIFY_CLIENT_ID, clientSecret: env.SPOTIFY_CLIENT_SECRET } }
-    : {}),
-});
-if (seeded.length > 0) app.log.info({ seeded }, 'integration credentials seeded from env');
-
-if (!env.SECRETS_KEY) app.log.warn('SECRETS_KEY not set — using an insecure development key');
-
-const admin = await bootstrapAdmin(prisma, env.ADMIN_BOOTSTRAP_USERNAME, env.ADMIN_BOOTSTRAP_PASSWORD);
-if (admin === 'created') app.log.info({ username: env.ADMIN_BOOTSTRAP_USERNAME }, 'bootstrap admin created');
-
-const scheduler = new JobScheduler(app.jobs);
-
-const shutdown = async (signal: string) => {
-  app.log.info({ signal }, 'shutting down');
-  scheduler.stop();
-  await app.close();
-  await prisma.$disconnect();
-  process.exit(0);
-};
 // A socket that resets after its request already settled (seen with push services behind proxies) emits an
 // error nobody can await. Such transport errors must not take the whole server down; anything else is a
 // real bug, so log it and exit (the host restarts the process).
@@ -120,10 +16,8 @@ process.on('uncaughtException', (err: NodeJS.ErrnoException) => {
   process.exit(1);
 });
 
-process.once('SIGINT', () => void shutdown('SIGINT'));
-process.once('SIGTERM', () => void shutdown('SIGTERM'));
-
-await app.listen({ port: env.PORT, host: env.HOST });
-app.log.info({ fplMode: env.FPL_MODE, jobs: env.JOBS_ENABLED, mediaStore: env.MEDIA_STORE }, 'api ready');
-
-if (env.JOBS_ENABLED) scheduler.start();
+const exit = (signal: string): void => {
+  void shutdown(signal).finally(() => process.exit(0));
+};
+process.once('SIGINT', () => exit('SIGINT'));
+process.once('SIGTERM', () => exit('SIGTERM'));

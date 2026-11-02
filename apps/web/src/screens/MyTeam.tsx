@@ -20,7 +20,7 @@ import { REFRESH_SCOPES } from '@/lib/refresh';
 import { AppShell, ShellSkeleton } from '@/components/AppShell';
 import { ShirtIcon } from '@/components/icons';
 import { Pitch } from '@/components/team/Pitch';
-import { PlayerSheet } from '@/components/team/PlayerSheet';
+import { PlayerSheet } from '@/components/lazySheets';
 import {
   ChipsPanel,
   GwSelector,

@@ -1,12 +1,21 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Suspense,
+  memo,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { NewsItemIdSchema } from '@fant/shared';
 import type { NewsFilter, NewsItem } from '@fant/shared';
 import { useI18n } from '@/i18n';
 import { pushPromptSnoozed, setNewsFilterPref, snoozePushPrompt, useNewsFilterPref } from '@/lib/localState';
-import { enablePush, usePushState } from '@/lib/push';
-import type { PushError } from '@/lib/push';
+import { enablePush, guessPushState, usePushState } from '@/lib/push';
+import type { PushError, PushState } from '@/lib/push';
 import { useMe, useNewsFeed, useNewsFilters, useNewsHead, useNewsItem } from '@/lib/queries';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { REFRESH_SCOPES } from '@/lib/refresh';
@@ -17,6 +26,7 @@ import { pushErrorText } from '@/components/NotificationsCard';
 import { ArrowUpIcon, BellIcon, CloseIcon, MicIcon, RefreshIcon } from '@/components/icons';
 import { FilterChips } from '@/components/news/FilterChips';
 import { NewsCard, NewsCardSkeleton } from '@/components/news/NewsCards';
+import { MediaPriority } from '@/components/news/parts';
 import { SourceBadge, filterKind } from '@/components/news/SourceBadge';
 import { ProfileHeader } from '@/components/news/ProfileHeader';
 import {
@@ -110,7 +120,9 @@ function Highlighted({ id, isAdmin, onClose }: { id: NewsItem['id']; isAdmin: bo
           overrides={{ not_found: t.news.itemNotFound }}
         />
       ) : (
-        <NewsCard item={item.data} isAdmin={isAdmin} highlighted />
+        <MediaPriority value>
+          <NewsCard item={item.data} isAdmin={isAdmin} highlighted />
+        </MediaPriority>
       )}
     </div>
   );
@@ -122,14 +134,20 @@ function PushPrompt() {
   const { t } = useI18n();
   const push = usePushState();
   const [snoozed, setSnoozed] = useState(true);
+  const [guess, setGuess] = useState<PushState>('loading');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<PushError | null>(null);
   const [guide, setGuide] = useState(false);
 
-  useEffect(() => setSnoozed(pushPromptSnoozed(Date.now())), []);
+  // Layout effect: decided before the feed's first paint, so the prompt never pops in above it later (CLS).
+  useLayoutEffect(() => {
+    setSnoozed(pushPromptSnoozed(Date.now()));
+    setGuess(guessPushState());
+  }, []);
 
+  const state = push.state === 'loading' ? guess : push.state;
   if (snoozed) return null;
-  if (push.state !== 'disabled' && push.state !== 'needs-install') return null;
+  if (state !== 'disabled' && state !== 'needs-install') return null;
 
   const dismiss = () => {
     snoozePushPrompt(Date.now());
@@ -167,7 +185,7 @@ function PushPrompt() {
       </IconButton>
       {error && <InlineError>{pushErrorText(t, error)}</InlineError>}
       <div className="flex gap-2">
-        {push.state === 'needs-install' ? (
+        {state === 'needs-install' ? (
           <Button className="flex-1" onClick={() => setGuide(true)}>
             {t.push.promptInstall}
           </Button>
@@ -219,6 +237,9 @@ function Feed({
     }
     return out;
   }, [feed.data, skipId]);
+  // A new page (or a poll) renders as an interruptible background update: the rows appended at the end never
+  // block a scroll frame (they used to be one 150–200 ms task on a mid-range phone).
+  const shown = useDeferredValue(items);
 
   // Newer items on the server than the top of our list → offer the pill.
   const newest = feed.data?.pages[0]?.items[0];
@@ -298,10 +319,8 @@ function Feed({
         </div>
       )}
       <ul className="flex flex-col gap-4" data-testid="news-feed">
-        {items.map((item) => (
-          <li key={item.id}>
-            <NewsCard item={item} isAdmin={isAdmin} />
-          </li>
+        {shown.map((item, i) => (
+          <FeedItem key={item.id} item={item} isAdmin={isAdmin} first={i === 0 && !skipId} />
         ))}
       </ul>
       <div ref={sentinel} className="flex min-h-16 flex-col items-center justify-center gap-2 py-2">
@@ -325,3 +344,26 @@ function Feed({
     </>
   );
 }
+
+/**
+ * One feed row. Memoized: a poll or the next page re-renders only rows whose item changed (TanStack Query keeps
+ * unchanged items referentially equal), not the whole list. The first row's media is the screen's LCP: it loads
+ * eagerly at high priority, everything below lazily.
+ */
+const FeedItem = memo(function FeedItem({
+  item,
+  isAdmin,
+  first,
+}: {
+  item: NewsItem;
+  isAdmin: boolean;
+  first: boolean;
+}) {
+  return (
+    <li className="feed-item">
+      <MediaPriority value={first}>
+        <NewsCard item={item} isAdmin={isAdmin} />
+      </MediaPriority>
+    </li>
+  );
+});

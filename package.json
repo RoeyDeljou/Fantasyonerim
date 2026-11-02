@@ -2,7 +2,7 @@
   "name": "fantasyonerim",
   "private": true,
   "version": "0.1.0",
-  "description": "Fantasyonerim — the FPL podcast's official app: auto-synced content feed, community, FPL team tracking, live league and captain battle",
+  "description": "Fantasyonerim \u2014 the FPL podcast's official app: auto-synced content feed, community, FPL team tracking, live league and captain battle",
   "license": "UNLICENSED",
   "workspaces": [
     "packages/*",
@@ -20,11 +20,13 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "loadtest": "node scripts/loadtest/run.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",
     "@types/node": "^22.18.1",
+    "autocannon": "8.0.0",
     "eslint": "^9.37.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.6.2",

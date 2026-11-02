@@ -208,8 +208,32 @@ export function createGameweekContext(input: GameweekInput): GameweekContext {
   return { ...input, fixturesByTeam, computedBonus, pendingBonus };
 }
 
-/** Live info for a single player in this GW (also used for Captain Battle). */
+/**
+ * Per-context memo of `playerLiveInfo`: a GW context is immutable, so each player's info is computed once
+ * per (bootstrap, fixtures, live) snapshot and shared by every manager who owns him — scoring a league is
+ * then O(entries × 15) lookups. Keyed weakly so a replaced context frees its memo.
+ */
+const infoMemo = new WeakMap<GameweekContext, Map<number, PlayerLiveInfo>>();
+
+/**
+ * Live info for a single player in this GW (also used for Captain Battle). Memoized per context: the
+ * returned object is shared, treat it as immutable.
+ */
 export function playerLiveInfo(ctx: GameweekContext, playerId: number): PlayerLiveInfo {
+  let memo = infoMemo.get(ctx);
+  if (!memo) {
+    memo = new Map();
+    infoMemo.set(ctx, memo);
+  }
+  let info = memo.get(playerId);
+  if (!info) {
+    info = computePlayerLiveInfo(ctx, playerId);
+    memo.set(playerId, info);
+  }
+  return info;
+}
+
+function computePlayerLiveInfo(ctx: GameweekContext, playerId: number): PlayerLiveInfo {
   const player = ctx.players.get(playerId);
   const fixtures = player ? (ctx.fixturesByTeam.get(player.teamId) ?? []) : [];
   const stats = ctx.live.get(playerId) ?? ZERO_STATS;

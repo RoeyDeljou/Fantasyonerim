@@ -4,6 +4,7 @@ import type { IntegrationContext } from '@fant/integrations';
 import type { IntegrationFactories } from './integrations/factories.js';
 import type { MediaUrlMapper } from './media/publicUrl.js';
 import type { MediaStore } from './media/store.js';
+import type { HotData } from './perf/hotData.js';
 import type { PushProvider } from './push/provider.js';
 import type { PushBatchRecorder } from './push/stats.js';
 
@@ -15,8 +16,10 @@ export interface Clock {
 export const systemClock: Clock = { now: () => new Date() };
 
 export interface RateLimitConfig {
-  /** Requests per window per IP for every route. */
+  /** Requests per window for every route: per signed-in user (valid bearer token), else per IP. */
   globalMax: number;
+  /** Ceiling per IP for anonymous requests (no valid token). Mobile carriers put many users behind one IP. */
+  anonymousMax: number;
   /** Requests per window per IP for register / recover / admin-login. */
   authMax: number;
   /** Requests per window for other writes (push subscriptions/devices, likes, reports; per user when signed in). */
@@ -65,6 +68,12 @@ export interface AppConfig {
    * `mediaOriginBaseUrl` are served under this base instead. Unset → stored URLs are served as-is.
    */
   mediaPublicBaseUrl?: string | null;
+  /**
+   * Neon keep-alive: GET /health also runs `SELECT 1` (at most once a minute) so the database doesn't suspend.
+   * `quietHours` [start, end) in Asia/Jerusalem local hours skips that ping (and slows the scheduler) so Neon
+   * can suspend at night; null = always on. See docs/PERFORMANCE.md for the compute-hours maths.
+   */
+  keepAlive?: { quietHours: readonly [number, number] | null };
 }
 
 /** Everything a route or job needs. Built once in buildApp and passed to each module. */
@@ -86,4 +95,8 @@ export interface AppContext {
   media: MediaStore;
   /** Stored media URL → client URL (see media/publicUrl.ts). Every serializer of a media URL uses it. */
   mediaUrl: MediaUrlMapper;
+  /** Shared precomputed hot responses (live league, fixtures, captain battle, config, news) + settings memo. */
+  hot: HotData;
+  /** Evicts a user's cached sessions after a change to the user or their sessions (set by buildApp). */
+  forgetUser(userId: string): void;
 }

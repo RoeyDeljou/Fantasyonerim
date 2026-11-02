@@ -1,3 +1,4 @@
+import { graphemes } from './text';
 /**
  * Client-side approximation of X's weighted tweet length, for the live-update composer's counter only — the API
  * is the authority and rejects an over-long X post per target. Rules (after twitter-text v3):
@@ -22,14 +23,6 @@ function isLight(cp: number): boolean {
     (cp >= 8208 && cp <= 8223) ||
     (cp >= 8242 && cp <= 8247)
   );
-}
-
-function graphemes(s: string): string[] {
-  if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
-    const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-    return Array.from(seg.segment(s), (g) => g.segment);
-  }
-  return Array.from(s);
 }
 
 function textWeight(s: string): number {

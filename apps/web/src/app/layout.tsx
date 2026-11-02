@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
-import '@fontsource-variable/rubik';
 import './globals.css';
 import { Providers } from './providers';
 import { BOOT_SCRIPT } from '@/lib/prefs';
 import { CHUNK_GUARD_SCRIPT } from '@/lib/appVersion';
 import { WARMUP_SCRIPT } from '@/lib/warmupScript';
+import { EARLY_FETCH_SCRIPT } from '@/lib/earlyFetch';
 import { THEME_META_COLORS } from './theme-meta';
 
 export const metadata: Metadata = {
@@ -41,9 +41,19 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <head>
         {/* First: start waking the (possibly sleeping) API before anything else loads. */}
         <script dangerouslySetInnerHTML={{ __html: WARMUP_SCRIPT }} />
+        {/* Then the tab's own first requests, so they overlap the bundle download (lib/earlyFetch.ts). */}
+        <script dangerouslySetInnerHTML={{ __html: EARLY_FETCH_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: CHUNK_GUARD_SCRIPT }} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        {/* The Hebrew subset of the UI font (globals.css): needed by every screen's first paint. */}
+        <link
+          rel="preload"
+          href="/fonts/rubik-hebrew-wght-normal.v5.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
       </head>
       <body className="min-h-dvh antialiased">
         <Providers>{children}</Providers>

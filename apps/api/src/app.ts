@@ -1,3 +1,4 @@
+import compress from '@fastify/compress';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
@@ -25,6 +26,9 @@ import { createMediaUrlMapper } from './media/publicUrl.js';
 import { LocalDiskMediaStore, type MediaStore } from './media/store.js';
 import type { PushProvider } from './push/provider.js';
 import { PushBatchRecorder } from './push/stats.js';
+import { HotData } from './perf/hotData.js';
+import { registerConditionalGet } from './perf/http.js';
+import { COMPRESS_THRESHOLD_BYTES } from './perf/hotCache.js';
 import { MAX_UPLOAD_BYTES } from './community/images.js';
 import { userRateLimitKey } from './community/guard.js';
 import { adminBroadcastRoutes } from './routes/adminBroadcast.js';
@@ -45,6 +49,8 @@ declare module 'fastify' {
   interface FastifyInstance {
     /** Background job runner (scheduler, cron tick, admin "sync now"; tests call it directly). */
     jobs: JobRunner;
+    /** Shared hot responses + the live pre-warmer (started by boot.ts). */
+    hot: HotData;
   }
 }
 
@@ -67,7 +73,10 @@ export interface AppDeps {
 }
 
 const DEFAULT_RATE_LIMIT: RateLimitConfig = {
+  // A user polling every live screen at once makes ~15 requests a minute; 600 leaves room for bursts.
   globalMax: 600,
+  // Anonymous traffic shares carrier/stadium IPs (CGNAT): a generous per-IP ceiling, real limits are per user.
+  anonymousMax: 1200,
   authMax: 10,
   writeMax: 30,
   timeWindowMs: 60_000,
@@ -120,6 +129,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     media:
       deps.media ?? new LocalDiskMediaStore('./.media', deps.config.apiPublicUrl ?? 'http://localhost:4000'),
     mediaUrl: createMediaUrlMapper(deps.config.mediaOriginBaseUrl, deps.config.mediaPublicBaseUrl),
+    hot: new HotData({ prisma: deps.prisma, fpl: deps.fpl, clock }),
+    forgetUser: () => undefined,
   };
   const limits: RateLimitConfig = { ...DEFAULT_RATE_LIMIT, ...deps.config.rateLimit };
 
@@ -181,9 +192,40 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     maxAge: 86_400,
   });
 
+  ctx.hot.setLogger(app.log);
+  app.decorate('hot', ctx.hot);
+
+  // Any successful admin write (settings, captain battle, integrations, news moderation) can change the shared
+  // hot responses: drop them before the response goes out, so the admin's next read is already fresh.
+  app.addHook('onSend', async (request, reply, payload) => {
+    if (
+      request.method !== 'GET' &&
+      reply.statusCode < 400 &&
+      /^\/v1\/(admin|integrations)\//.test(request.url)
+    ) {
+      ctx.hot.invalidateConfig();
+      ctx.hot.invalidateNews();
+    }
+    return payload;
+  });
+
+  // ETag + 304 for every JSON GET (before compression, so it hashes the JSON). Hot routes set their own.
+  registerConditionalGet(app);
+  // Dynamic responses ≥ 1 KB. Hot responses arrive precompressed (once per body) and are passed through.
+  await app.register(compress, {
+    global: true,
+    threshold: COMPRESS_THRESHOLD_BYTES,
+    encodings: ['br', 'gzip'],
+  });
+
+  const auth = createAuth(ctx);
+  ctx.forgetUser = (userId) => auth.forgetUser(userId);
+  // Polling from 150 phones must never trip the global limit: a signed-in request counts against its user (CGNAT
+  // puts whole carriers / a pub's Wi-Fi behind one IP); only requests without a valid token count per IP.
   await app.register(rateLimit, {
     global: true,
-    max: limits.globalMax,
+    max: async (_request, key) => (key.startsWith('user:') ? limits.globalMax : limits.anonymousMax),
+    keyGenerator: userRateLimitKey(auth),
     timeWindow: limits.timeWindowMs,
     errorResponseBuilder: (_request, context) =>
       new ApiHttpError(429, 'rate_limited', `Too many requests — try again in ${context.after}`),
@@ -194,7 +236,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 5, parts: 6 },
   });
 
-  const auth = createAuth(ctx);
   const strictLimit = { max: limits.authMax, timeWindow: limits.timeWindowMs };
   const writeLimit = { max: limits.writeMax, timeWindow: limits.timeWindowMs };
   // Community writes are limited per account (not per IP: a whole stadium can share one IP).

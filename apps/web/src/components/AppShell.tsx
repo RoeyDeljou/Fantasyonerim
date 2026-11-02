@@ -3,11 +3,13 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { ComponentType, ReactNode, SVGProps } from 'react';
 import { useT } from '@/i18n';
 import { ROUTES, useSession } from '@/lib/session';
 import { useMe } from '@/lib/queries';
 import { useRefresh } from '@/lib/refresh';
+import { prefetchTab, tabOf } from '@/lib/prefetch';
 import type { RefreshScope } from '@/lib/refresh';
 import { PullToRefresh, RefreshButton, RefreshDone } from './RefreshControl';
 import { CommunityIcon, LiveIcon, NewsIcon, ShirtIcon, TableIcon } from './icons';
@@ -133,6 +135,17 @@ export function useRequireSession(): boolean {
 
 const NO_SCOPE: RefreshScope = [];
 
+/** Signed in: start everything this tab shows at once, and warm its neighbours when idle (lib/prefetch.ts). */
+function usePrefetchTab(ready: boolean) {
+  const qc = useQueryClient();
+  const pathname = usePathname();
+  const tab = tabOf(pathname);
+  useEffect(() => {
+    if (!ready || !tab) return;
+    return prefetchTab(qc, tab);
+  }, [ready, tab, qc]);
+}
+
 /**
  * `refresh` = the query-key prefixes this screen shows: adds the header refresh button and touch
  * pull-to-refresh (lib/refresh.ts).
@@ -147,6 +160,7 @@ export function AppShell({
   children: ReactNode;
 }) {
   const ready = useRequireSession();
+  usePrefetchTab(ready);
   const r = useRefresh(refresh ?? NO_SCOPE);
   const canRefresh = ready && !!refresh;
   return (

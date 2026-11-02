@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, memo, useDeferredValue, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { PostIdSchema } from '@fant/shared';
@@ -11,10 +11,10 @@ import { useCommunityFeed, useCommunityHead, useMe } from '@/lib/queries';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { AppShell, ShellSkeleton } from '@/components/AppShell';
 import { ArrowUpIcon, CommunityIcon, ImageIcon, RefreshIcon, ShirtIcon } from '@/components/icons';
-import { ComposerSheet } from '@/components/community/Composer';
+import { ComposerSheet, Thread } from '@/components/lazySheets';
 import { PostCard, PostCardSkeleton } from '@/components/community/PostCard';
-import { Thread } from '@/components/community/Thread';
 import { AuthorAvatar, BannedNotice, CommunityToastProvider } from '@/components/community/parts';
+import { MediaPriority } from '@/components/news/parts';
 import { Button, EmptyState, ErrorState, InlineError, Spinner, errorMessage } from '@/components/ui';
 
 export function CommunityScreen() {
@@ -125,6 +125,9 @@ function Feed() {
     }
     return out;
   }, [feed.data]);
+  // A new page (or a poll) renders as an interruptible background update: the rows appended at the end never
+  // block a scroll frame (they used to be one 150–200 ms task on a mid-range phone).
+  const shown = useDeferredValue(items);
 
   const newest = items[0];
   const hasNewer =
@@ -182,10 +185,8 @@ function Feed() {
         </div>
       )}
       <ul className="flex flex-col gap-4" data-testid="community-feed">
-        {items.map((post) => (
-          <li key={post.id} onClickCapture={onThreadLinkClick}>
-            <PostCard post={post} />
-          </li>
+        {shown.map((post, i) => (
+          <FeedRow key={post.id} post={post} first={i === 0} />
         ))}
       </ul>
       <div ref={sentinel} className="flex min-h-16 flex-col items-center justify-center gap-2 py-2">
@@ -214,3 +215,14 @@ function Feed() {
 function onThreadLinkClick(e: MouseEvent<HTMLLIElement>) {
   if (e.target instanceof Element && e.target.closest('a[data-testid=comments-link]')) markOpenedFromFeed();
 }
+
+/** One feed row, memoized: a refetch re-renders only posts that changed. The first post's photo loads first. */
+const FeedRow = memo(function FeedRow({ post, first }: { post: CommunityPost; first: boolean }) {
+  return (
+    <li className="feed-item" onClickCapture={onThreadLinkClick}>
+      <MediaPriority value={first}>
+        <PostCard post={post} />
+      </MediaPriority>
+    </li>
+  );
+});

@@ -1,4 +1,5 @@
 import type { Messages } from './he';
+import { fatal } from './fatal';
 
 export const en: Messages = {
   app: {
@@ -36,9 +37,9 @@ export const en: Messages = {
   updates: {
     available: 'New version — refresh',
     availableHint: "You'll pick up where you left off — anything you typed is kept.",
-    staleTitle: 'The app was updated',
-    staleBody: 'A new version came out while the app was open. Refreshing loads it.',
-    reload: 'Refresh the app',
+    staleTitle: fatal.en.staleTitle,
+    staleBody: fatal.en.staleBody,
+    reload: fatal.en.reload,
   },
   errors: {
     notFound: "We couldn't find what you were looking for.",
@@ -46,11 +47,11 @@ export const en: Messages = {
     conflict: 'That already exists.',
     unauthorized: 'Please sign in again.',
     internal: 'Server error. Try again in a moment.',
-    title: 'Something went wrong',
+    title: fatal.en.title,
     network: "Can't reach the server. Check your connection and try again.",
     upstream: 'The FPL site is unavailable right now (usually around the deadline). Try again in a moment.',
     rateLimited: 'Too many requests. Wait a moment and try again.',
-    generic: 'Something unexpected happened. Please try again.',
+    generic: fatal.en.generic,
     forbidden: "You don't have access to this page.",
     tooLarge: 'That file is too large (max 10 MB).',
     unsupportedMedia: 'That file type isn’t supported. Try a JPG, PNG or WebP image.',

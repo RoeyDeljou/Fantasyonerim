@@ -109,7 +109,7 @@ export function useListenPref(): ListenPref {
 export type NewsFilterPref = NewsFilter | 'all';
 const filterListeners = new Set<() => void>();
 
-function readNewsFilter(): NewsFilterPref {
+export function readNewsFilter(): NewsFilterPref {
   const p = NewsFilterSchema.safeParse(readPref(KEYS.newsFilter));
   return p.success ? p.data : 'all';
 }

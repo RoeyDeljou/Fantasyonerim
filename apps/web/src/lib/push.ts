@@ -93,6 +93,22 @@ async function currentSubscription(): Promise<PushSubscription | null> {
   return reg.pushManager.getSubscription();
 }
 
+/**
+ * readPushState() without the async parts (permission query, subscription lookup): a synchronous best guess, so a
+ * screen can lay out the push prompt in its very first paint instead of inserting it later and shifting the feed
+ * (CLS). "granted" is guessed as subscribed (the start-up re-sync keeps that true); the real state replaces the
+ * guess a moment later.
+ */
+export function guessPushState(): PushState {
+  if (typeof window === 'undefined') return 'loading';
+  if (isNativeShell()) return 'unsupported';
+  if (isIos() && !isStandalone()) return 'needs-install';
+  if (!pushSupported()) return 'unsupported';
+  if (Notification.permission === 'denied') return 'denied';
+  if (Notification.permission === 'granted') return readPref(OPT_OUT_KEY) === '1' ? 'disabled' : 'enabled';
+  return 'disabled';
+}
+
 export async function readPushState(): Promise<PushState> {
   const base = await baseState();
   if (base !== 'maybe') return base;

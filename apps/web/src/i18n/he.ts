@@ -2,6 +2,8 @@
  * Hebrew — the default locale. This file defines the key shape; `en.ts` must match it exactly
  * (enforced by the `Messages` type). Placeholders use `{name}` and are filled by `fmt()`.
  */
+import { fatal } from './fatal';
+
 export const he = {
   app: {
     name: 'פנטזיונרים',
@@ -38,9 +40,9 @@ export const he = {
   updates: {
     available: 'גרסה חדשה זמינה — רענון',
     availableHint: 'ממשיכים מאיפה שהפסקתם — מה שכתבתם נשמר.',
-    staleTitle: 'האפליקציה התעדכנה',
-    staleBody: 'יצאה גרסה חדשה של האפליקציה בזמן שהיא הייתה פתוחה. רענון יטען אותה.',
-    reload: 'רענון האפליקציה',
+    staleTitle: fatal.he.staleTitle,
+    staleBody: fatal.he.staleBody,
+    reload: fatal.he.reload,
   },
   errors: {
     notFound: 'לא מצאנו את מה שחיפשתם.',
@@ -48,11 +50,11 @@ export const he = {
     conflict: 'זה כבר קיים.',
     unauthorized: 'צריך להתחבר מחדש.',
     internal: 'תקלה בשרת. נסו שוב עוד רגע.',
-    title: 'משהו השתבש',
+    title: fatal.he.title,
     network: 'אין חיבור לשרת. בדקו את האינטרנט ונסו שוב.',
     upstream: 'האתר של FPL לא זמין כרגע (קורה בעיקר סביב הדדליין). נסו שוב עוד רגע.',
     rateLimited: 'יותר מדי בקשות. חכו רגע ונסו שוב.',
-    generic: 'קרתה שגיאה לא צפויה. נסו שוב.',
+    generic: fatal.he.generic,
     forbidden: 'אין לכם הרשאה לצפות בעמוד הזה.',
     invalid: 'קיבלנו תשובה לא תקינה מהשרת.',
     tooLarge: 'הקובץ גדול מדי (עד 10MB).',

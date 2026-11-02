@@ -10,7 +10,7 @@ import { ChatIcon, HeartIcon } from '@/components/icons';
 import { ExpandableText, LinkifiedText, MediaImage } from '@/components/news/parts';
 import { Num, cx } from '@/components/ui';
 import { ContentMenu } from './ContentMenu';
-import { ImageViewer } from './ImageViewer';
+import { ImageViewer } from '../lazySheets';
 import { AuthorAvatar, AuthorLine, canBlock, useNotify } from './parts';
 import { SnapshotSheet, TeamPreview } from './TeamSnapshot';
 
