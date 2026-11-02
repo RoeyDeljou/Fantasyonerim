@@ -91,6 +91,53 @@ export const FixtureSchema = z.object({
 export type Fixture = z.infer<typeof FixtureSchema>;
 export const FixtureListSchema = z.array(FixtureSchema);
 
+/** FPL's per-fixture stat identifiers (fixtures endpoint `stats`), in the order the match sheet shows them. */
+export const FixtureStatIdSchema = z.enum([
+  'goals_scored',
+  'assists',
+  'own_goals',
+  'penalties_saved',
+  'penalties_missed',
+  'yellow_cards',
+  'red_cards',
+  'saves',
+  'bonus',
+  'bps',
+  'defensive_contribution',
+]);
+export type FixtureStatId = z.infer<typeof FixtureStatIdSchema>;
+
+export const FixtureStatValueSchema = z.object({ playerId: FplPlayerIdSchema, value: z.number().int() });
+
+/** One stat block of the match sheet, e.g. goals: home [{Salah, 2}] · away [{Isak, 1}]. Sorted by value desc. */
+export const FixtureStatBlockSchema = z.object({
+  id: FixtureStatIdSchema,
+  home: z.array(FixtureStatValueSchema),
+  away: z.array(FixtureStatValueSchema),
+});
+export type FixtureStatBlock = z.infer<typeof FixtureStatBlockSchema>;
+
+/** A player's FPL return from this fixture only (from the GW live `explain` for this fixture). */
+export const FixturePlayerPointsSchema = z.object({
+  playerId: FplPlayerIdSchema,
+  teamId: FplTeamIdSchema,
+  minutes: z.number().int().nonnegative(),
+  /** FPL points earned in this fixture (provisional bonus not included until FPL adds it). */
+  points: z.number().int(),
+});
+export type FixturePlayerPoints = z.infer<typeof FixturePlayerPointsSchema>;
+
+/** GET /v1/fpl/fixtures/:fixtureId — the FPL match sheet ("Match Details" + "Player Stats"). */
+export const FixtureDetailSchema = z.object({
+  fixture: FixtureSchema,
+  /** Only blocks with at least one entry; empty before kick-off. */
+  stats: z.array(FixtureStatBlockSchema),
+  /** Players who appeared (minutes > 0), points desc. Empty before kick-off. */
+  players: z.array(FixturePlayerPointsSchema),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+export type FixtureDetail = z.infer<typeof FixtureDetailSchema>;
+
 export const EntrySummarySchema = z.object({
   entryId: FplEntryIdSchema,
   teamName: z.string(),
