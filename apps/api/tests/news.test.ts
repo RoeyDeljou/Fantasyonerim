@@ -379,6 +379,7 @@ describe('failures, leases and the cron tick', () => {
       'x',
       'deadline_reminders',
       'gameweek_summary',
+      'live_alerts',
       'cleanup',
     ]);
     expect(await prisma.newsItem.count({ where: { source: 'instagram_post' } })).toBe(1);
@@ -419,10 +420,15 @@ describe('failures, leases and the cron tick', () => {
   it('runs a job only when due; the tick reports what ran', async () => {
     const tick = () =>
       app.inject({ method: 'POST', url: '/internal/jobs/tick', headers: { 'x-cron-secret': CRON } });
-    expect((await tick()).json().ran).toHaveLength(8);
+    expect((await tick()).json().ran).toHaveLength(9);
     expect((await tick()).json().ran).toEqual([]);
     clock.advance(5 * 60_000);
-    expect((await tick()).json().ran).toEqual(['podcast', 'instagram_stories', 'deadline_reminders']);
+    expect((await tick()).json().ran).toEqual([
+      'podcast',
+      'instagram_stories',
+      'deadline_reminders',
+      'live_alerts',
+    ]);
   });
 
   it('tick requires the cron secret (401) and is disabled without CRON_SECRET (503)', async () => {

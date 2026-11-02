@@ -185,18 +185,48 @@ describe('push subscriptions, devices and prefs', () => {
       fpl: true,
       live: true,
       community: true,
+      league: true,
+      captain: true,
     });
+    const put = (payload: object) =>
+      app.inject({ method: 'PUT', url: '/v1/me/notification-prefs', headers: bearer(token), payload });
+    const read = async () =>
+      (await app.inject({ method: 'GET', url: '/v1/me/notification-prefs', headers: bearer(token) })).json();
+
+    // An older client (no league/captain) on a fresh account: those stay on.
     const prefs = { news: false, fpl: true, live: false, community: true };
-    const put = await app.inject({
-      method: 'PUT',
-      url: '/v1/me/notification-prefs',
-      headers: bearer(token),
-      payload: prefs,
-    });
-    expect(put.json()).toEqual(prefs);
+    expect((await put(prefs)).json()).toEqual({ ...prefs, league: true, captain: true });
+    expect(await read()).toEqual({ ...prefs, league: true, captain: true });
+
+    const all = { ...prefs, league: false, captain: false };
+    expect((await put(all)).json()).toEqual(all);
+    // A PUT without them keeps the stored values (not the schema default).
+    expect((await put({ ...prefs, fpl: false })).json()).toEqual({ ...all, fpl: false });
+    expect(await read()).toEqual({ ...all, fpl: false });
+    expect((await put({ ...prefs, captain: true })).json()).toEqual({ ...all, captain: true });
+  });
+
+  it('validates notification prefs bodies', async () => {
+    const { token } = await registerUser(app, fpl, 5);
+    const base = { news: true, fpl: true, live: true, community: true };
+    for (const payload of [
+      { ...base, league: 'yes' },
+      { ...base, captain: 1 },
+      { ...base, captain: null },
+      { news: true, fpl: true, live: true },
+      {},
+    ]) {
+      const res = await app.inject({
+        method: 'PUT',
+        url: '/v1/me/notification-prefs',
+        headers: bearer(token),
+        payload,
+      });
+      expect(res.statusCode, JSON.stringify(payload)).toBe(400);
+    }
     expect(
-      (await app.inject({ method: 'GET', url: '/v1/me/notification-prefs', headers: bearer(token) })).json(),
-    ).toEqual(prefs);
+      (await app.inject({ method: 'PUT', url: '/v1/me/notification-prefs', payload: base })).statusCode,
+    ).toBe(401);
   });
 
   it('rate-limits subscription writes', async () => {

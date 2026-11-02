@@ -255,6 +255,10 @@ model NotificationPrefs {
   fpl       Boolean  @default(true)
   live      Boolean  @default(true)
   community Boolean  @default(true)
+  /// League moments: post-GW highlights (top scorer, first place, climbs) + live league alerts.
+  league    Boolean  @default(true)
+  /// Live alerts: your (effective) captain scored or assisted.
+  captain   Boolean  @default(true)
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

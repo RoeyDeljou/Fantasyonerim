@@ -4,7 +4,9 @@ import {
   EntryPicksSchema,
   EntrySummarySchema,
   FixtureSchema,
+  FixtureDetailSchema,
   FplEntryIdSchema,
+  FplFixtureIdSchema,
   FplLeagueIdSchema,
   GameweekSchema,
   LeagueStandingsSchema,
@@ -168,5 +170,61 @@ describe('demo dataset (smoke)', () => {
     );
     for (const r of rows) PlayerLiveSchema.parse(r);
     expect(rows.every((r) => r.bonus >= r.provisionalBonus)).toBe(true);
+  });
+
+  it('fixture detail (match sheet) works for finished, provisional and live GW9 fixtures', async () => {
+    const fixtures = await service.getFixtures(gw9);
+    const byStatus = (s: string) => fixtures.filter((f) => f.status === s).map((f) => f.id as number);
+    expect(byStatus('finished')).toEqual([81, 82, 83, 84]);
+    expect(byStatus('finished_provisional')).toEqual([85, 86]);
+    expect(byStatus('live')).toEqual([87]);
+    expect(byStatus('not_started')).toEqual([88, 89, 90]);
+
+    for (const fixtureId of [81, 85, 86, 87]) {
+      const d = FixtureDetailSchema.parse(
+        await service.getFixtureDetail(FplFixtureIdSchema.parse(fixtureId)),
+      );
+      expect(
+        d.stats.map((s) => s.id),
+        `fixture ${fixtureId}`,
+      ).toContain('bps');
+      expect(d.players.length, `fixture ${fixtureId}`).toBeGreaterThanOrEqual(10);
+      for (const p of d.players) expect([d.fixture.teamH, d.fixture.teamA]).toContain(p.teamId);
+    }
+    const notStarted = await service.getFixtureDetail(FplFixtureIdSchema.parse(88));
+    expect([notStarted.stats, notStarted.players]).toEqual([[], []]);
+    // A finished GW8 fixture resolves through the whole-season list.
+    expect((await service.getFixtureDetail(FplFixtureIdSchema.parse(71))).players.length).toBeGreaterThan(0);
+  });
+
+  it('fixture detail for the live demo fixture 87 (62′) matches fixtures + live explain', async () => {
+    const d = FixtureDetailSchema.parse(await service.getFixtureDetail(FplFixtureIdSchema.parse(87)));
+    const raw = data.fixtures.find((f) => f.id === 87);
+    expect(d.fixture).toMatchObject({
+      status: 'live',
+      minutes: 62,
+      teamHScore: raw?.team_h_score,
+      teamAScore: raw?.team_a_score,
+    });
+    expect(d.stats.map((s) => s.id)).toContain('bps');
+    const live = data.live.get(9);
+    const expected = (live?.elements ?? [])
+      .map((e) => {
+        const stats = e.explain.filter((x) => x.fixture === 87).flatMap((x) => x.stats);
+        return {
+          playerId: e.id,
+          minutes: stats.find((s) => s.identifier === 'minutes')?.value ?? 0,
+          points: stats.reduce((sum, s) => sum + s.points, 0),
+        };
+      })
+      .filter((p) => p.minutes > 0)
+      .sort((a, b) => a.playerId - b.playerId);
+    expect(expected.length).toBeGreaterThan(0);
+    expect(
+      d.players
+        .map((p) => ({ playerId: p.playerId as number, minutes: p.minutes, points: p.points }))
+        .sort((a, b) => a.playerId - b.playerId),
+    ).toEqual(expected);
+    for (const p of d.players) expect(p.minutes).toBeLessThanOrEqual(62);
   });
 });

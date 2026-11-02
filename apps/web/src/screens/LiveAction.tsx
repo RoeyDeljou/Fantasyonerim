@@ -1,7 +1,8 @@
 'use client';
 
 import { Suspense, useEffect, useRef } from 'react';
-import { FplEntryIdSchema } from '@fant/shared';
+import Link from 'next/link';
+import { FplEntryIdSchema, FplFixtureIdSchema } from '@fant/shared';
 import type { CaptainBattleRow, Fixture, LiveLeagueRow, PlTeam } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import type { Formatters, Messages } from '@/i18n';
@@ -17,10 +18,12 @@ import {
 } from '@/lib/queries';
 import type { FplIndex } from '@/lib/queries';
 import { useQueryParam } from '@/lib/useQueryParam';
+import { REFRESH_SCOPES } from '@/lib/refresh';
 import { AppShell, ShellSkeleton } from '@/components/AppShell';
 import { ImageWithFallback, fplImage } from '@/components/FplImages';
 import { ClockIcon, ShirtIcon, TableIcon } from '@/components/icons';
 import { ManagerSheet } from '@/components/team/ManagerSheet';
+import { FixtureSheet } from '@/components/team/FixtureSheet';
 import { ChipIcon } from '@/components/team/ChipIcon';
 import { BonusBadge } from '@/components/team/BonusBadge';
 import { fixtureScoreText, fixtureStatusText } from '@/components/team/fixtureText';
@@ -46,7 +49,7 @@ type View = 'table' | 'captains';
 export function LiveActionScreen() {
   const { t } = useI18n();
   return (
-    <AppShell title={t.liveAction.title}>
+    <AppShell title={t.liveAction.title} refresh={REFRESH_SCOPES.live}>
       <Suspense fallback={<ShellSkeleton />}>
         <LiveActionInner />
       </Suspense>
@@ -98,6 +101,8 @@ function FixturesStrip({ index }: { index: FplIndex }) {
   const { t, f } = useI18n();
   const fixtures = useFixtures(index.bootstrap.currentEvent);
   const listRef = useRef<HTMLUListElement>(null);
+  const [fixtureParam, setFixtureParam] = useQueryParam('fixture');
+  const openId = FplFixtureIdSchema.safeParse(fixtureParam ?? undefined);
   const sorted = [...(fixtures.data ?? [])].sort(
     (a, b) => (a.kickoffTime ?? '9').localeCompare(b.kickoffTime ?? '9') || a.id - b.id,
   );
@@ -137,10 +142,23 @@ function FixturesStrip({ index }: { index: FplIndex }) {
       ) : (
         <ul ref={listRef} className="no-scrollbar -mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1">
           {sorted.map((fx) => (
-            <FixtureCard key={fx.id} fx={fx} index={index} t={t} f={f} />
+            <FixtureCard
+              key={fx.id}
+              fx={fx}
+              index={index}
+              t={t}
+              f={f}
+              onOpen={() => setFixtureParam(String(fx.id))}
+            />
           ))}
         </ul>
       )}
+      <FixtureSheet
+        fixtureId={openId.success ? openId.data : null}
+        fixture={openId.success ? sorted.find((fx) => fx.id === openId.data) : undefined}
+        index={index}
+        onClose={() => setFixtureParam(null)}
+      />
     </section>
   );
 }
@@ -168,50 +186,67 @@ function TeamSide({ team }: { team: PlTeam | undefined }) {
  * [home | home score – away score | away] as grid cells, so each score sits next to its own team in both
  * directions (RTL draws home on the right, with the home score right of the dash).
  */
-function FixtureCard({ fx, index, t, f }: { fx: Fixture; index: FplIndex; t: Messages; f: Formatters }) {
+function FixtureCard({
+  fx,
+  index,
+  t,
+  f,
+  onOpen,
+}: {
+  fx: Fixture;
+  index: FplIndex;
+  t: Messages;
+  f: Formatters;
+  onOpen(): void;
+}) {
   const home = index.teams.get(fx.teamH);
   const away = index.teams.get(fx.teamA);
   const started = fx.status !== 'not_started';
   const live = fx.status === 'live';
   return (
-    <li
-      data-fixture={fx.id}
-      className={cx(
-        'flex w-44 shrink-0 snap-start flex-col items-center gap-1 rounded-2xl border bg-surface px-2 py-2 shadow-card',
-        live ? 'border-live' : 'border-line',
-      )}
-    >
-      <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-1">
-        <TeamSide team={home} />
-        <span
-          className="grid grid-cols-[1fr_auto_1fr] items-center gap-1 text-xl font-extrabold whitespace-nowrap text-ink tabular"
-          aria-label={
-            started
-              ? `${home?.shortName ?? ''} ${fx.teamHScore ?? 0}, ${away?.shortName ?? ''} ${fx.teamAScore ?? 0}`
-              : undefined
-          }
-        >
-          {started ? (
-            <>
-              <span className="text-center">{f.num(fx.teamHScore ?? 0)}</span>
-              <span aria-hidden="true">–</span>
-              <span className="text-center">{f.num(fx.teamAScore ?? 0)}</span>
-            </>
-          ) : (
-            <span className="col-span-3 text-center text-muted">–</span>
-          )}
-        </span>
-        <TeamSide team={away} />
-      </div>
-      <span
+    <li data-fixture={fx.id} className="flex w-44 shrink-0 snap-start">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-haspopup="dialog"
+        title={fmt(t.fixture.open, { home: home?.name ?? '?', away: away?.name ?? '?' })}
         className={cx(
-          'flex items-center gap-1 text-[11px] font-semibold whitespace-nowrap',
-          live ? 'text-live' : started ? 'text-muted' : 'text-ink',
+          'flex w-full flex-col items-center gap-1 rounded-2xl border bg-surface px-2 py-2 shadow-card transition-colors hover:bg-surface-2 active:bg-surface-2',
+          live ? 'border-live' : 'border-line',
         )}
       >
-        {live && <LiveDot />}
-        <bdi>{fixtureScoreText(fx, t, f)}</bdi>
-      </span>
+        <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-1">
+          <TeamSide team={home} />
+          <span
+            className="grid grid-cols-[1fr_auto_1fr] items-center gap-1 text-xl font-extrabold whitespace-nowrap text-ink tabular"
+            aria-label={
+              started
+                ? `${home?.shortName ?? ''} ${fx.teamHScore ?? 0}, ${away?.shortName ?? ''} ${fx.teamAScore ?? 0}`
+                : undefined
+            }
+          >
+            {started ? (
+              <>
+                <span className="text-center">{f.num(fx.teamHScore ?? 0)}</span>
+                <span aria-hidden="true">–</span>
+                <span className="text-center">{f.num(fx.teamAScore ?? 0)}</span>
+              </>
+            ) : (
+              <span className="col-span-3 text-center text-muted">–</span>
+            )}
+          </span>
+          <TeamSide team={away} />
+        </div>
+        <span
+          className={cx(
+            'flex items-center gap-1 text-[11px] font-semibold whitespace-nowrap',
+            live ? 'text-live' : started ? 'text-muted' : 'text-ink',
+          )}
+        >
+          {live && <LiveDot />}
+          <bdi>{fixtureScoreText(fx, t, f)}</bdi>
+        </span>
+      </button>
     </li>
   );
 }
@@ -386,6 +421,8 @@ function CaptainBattleView({ index, interval }: { index: FplIndex; interval: num
   const { t, f } = useI18n();
   const battle = useCaptainBattle(interval);
   const fixtures = useFixtures(battle.data?.event ?? null);
+  const me = useMe();
+  const isAdmin = me.data?.role === 'admin';
 
   const data = battle.data;
   if (!data) {
@@ -419,6 +456,8 @@ function CaptainBattleView({ index, interval }: { index: FplIndex; interval: num
             row={r}
             rank={r.playerId === null ? null : rankOf(r)}
             index={index}
+            event={event}
+            isAdmin={isAdmin}
             fixtures={fixtures.data}
             beforeDeadline={beforeDeadline}
           />
@@ -443,12 +482,16 @@ function CaptainRow({
   row,
   rank,
   index,
+  event,
+  isAdmin,
   fixtures,
   beforeDeadline,
 }: {
   row: CaptainBattleRow;
   rank: number | null;
   index: FplIndex;
+  event: number;
+  isAdmin: boolean;
   fixtures: readonly Fixture[] | undefined;
   beforeDeadline: boolean;
 }) {
@@ -465,6 +508,7 @@ function CaptainRow({
           ? t.liveAction.linkedTeam
           : t.liveAction.kindCustom;
   const live = row.live;
+  const notPicked = row.playerId === null && row.source === 'player';
   return (
     <li
       className={cx(
@@ -503,6 +547,19 @@ function CaptainRow({
             </span>
             {team && <span className="shrink-0 text-muted">· {team.shortName}</span>}
             {row.multiplier === 3 && <ChipIcon chip="3xc" />}
+          </span>
+        ) : notPicked ? (
+          // A hand-picked row the admin hasn't re-picked since FPL moved to this GW.
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2" data-testid="battle-not-picked">
+            <span className="text-sm text-muted">{fmt(t.liveAction.notPickedYet, { event })}</span>
+            {isAdmin && (
+              <Link
+                href="/admin/?card=battle"
+                className="-my-2 inline-flex min-h-11 items-center text-xs font-bold text-primary underline-offset-2 hover:underline"
+              >
+                {t.liveAction.pickNow}
+              </Link>
+            )}
           </span>
         ) : (
           <span className="text-sm text-muted">

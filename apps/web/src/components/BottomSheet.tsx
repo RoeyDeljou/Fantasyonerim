@@ -14,11 +14,14 @@ export function BottomSheet({
   open,
   onClose,
   title,
+  actions,
   children,
 }: {
   open: boolean;
   onClose(): void;
   title: string;
+  /** Extra header buttons, before the close button (e.g. refresh). */
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -52,9 +55,13 @@ export function BottomSheet({
           </div>
           <div className="flex items-center justify-between gap-2 px-4 pt-1 pb-2">
             <h2 className="truncate text-lg font-bold">{title}</h2>
-            <IconButton label={t.common.close} onClick={onClose}>
-              <CloseIcon />
-            </IconButton>
+            <div className="flex shrink-0 items-center">
+              {/* Close comes first in the DOM so it gets the dialog's initial focus; actions sit before it visually. */}
+              <IconButton label={t.common.close} onClick={onClose} className="order-last">
+                <CloseIcon />
+              </IconButton>
+              {actions}
+            </div>
           </div>
           <div className="overflow-y-auto overscroll-contain px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
             {children}

@@ -7,6 +7,7 @@ import { fmt, useI18n } from '@/i18n';
 import { isApiError } from '@/lib/api';
 import { useConfig, useFplIndex, useLivePollInterval, useMe, useStandings } from '@/lib/queries';
 import { useQueryParam } from '@/lib/useQueryParam';
+import { REFRESH_SCOPES } from '@/lib/refresh';
 import { AppShell, ShellSkeleton } from '@/components/AppShell';
 import { ArrowDownIcon, ArrowUpIcon, ClockIcon, DotIcon, TableIcon } from '@/components/icons';
 import { ChipIcon } from '@/components/team/ChipIcon';
@@ -26,7 +27,7 @@ import {
 export function TableScreen() {
   const { t } = useI18n();
   return (
-    <AppShell title={t.table.title}>
+    <AppShell title={t.table.title} refresh={REFRESH_SCOPES.table}>
       <Suspense fallback={<ShellSkeleton />}>
         <TableInner />
       </Suspense>

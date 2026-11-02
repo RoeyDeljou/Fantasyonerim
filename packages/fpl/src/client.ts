@@ -5,7 +5,9 @@ import {
   type EntryPicks,
   type EntrySummary,
   type Fixture,
+  type FixtureDetail,
   type FplEntryId,
+  type FplFixtureId,
   type FplLeagueId,
   type FplPlayerId,
   type Gameweek,
@@ -23,12 +25,14 @@ import {
 } from './live-engine.js';
 import {
   engineFixturesOf,
+  fixtureStatusOf,
   engineLiveOf,
   enginePicksOf,
   enginePlayersOf,
   mapBootstrap,
   mapEntry,
   mapEntryLive,
+  mapFixtureDetail,
   mapFixtures,
   mapPicks,
   mapPlayerLive,
@@ -82,6 +86,9 @@ export interface CreateFplServiceExtras {
 interface BootstrapBundle {
   dto: Bootstrap;
   players: ReturnType<typeof enginePlayersOf>;
+  currentEvent: number | null;
+  /** Bootstrap team of every element (incl. ones the DTO filters out). */
+  teamOfPlayer: Map<number, number>;
 }
 
 export function createFplService(options: FplServiceOptions & CreateFplServiceExtras): FplService {
@@ -98,7 +105,12 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
     cache.get('bootstrap', ttl.bootstrap, async () => {
       const raw = await getJson('bootstrap-static/', RawBootstrapSchema);
       const dto = mapBootstrap(raw, now());
-      return { dto, players: enginePlayersOf(dto) };
+      return {
+        dto,
+        players: enginePlayersOf(dto),
+        currentEvent: dto.currentEvent,
+        teamOfPlayer: new Map(raw.elements.map((e) => [e.id, e.team])),
+      };
     });
 
   const rawFixtures = (event?: number): Promise<RawFixture[]> => {
@@ -142,6 +154,27 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
       activeChip: toChip(picks.active_chip),
       transfersCost: picks.entry_history.event_transfers_cost,
     });
+
+  const warned = new Set<string>();
+  const warnOnce = (message: string): void => {
+    if (!options.onWarn || warned.has(message)) return;
+    warned.add(message);
+    options.onWarn(message);
+  };
+
+  /**
+   * Finds a fixture's raw record. The Live tab asks about the current GW, whose list is already cached
+   * by getFixtures(event); anything else falls back to the whole-season list (same TTL).
+   */
+  const findRawFixture = async (fixtureId: number, b: BootstrapBundle): Promise<RawFixture> => {
+    if (b.currentEvent !== null) {
+      const hit = (await rawFixtures(b.currentEvent)).find((f) => f.id === fixtureId);
+      if (hit) return hit;
+    }
+    const hit = (await rawFixtures()).find((f) => f.id === fixtureId);
+    if (!hit) throw new FplNotFoundError(`fixture ${fixtureId}`);
+    return hit;
+  };
 
   const service: FplService = {
     async getBootstrap(): Promise<Bootstrap> {
@@ -270,6 +303,20 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
     async getPlayersLive(playerIds: readonly FplPlayerId[], event: Gameweek): Promise<PlayerLive[]> {
       const ctx = await gameweekContext(event);
       return playerIds.map((id) => mapPlayerLive(playerLiveInfo(ctx, id)));
+    },
+
+    async getFixtureDetail(fixtureId: FplFixtureId): Promise<FixtureDetail> {
+      const b = await bootstrap();
+      const fixture = await findRawFixture(fixtureId, b);
+      const started = fixtureStatusOf(fixture) !== 'not_started';
+      const live = started && fixture.event !== null ? await rawLive(fixture.event) : null;
+      return mapFixtureDetail({
+        fixture,
+        live,
+        teamOfPlayer: b.teamOfPlayer,
+        nowMs: now(),
+        onUnknownStat: (identifier) => warnOnce(`FPL fixture stat "${identifier}" is not mapped; ignored`),
+      });
     },
   };
 

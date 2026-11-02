@@ -70,4 +70,33 @@ describe('query cache persistence', () => {
     );
     expect(deserialize(raw).clientState.queries).toEqual([]);
   });
+
+  it('persists the FPL match sheet (re-parsed with FixtureDetailSchema)', () => {
+    expect(isPersistedKey(['fpl', 'fixture', 12])).toBe(true);
+    expect(isPersistedKey(['fpl', 'fixture', 'none'])).toBe(false);
+    const detail = {
+      fixture: {
+        id: 12,
+        event: 9,
+        kickoffTime: '2026-10-25T14:00:00Z',
+        teamH: 1,
+        teamA: 2,
+        teamHScore: 2,
+        teamAScore: 1,
+        minutes: 90,
+        status: 'finished',
+      },
+      stats: [{ id: 'goals_scored', home: [{ playerId: 10, value: 2 }], away: [{ playerId: 20, value: 1 }] }],
+      players: [{ playerId: 10, teamId: 1, minutes: 90, points: 13 }],
+      updatedAt: '2026-10-25T16:00:00Z',
+    };
+    const restored = deserialize(serialize(client([query(['fpl', 'fixture', 12], detail)]))).clientState
+      .queries;
+    expect(restored).toHaveLength(1);
+    expect(restored[0]?.state.data).toEqual(detail);
+    const broken = { ...detail, stats: [{ id: 'nope', home: [], away: [] }] };
+    expect(
+      deserialize(serialize(client([query(['fpl', 'fixture', 12], broken)]))).clientState.queries,
+    ).toEqual([]);
+  });
 });

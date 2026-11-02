@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useIsFetching } from '@tanstack/react-query';
 import type { Query } from '@tanstack/react-query';
 import { useT } from '@/i18n';
+import { useManualRefreshActive } from '@/lib/refresh';
 import { Spinner } from './ui';
 
 /** A background refetch shorter than this never shows anything (no flicker on a warm API). */
@@ -36,7 +37,9 @@ export function SyncStatus() {
   const t = useT();
   const refetching = useIsFetching({ predicate: refetchingWithData }) > 0;
   const loading = useIsFetching({ predicate: loadingWithoutData }) > 0;
-  const showUpdating = useSustained(refetching, UPDATING_DELAY_MS);
+  // A manual refresh has its own feedback (the spinning header button / pull indicator).
+  const manual = useManualRefreshActive();
+  const showUpdating = useSustained(refetching && !manual, UPDATING_DELAY_MS);
   const showWaking = useSustained(loading, WAKING_DELAY_MS);
 
   return (

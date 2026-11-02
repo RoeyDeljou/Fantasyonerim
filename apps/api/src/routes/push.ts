@@ -122,22 +122,41 @@ export function pushRoutes(
       fpl: prefs?.fpl ?? true,
       live: prefs?.live ?? true,
       community: prefs?.community ?? true,
+      league: prefs?.league ?? true,
+      captain: prefs?.captain ?? true,
     });
   });
 
   app.put('/v1/me/notification-prefs', { config: { rateLimit: writeLimit } }, async (request) => {
     const { user } = await auth.requireUser(request);
     const body = parseInput(NotificationPrefsSchema, request.body);
+    // `league` / `captain` are optional on input (older clients don't send them): the schema defaults them to
+    // true, so only a value the client actually sent overwrites the stored one.
+    const update = {
+      news: body.news,
+      fpl: body.fpl,
+      live: body.live,
+      community: body.community,
+      ...(sent(request.body, 'league') ? { league: body.league } : {}),
+      ...(sent(request.body, 'captain') ? { captain: body.captain } : {}),
+    };
     const saved = await prisma.notificationPrefs.upsert({
       where: { userId: user.id },
-      update: body,
-      create: { userId: user.id, ...body },
+      update,
+      create: { userId: user.id, ...update },
     });
     return serialize(NotificationPrefsSchema, {
       news: saved.news,
       fpl: saved.fpl,
       live: saved.live,
       community: saved.community,
+      league: saved.league,
+      captain: saved.captain,
     });
   });
+}
+
+/** Whether a (schema-validated) JSON body carried `key` explicitly. */
+function sent(body: unknown, key: string): boolean {
+  return typeof body === 'object' && body !== null && Object.hasOwn(body, key);
 }

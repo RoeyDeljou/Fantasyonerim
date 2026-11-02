@@ -19,7 +19,8 @@ const logger =
 // buildApp adds the safe `req` serializer (src/logging.ts): no query strings, no invite tokens in logged URLs.
 
 const prisma = new PrismaClient({ datasourceUrl: env.DATABASE_URL });
-const fpl = createFplFromEnv(env);
+// Non-fatal FPL data oddities go to the app logger (bound once the app exists).
+const fpl = createFplFromEnv(env, (message) => fplWarn(message));
 
 const apiPublicUrl = env.API_PUBLIC_URL ?? `http://localhost:${env.PORT}`;
 
@@ -71,6 +72,10 @@ const app = await buildApp({
     ...mediaUrlConfigFromEnv(env),
   },
 });
+
+function fplWarn(message: string): void {
+  app.log.warn({ fpl: message }, 'FPL data warning');
+}
 
 function pushLog(statusCode: number | null, message: string): void {
   app.log.warn({ statusCode, message }, 'web push send failed');

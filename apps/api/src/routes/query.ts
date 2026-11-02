@@ -1,4 +1,4 @@
-import { FplEntryIdSchema, GameweekSchema } from '@fant/shared';
+import { FplEntryIdSchema, FplFixtureIdSchema, GameweekSchema } from '@fant/shared';
 import { z } from 'zod';
 
 // Query/param wrappers built only from the shared id schemas (the contract has no query DTOs).
@@ -10,6 +10,7 @@ export const PageQuerySchema = z.object({
   event: GameweekSchema.optional(),
 });
 export const EntryParamsSchema = z.object({ entryId: FplEntryIdSchema });
+export const FixtureParamsSchema = z.object({ fixtureId: FplFixtureIdSchema });
 
 /** Drops `key=` (empty) query values so optional params behave as absent. */
 export function cleanQuery(query: unknown): Record<string, unknown> {

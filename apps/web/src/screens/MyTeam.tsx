@@ -16,6 +16,7 @@ import {
   usePicks,
 } from '@/lib/queries';
 import type { FplIndex } from '@/lib/queries';
+import { REFRESH_SCOPES } from '@/lib/refresh';
 import { AppShell, ShellSkeleton } from '@/components/AppShell';
 import { ShirtIcon } from '@/components/icons';
 import { Pitch } from '@/components/team/Pitch';
@@ -35,7 +36,7 @@ type View = 'team' | 'live';
 export function MyTeamScreen() {
   const { t } = useI18n();
   return (
-    <AppShell title={t.myTeam.title}>
+    <AppShell title={t.myTeam.title} refresh={REFRESH_SCOPES.myTeam}>
       <Suspense fallback={<ShellSkeleton />}>
         <MyTeamInner />
       </Suspense>

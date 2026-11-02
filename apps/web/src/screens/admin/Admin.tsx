@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryParam } from '@/lib/useQueryParam';
+import { writeCardOpen } from '@/lib/localState';
 import { IntegrationsView } from './Integrations';
 import { ModerationView } from './Moderation';
 import { BroadcastView, LiveUpdateCard } from './Broadcast';
@@ -650,6 +651,15 @@ function BattleForm({
   const { t } = useI18n();
   const save = useSaveAdminCaptainBattle();
   const [flash, triggerFlash] = useFlash();
+  // `/admin/?card=battle` (Captain Battle → "Pick"): open this card and bring it into view.
+  const [cardParam] = useQueryParam('card');
+  useState(() => {
+    if (cardParam === 'battle') writeCardOpen('settings.battle', true);
+  });
+  useEffect(() => {
+    if (cardParam !== 'battle') return;
+    document.querySelector('[data-card="settings.battle"]')?.scrollIntoView({ block: 'start' });
+  }, [cardParam]);
   const [event, setEvent] = useState(initialEvent === null ? '' : String(initialEvent));
   const [rows, setRows] = useState<BattleRowDraft[]>(initialRows);
   const [picking, setPicking] = useState<number | null>(null);

@@ -12,6 +12,7 @@ import {
   EntryLiveSchema,
   EntryPicksSchema,
   EntrySummarySchema,
+  FixtureDetailSchema,
   FixtureSchema,
   LeagueStandingsSchema,
   LiveLeagueSchema,
@@ -52,6 +53,7 @@ function kindOf(key: QueryKey): Kind | null {
   if (a === 'fpl') {
     if (b === 'bootstrap') return { schema: BootstrapSchema };
     if (b === 'fixtures' && c !== 'none') return { schema: FixtureSchema, list: true };
+    if (b === 'fixture' && c !== 'none' && key.length === 3) return { schema: FixtureDetailSchema };
     if (b === 'entry' && c !== 'none') return { schema: EntrySummarySchema };
     if (b === 'picks' && c !== 'none') return { schema: EntryPicksSchema };
     if (b === 'live' && c !== 'none') return { schema: EntryLiveSchema };

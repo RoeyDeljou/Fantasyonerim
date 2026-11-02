@@ -9,6 +9,7 @@ export type JobName =
   | 'youtube'
   | 'deadline_reminders'
   | 'gameweek_summary'
+  | 'live_alerts'
   | 'cleanup';
 
 export interface JobRunContext {

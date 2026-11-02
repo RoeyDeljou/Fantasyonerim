@@ -66,5 +66,6 @@ export function createDemoFplService(options: DemoFplServiceOptions = {}): FplSe
     ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
     ...(options.userAgent !== undefined ? { userAgent: options.userAgent } : {}),
     ...(options.ttl !== undefined ? { ttl: options.ttl } : {}),
+    ...(options.onWarn !== undefined ? { onWarn: options.onWarn } : {}),
   });
 }

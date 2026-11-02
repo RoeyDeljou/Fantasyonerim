@@ -158,3 +158,99 @@ export function commentCopy(locale: Locale, commenterName: string, text: string)
     body: snippet(text, COMMENT_SNIPPET_CHARS),
   };
 }
+
+// ---------- league moments (after a GW) ----------
+
+/** What a manager achieved in the podcast's league this GW, in priority order (never anything negative). */
+export type LeagueHighlight =
+  | { kind: 'top_scorer'; points: number }
+  | { kind: 'first'; still: boolean }
+  | { kind: 'climbed'; places: number; rank: number }
+  | { kind: 'top3' }
+  | { kind: 'top10' };
+
+export function leagueHighlightText(locale: Locale, h: LeagueHighlight): string {
+  const he = locale === 'he';
+  switch (h.kind) {
+    case 'top_scorer':
+      return he
+        ? `👑 מלך המחזור בליגה! ${h.points} נק׳`
+        : `👑 Top scorer in the league this GW! ${h.points} pts`;
+    case 'first':
+      if (h.still) return he ? '🥇 עדיין במקום הראשון בליגה' : '🥇 Still top of the league';
+      return he ? '🥇 עלית למקום הראשון בליגה!' : "🥇 You're top of the league!";
+    case 'climbed':
+      return he
+        ? `🔥 עלית ${h.places} מקומות בליגה — עכשיו במקום ${fmt(h.rank)}`
+        : `🔥 Up ${h.places} places in the league — now ${fmt(h.rank)}`;
+    case 'top3':
+      return he ? '🏅 נכנסת לשלושת הראשונים בליגה!' : "🏅 You're into the league's top 3!";
+    case 'top10':
+      return he ? '📈 נכנסת לעשירייה הראשונה בליגה!' : "📈 You're into the league's top 10!";
+  }
+}
+
+/**
+ * The end-of-GW push with league highlights: the top highlight is the title; the body has the second
+ * highlight and (when the user wants FPL summaries) the GW points / overall rank line.
+ */
+export function gameweekLeagueCopy(
+  locale: Locale,
+  highlights: readonly LeagueHighlight[],
+  summary: PushText | null,
+): PushText {
+  const [first, second] = highlights;
+  if (first === undefined) return summary ?? { title: BRAND[locale], body: '' };
+  const lines = [
+    ...(second === undefined ? [] : [leagueHighlightText(locale, second)]),
+    ...(summary === null ? [] : [summary.title]),
+  ];
+  if (lines.length === 0) lines.push(locale === 'he' ? 'לחצו לטבלת הליגה' : 'Tap to see the league table');
+  return { title: leagueHighlightText(locale, first), body: lines.join('\n') };
+}
+
+// ---------- live big moments (during a GW) ----------
+
+export function captainReturnCopy(
+  locale: Locale,
+  event: 'goal' | 'assist',
+  player: string,
+  gameweek: number,
+  captainPoints: number,
+): PushText {
+  if (locale === 'he') {
+    return {
+      title: event === 'goal' ? `⚽ הקפטן שלך ${player} כבש!` : `🅰️ הקפטן שלך ${player} בישל!`,
+      body: `מחזור ${gameweek} · ${captainPoints} נק׳ לקפטן עד עכשיו`,
+    };
+  }
+  return {
+    title:
+      event === 'goal' ? `⚽ Your captain ${player} scored!` : `🅰️ Your captain ${player} got an assist!`,
+    body: `Gameweek ${gameweek} · ${captainPoints} captain pts so far`,
+  };
+}
+
+export function liveFirstPlaceCopy(locale: Locale, gameweek: number, livePoints: number): PushText {
+  return locale === 'he'
+    ? { title: '🥇 עלית למקום הראשון בטבלה החיה!', body: `מחזור ${gameweek} · ${livePoints} נק׳ עד עכשיו` }
+    : { title: "🥇 You're top of the live table!", body: `Gameweek ${gameweek} · ${livePoints} pts so far` };
+}
+
+export function liveJumpCopy(
+  locale: Locale,
+  places: number,
+  rank: number,
+  gameweek: number,
+  livePoints: number,
+): PushText {
+  return locale === 'he'
+    ? {
+        title: `🚀 קפצת ${places} מקומות בטבלה החיה — עכשיו במקום ${fmt(rank)}`,
+        body: `מחזור ${gameweek} · ${livePoints} נק׳ עד עכשיו`,
+      }
+    : {
+        title: `🚀 Up ${places} places in the live table — now ${fmt(rank)}`,
+        body: `Gameweek ${gameweek} · ${livePoints} pts so far`,
+      };
+}

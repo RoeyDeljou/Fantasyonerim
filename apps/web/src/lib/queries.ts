@@ -15,6 +15,7 @@ import type {
   Bootstrap,
   CaptainBattleConfig,
   Fixture,
+  FplFixtureId,
   FplEntryId,
   FplPlayerId,
   FplTeamId,
@@ -62,6 +63,7 @@ export const qk = {
   recoveryCode: ['me', 'recovery-code'] as const,
   bootstrap: ['fpl', 'bootstrap'] as const,
   fixtures: (event: Gameweek | null) => ['fpl', 'fixtures', event ?? 'none'] as const,
+  fixtureDetail: (id: FplFixtureId) => ['fpl', 'fixture', id] as const,
   entry: (id: FplEntryId) => ['fpl', 'entry', id] as const,
   picks: (id: FplEntryId, event: Gameweek | null) => ['fpl', 'picks', id, event ?? 'current'] as const,
   entryLive: (id: FplEntryId, event: Gameweek | null) => ['fpl', 'live', id, event ?? 'current'] as const,
@@ -201,6 +203,30 @@ export function useFixtures(event: Gameweek | null) {
     queryFn: event === null ? skipToken : ({ signal }) => api.fixtures(event, { signal }),
     refetchInterval: (q) => (anyLive(q.state.data) ? LIVE_POLL_MS : IDLE_POLL_MS),
     refetchIntervalInBackground: false,
+  });
+}
+
+/** The open match sheet polls every 30 s while the match is in play or its result is still provisional. */
+export const FIXTURE_DETAIL_LIVE_POLL_MS = 30_000;
+
+/** Live, or finished but FPL still settling bonus / stats. */
+export function fixtureInPlay(status: Fixture['status'] | undefined): boolean {
+  return status === 'live' || status === 'finished_provisional';
+}
+
+/**
+ * One fixture's FPL match sheet (`null` = nothing open → idle). `liveHint` = the fixtures list says it's live
+ * or provisional (so a sheet opened at kick-off starts polling before its own copy catches up). Otherwise standard
+ * staleness, no polling. Paused while the app is hidden.
+ */
+export function useFixtureDetail(id: FplFixtureId | null, liveHint = false) {
+  return useQuery({
+    queryKey: id ? qk.fixtureDetail(id) : ['fpl', 'fixture', 'none'],
+    queryFn: id ? ({ signal }) => api.fixtureDetail(id, { signal }) : skipToken,
+    refetchInterval: (q) =>
+      liveHint || fixtureInPlay(q.state.data?.fixture.status) ? FIXTURE_DETAIL_LIVE_POLL_MS : false,
+    refetchIntervalInBackground: false,
+    staleTime: 30_000,
   });
 }
 

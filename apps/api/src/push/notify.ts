@@ -7,7 +7,10 @@ import { DEFAULT_PUSH_OPTIONS, toOutcome, type PushProvider, type PushSendOption
 import { pushServiceOf, type PushBatchRecorder } from './stats.js';
 import type { PushService } from '@fant/shared';
 
-export type PrefKey = 'news' | 'fpl' | 'live' | 'community';
+export type PrefKey = 'news' | 'fpl' | 'live' | 'community' | 'league' | 'captain';
+
+/** A user's notification preferences (no prefs row = everything on). */
+export type PrefValues = Record<PrefKey, boolean>;
 
 /** A subscription is deleted after this many consecutive non-404/410 failures. */
 export const MAX_PUSH_FAILURES = 5;
@@ -16,6 +19,8 @@ export const PUSH_CONCURRENCY = 10;
 export interface Recipient {
   userId: string;
   locale: Locale;
+  /** The recipient's preferences, for builds that combine several (e.g. GW summary + league highlights). */
+  prefs: PrefValues;
 }
 
 /** What a batch is, for the logs and the admin push-health view. */
@@ -25,8 +30,11 @@ export interface NotifyRequest {
   kind: NotifyKind;
   /** Explicit user ids, or every user with a push subscription. */
   to: readonly string[] | 'all';
-  /** Only users who have this preference on (no prefs row = all on). null = no preference filter. */
-  pref: PrefKey | null;
+  /**
+   * Only users who have this preference on (no prefs row = all on). A list = users with at least one of them
+   * on (the build reads `recipient.prefs` to decide what to say). null = no preference filter.
+   */
+  pref: PrefKey | readonly PrefKey[] | null;
   /**
    * "At most once per user per item": each key is claimed in NotificationLog before sending; users who
    * already hold every key are skipped. Omit for unlogged sends (e.g. admin manual push).
@@ -100,14 +108,25 @@ export async function notify(deps: NotifyDeps, request: NotifyRequest): Promise<
   const where: Prisma.UserWhereInput = { pushSubscriptions: { some: {} } };
   if (request.to !== 'all') where.id = { in: [...request.to] };
   if (request.pref !== null) {
-    where.OR = [{ notificationPrefs: { is: null } }, { notificationPrefs: { is: { [request.pref]: true } } }];
+    const prefs: readonly PrefKey[] = typeof request.pref === 'string' ? [request.pref] : request.pref;
+    where.OR = [
+      { notificationPrefs: { is: null } },
+      ...prefs.map((pref) => ({ notificationPrefs: { is: { [pref]: true } } })),
+    ];
   }
-  const users = await prisma.user.findMany({ where, select: { id: true, locale: true } });
+  const users = await prisma.user.findMany({
+    where,
+    select: { id: true, locale: true, notificationPrefs: true },
+  });
 
   const payloads = new Map<string, PushPayload>();
   for (const user of users) {
     const locale = LocaleSchema.safeParse(user.locale);
-    const payload = request.build({ userId: user.id, locale: locale.success ? locale.data : 'he' });
+    const payload = request.build({
+      userId: user.id,
+      locale: locale.success ? locale.data : 'he',
+      prefs: prefValues(user.notificationPrefs),
+    });
     if (payload !== null) payloads.set(user.id, fitPayload(PushPayloadSchema.parse(payload)));
   }
   if (payloads.size === 0) return finish(deps, request.kind, { ...NOTHING_SENT }, {});
@@ -169,6 +188,18 @@ export async function notify(deps: NotifyDeps, request: NotifyRequest): Promise<
     },
     services,
   );
+}
+
+/** Effective preferences of a prefs row (null = no row yet = everything on). */
+export function prefValues(row: Partial<Record<PrefKey, boolean>> | null): PrefValues {
+  return {
+    news: row?.news ?? true,
+    fpl: row?.fpl ?? true,
+    live: row?.live ?? true,
+    community: row?.community ?? true,
+    league: row?.league ?? true,
+    captain: row?.captain ?? true,
+  };
 }
 
 /** Records the batch (log line + recent list). Batches that reached nobody aren't kept, except tests. */

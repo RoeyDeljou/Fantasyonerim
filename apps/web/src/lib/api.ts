@@ -9,6 +9,7 @@ import {
   EntryLiveSchema,
   EntryPicksSchema,
   EntrySummarySchema,
+  FixtureDetailSchema,
   FixtureSchema,
   LeagueStandingsSchema,
   LiveLeagueSchema,
@@ -57,6 +58,8 @@ import type {
   EntryPicks,
   EntrySummary,
   Fixture,
+  FixtureDetail,
+  FplFixtureId,
   FplEntryId,
   Gameweek,
   LeagueStandings,
@@ -294,6 +297,9 @@ export const api = {
   bootstrap: (o: Signal = {}): Promise<Bootstrap> => request('GET', '/v1/fpl/bootstrap', BootstrapSchema, o),
   fixtures: (event: Gameweek, o: Signal = {}): Promise<Fixture[]> =>
     request('GET', '/v1/fpl/fixtures', listOf(FixtureSchema), { ...o, query: { event } }),
+  /** The FPL match sheet: stat blocks + per-player points for one fixture. */
+  fixtureDetail: (fixtureId: FplFixtureId, o: Signal = {}): Promise<FixtureDetail> =>
+    request('GET', `/v1/fpl/fixtures/${fixtureId}`, FixtureDetailSchema, o),
   entry: (entryId: FplEntryId, o: Signal = {}): Promise<EntrySummary> =>
     request('GET', `/v1/fpl/entries/${entryId}`, EntrySummarySchema, o),
   picks: (entryId: FplEntryId, event: Gameweek | undefined, o: Signal = {}): Promise<EntryPicks> =>

@@ -9,6 +9,7 @@ import { enablePush, usePushState } from '@/lib/push';
 import type { PushError } from '@/lib/push';
 import { useMe, useNewsFeed, useNewsFilters, useNewsHead, useNewsItem } from '@/lib/queries';
 import { useQueryParam } from '@/lib/useQueryParam';
+import { REFRESH_SCOPES } from '@/lib/refresh';
 import { AppShell, ShellSkeleton } from '@/components/AppShell';
 import { BottomSheet } from '@/components/BottomSheet';
 import { IosInstallSteps } from '@/components/InstallGuide';
@@ -31,7 +32,7 @@ import {
 export function NewsScreen() {
   const { t } = useI18n();
   return (
-    <AppShell title={t.news.title}>
+    <AppShell title={t.news.title} refresh={REFRESH_SCOPES.news}>
       <Suspense fallback={<ShellSkeleton />}>
         <NewsInner />
       </Suspense>

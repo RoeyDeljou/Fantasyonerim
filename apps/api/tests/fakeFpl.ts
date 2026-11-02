@@ -4,14 +4,19 @@ import {
   EntryLiveSchema,
   EntryPicksSchema,
   EntrySummarySchema,
+  FixtureDetailSchema,
   FixtureSchema,
   LeagueStandingsSchema,
   LiveLeagueSchema,
   PlayerLiveSchema,
   type Bootstrap,
+  type EntryLive,
   type EntryPicks,
   type EntrySummary,
+  type Fixture,
+  type FixtureDetail,
   type FplEntryId,
+  type FplFixtureId,
   type FplLeagueId,
   type FplPlayerId,
   type Gameweek,
@@ -108,6 +113,29 @@ export function makePlayerLive(playerId: number, basePoints: number): PlayerLive
   });
 }
 
+export function makeFixture(id: number, event: number, status: Fixture['status'] = 'live'): Fixture {
+  return FixtureSchema.parse({
+    id,
+    event,
+    kickoffTime: ISO,
+    teamH: 1,
+    teamA: 1,
+    teamHScore: status === 'not_started' ? null : 1,
+    teamAScore: status === 'not_started' ? null : 0,
+    minutes: status === 'not_started' ? 0 : 60,
+    status,
+  });
+}
+
+export function makeFixtureDetail(id: number, event = 9): FixtureDetail {
+  return FixtureDetailSchema.parse({
+    fixture: makeFixture(id, event, 'live'),
+    stats: [{ id: 'goals_scored', home: [{ playerId: 1, value: 1 }], away: [] }],
+    players: [{ playerId: 1, teamId: 1, minutes: 60, points: 8 }],
+    updatedAt: ISO,
+  });
+}
+
 export interface FakeLeague {
   id: number;
   name: string;
@@ -130,6 +158,18 @@ export class FakeFplService implements FplService {
   failPicksFor = new Map<number, Error>();
   /** Standings rows override (default: one row, entry 11). */
   standingsRows: unknown[] | null = null;
+  /** Standings pages (hasNext = page < standingsPageCount). */
+  standingsPageCount = 2;
+  /** Per-page standings rows (overrides standingsRows; a missing page has no rows). */
+  standingsByPage: Map<number, unknown[]> | null = null;
+  /** Per-page live league rows (hasNext = page < size); null = the default one-row table. */
+  liveLeagueByPage: Map<number, unknown[]> | null = null;
+  /** getEntryLive override by `${entryId}:${event}`. */
+  entryLive = new Map<string, EntryLive>();
+  /** getFixtures override (default: one live fixture 100 in the requested GW). */
+  fixtures: Fixture[] | null = null;
+  /** getFixtureDetail data by fixture id (unknown id → FplNotFoundError). */
+  fixtureDetails = new Map<number, FixtureDetail>();
   calls: string[] = [];
 
   addEntry(entryId: number, teamName?: string): this {
@@ -147,21 +187,17 @@ export class FakeFplService implements FplService {
     return this.bootstrap;
   }
 
-  async getFixtures(event?: Gameweek) {
+  async getFixtures(event?: Gameweek): Promise<Fixture[]> {
     this.check(`getFixtures:${event ?? 'all'}`);
-    return [
-      FixtureSchema.parse({
-        id: 100,
-        event: event ?? 1,
-        kickoffTime: ISO,
-        teamH: 1,
-        teamA: 1,
-        teamHScore: 1,
-        teamAScore: 0,
-        minutes: 60,
-        status: 'live',
-      }),
-    ];
+    if (this.fixtures !== null) return this.fixtures.filter((f) => event === undefined || f.event === event);
+    return [makeFixture(100, event ?? 1, 'live')];
+  }
+
+  async getFixtureDetail(fixtureId: FplFixtureId): Promise<FixtureDetail> {
+    this.check(`getFixtureDetail:${fixtureId}`);
+    const detail = this.fixtureDetails.get(fixtureId);
+    if (!detail) throw new FplNotFoundError(`fixture ${fixtureId}`);
+    return detail;
   }
 
   async getEntry(entryId: FplEntryId): Promise<EntrySummary> {
@@ -183,6 +219,8 @@ export class FakeFplService implements FplService {
 
   async getEntryLive(entryId: FplEntryId, event: Gameweek) {
     this.check(`getEntryLive:${entryId}:${event}`);
+    const override = this.entryLive.get(`${entryId}:${event}`);
+    if (override) return override;
     if (!this.entries.has(entryId)) throw new FplNotFoundError(`entry ${entryId}`);
     return EntryLiveSchema.parse({
       entryId,
@@ -206,18 +244,19 @@ export class FakeFplService implements FplService {
     return LeagueStandingsSchema.parse({
       league,
       page,
-      hasNext: page < 2,
-      rows: this.standingsRows ?? [
-        {
-          rank: 1,
-          lastRank: 2,
-          entryId: 11,
-          entryName: 'Top Team',
-          managerName: 'Dor',
-          total: 600,
-          eventTotal: 70,
-        },
-      ],
+      hasNext: page < this.standingsPageCount,
+      rows: this.standingsByPage?.get(page) ??
+        this.standingsRows ?? [
+          {
+            rank: 1,
+            lastRank: 2,
+            entryId: 11,
+            entryName: 'Top Team',
+            managerName: 'Dor',
+            total: 600,
+            eventTotal: 70,
+          },
+        ],
       updatedAt: ISO,
     });
   }
@@ -226,6 +265,16 @@ export class FakeFplService implements FplService {
     this.check(`getLiveLeague:${leagueId}:${event}:${page}`);
     const league = this.leagues.get(leagueId);
     if (!league) throw new FplNotFoundError(`league ${leagueId}`);
+    if (this.liveLeagueByPage !== null) {
+      return LiveLeagueSchema.parse({
+        league,
+        event,
+        page,
+        hasNext: page < this.liveLeagueByPage.size,
+        rows: this.liveLeagueByPage.get(page) ?? [],
+        updatedAt: ISO,
+      });
+    }
     return LiveLeagueSchema.parse({
       league,
       event,
@@ -263,3 +312,85 @@ export class FakeFplService implements FplService {
 }
 
 export const upstreamDown = () => new FplUnavailableError('FPL returned 503', 503);
+
+export interface LiveCaptain {
+  playerId: number;
+  goals?: number;
+  assists?: number;
+  /** 2 captain, 3 triple captain. */
+  multiplier?: number;
+  basePoints?: number;
+}
+
+/**
+ * A live team whose effective captain (effectiveMultiplier ≥ 2) is `captain`; `benchedCaptain` adds the picked
+ * captain with effectiveMultiplier 0 (didn't play → the vice above took the armband).
+ */
+export function makeEntryLive(
+  entryId: number,
+  event: number,
+  captain: LiveCaptain,
+  benchedCaptain: number | null = null,
+): EntryLive {
+  const pick = (playerId: number, slot: number, effectiveMultiplier: number, extra: object = {}) => ({
+    playerId,
+    slot,
+    multiplier: effectiveMultiplier,
+    isCaptain: false,
+    isViceCaptain: false,
+    basePoints: 2,
+    points: 2 * effectiveMultiplier,
+    effectiveMultiplier,
+    minutes: 90,
+    provisionalBonus: 0,
+    bonus: 0,
+    bonusConfirmed: false,
+    fixtureStatus: 'live',
+    autoSubIn: false,
+    autoSubOut: false,
+    goals: 0,
+    assists: 0,
+    cleanSheet: false,
+    yellowCards: 0,
+    redCards: 0,
+    saves: 0,
+    bps: 10,
+    ...extra,
+  });
+  const mult = captain.multiplier ?? 2;
+  const base = captain.basePoints ?? 2 + 5 * (captain.goals ?? 0) + 3 * (captain.assists ?? 0);
+  const picks = [
+    pick(captain.playerId, 1, mult, {
+      isCaptain: benchedCaptain === null,
+      isViceCaptain: benchedCaptain !== null,
+      goals: captain.goals ?? 0,
+      assists: captain.assists ?? 0,
+      basePoints: base,
+      points: base * mult,
+    }),
+    ...(benchedCaptain === null
+      ? []
+      : [
+          pick(benchedCaptain, 2, 0, {
+            isCaptain: true,
+            multiplier: 2,
+            minutes: 0,
+            basePoints: 0,
+            points: 0,
+          }),
+        ]),
+  ];
+  return EntryLiveSchema.parse({
+    entryId,
+    event,
+    activeChip: mult === 3 ? '3xc' : null,
+    livePoints: 50,
+    benchPoints: 0,
+    transfersCost: 0,
+    liveTotal: 550,
+    picks,
+    playersPlayed: 6,
+    playersYetToPlay: 5,
+    updatedAt: ISO,
+  });
+}

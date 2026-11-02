@@ -4,7 +4,9 @@ import type {
   EntryPicks,
   EntrySummary,
   Fixture,
+  FixtureDetail,
   FplEntryId,
+  FplFixtureId,
   FplLeagueId,
   FplPlayerId,
   Gameweek,
@@ -32,6 +34,11 @@ export interface FplService {
   /** Live table for one standings page (50 managers): each manager's live GW points, re-ranked. */
   getLiveLeague(leagueId: FplLeagueId, event: Gameweek, page: number): Promise<LiveLeague>;
   getPlayersLive(playerIds: readonly FplPlayerId[], event: Gameweek): Promise<PlayerLive[]>;
+  /**
+   * The FPL match sheet ("Match Details" stat blocks + per-player FPL points from this fixture only).
+   * Empty stats/players before kick-off. Throws FplNotFoundError for an unknown fixture id.
+   */
+  getFixtureDetail(fixtureId: FplFixtureId): Promise<FixtureDetail>;
 }
 
 export class FplNotFoundError extends Error {
@@ -60,4 +67,9 @@ export interface FplServiceOptions {
   userAgent?: string;
   /** Injected clock (ms since epoch) for cache TTLs and `updatedAt`. Defaults to Date.now. */
   now?: () => number;
+  /**
+   * Non-fatal data oddities, e.g. a fixture stat identifier FPL introduced that we don't map yet. Each
+   * distinct message is reported once per service instance.
+   */
+  onWarn?: (message: string) => void;
 }

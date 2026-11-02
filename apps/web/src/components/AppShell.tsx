@@ -7,6 +7,9 @@ import type { ComponentType, ReactNode, SVGProps } from 'react';
 import { useT } from '@/i18n';
 import { ROUTES, useSession } from '@/lib/session';
 import { useMe } from '@/lib/queries';
+import { useRefresh } from '@/lib/refresh';
+import type { RefreshScope } from '@/lib/refresh';
+import { PullToRefresh, RefreshButton, RefreshDone } from './RefreshControl';
 import { CommunityIcon, LiveIcon, NewsIcon, ShirtIcon, TableIcon } from './icons';
 import { initials } from '@/lib/text';
 import { Skeleton, cx } from './ui';
@@ -128,11 +131,43 @@ export function useRequireSession(): boolean {
   return status === 'signedIn';
 }
 
-export function AppShell({ title, children }: { title?: string; children: ReactNode }) {
+const NO_SCOPE: RefreshScope = [];
+
+/**
+ * `refresh` = the query-key prefixes this screen shows: adds the header refresh button and touch
+ * pull-to-refresh (lib/refresh.ts).
+ */
+export function AppShell({
+  title,
+  refresh,
+  children,
+}: {
+  title?: string;
+  refresh?: RefreshScope;
+  children: ReactNode;
+}) {
   const ready = useRequireSession();
+  const r = useRefresh(refresh ?? NO_SCOPE);
+  const canRefresh = ready && !!refresh;
   return (
     <div className="min-h-dvh">
-      <TopBar title={title} end={ready ? <ProfileButton /> : null} />
+      <TopBar
+        title={title}
+        end={
+          ready ? (
+            <>
+              {canRefresh && <RefreshButton refreshing={r.refreshing} onRefresh={() => void r.refresh()} />}
+              <ProfileButton />
+            </>
+          ) : null
+        }
+      />
+      {canRefresh && (
+        <>
+          <PullToRefresh refreshing={r.refreshing} onRefresh={() => void r.refresh()} />
+          <RefreshDone state={r.state} />
+        </>
+      )}
       <main
         id="main"
         className="mx-auto w-full max-w-xl px-4 pt-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))]"

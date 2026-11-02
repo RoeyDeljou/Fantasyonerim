@@ -19,9 +19,12 @@ import { BellIcon, BellOffIcon, CheckIcon, InfoIcon, SendIcon } from './icons';
 import { IosInstallSteps } from './InstallGuide';
 import { Badge, Button, Card, ErrorState, InlineError, Skeleton, Spinner, Switch, errorMessage } from './ui';
 
-const PREF_ROWS: ReadonlyArray<{ key: keyof NotificationPrefs; label: keyof Messages['push'] }> = [
+type PushText = keyof Messages['push'];
+const PREF_ROWS: ReadonlyArray<{ key: keyof NotificationPrefs; label: PushText; help?: PushText }> = [
   { key: 'news', label: 'prefNews' },
   { key: 'fpl', label: 'prefFpl' },
+  { key: 'league', label: 'prefLeague', help: 'prefLeagueHelp' },
+  { key: 'captain', label: 'prefCaptain', help: 'prefCaptainHelp' },
   { key: 'live', label: 'prefLive' },
   { key: 'community', label: 'prefCommunity' },
 ];
@@ -214,6 +217,7 @@ export function NotificationsCard() {
               <Switch
                 key={r.key}
                 label={t.push[r.label]}
+                description={r.help ? t.push[r.help] : undefined}
                 checked={prefs.data[r.key]}
                 onChange={(v) => save.mutate({ ...prefs.data, [r.key]: v })}
               />

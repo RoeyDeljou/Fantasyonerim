@@ -1,12 +1,13 @@
 import { mapWithConcurrency, nextDeadline } from '@fant/fpl';
-import { FplEntryIdSchema } from '@fant/shared';
+import { FplEntryIdSchema, FplLeagueIdSchema } from '@fant/shared';
 import type { AppContext } from '../context.js';
 import { PUSH_ICON } from '../news/pushNews.js';
 import { UNUSED_UPLOAD_TTL_MS } from '../routes/uploads.js';
-import { deadlineCopy, gameweekSummaryCopy } from '../push/copy.js';
-import { notify } from '../push/notify.js';
+import { allStandingRows, fetchAllPages, leagueHighlights } from '../league/pages.js';
+import { deadlineCopy, gameweekLeagueCopy, gameweekSummaryCopy, type LeagueHighlight } from '../push/copy.js';
+import { notify, prefValues } from '../push/notify.js';
 import { getSettings } from '../settings.js';
-import { HOUR, MINUTE, type Job } from './types.js';
+import { HOUR, MINUTE, type Job, type JobRunContext } from './types.js';
 import { purgeDeletedPostImages } from '../community/moderation.js';
 import { purgePendingMediaDeletes } from '../media/pending.js';
 
@@ -52,6 +53,12 @@ export const deadlineRemindersJob: Job = {
   },
 };
 
+/**
+ * One push per user per finished GW (dedupe `gw_summary:<gw>`): the GW points / overall rank line (pref `fpl`)
+ * combined with the user's moments in the podcast's league (pref `league`) — top scorer, first place, a climb
+ * of 3+, into the top 3 / top 10. The league is read in full (all standings pages); if that fails, everyone
+ * gets the plain summary.
+ */
 export const gameweekSummaryJob: Job = {
   name: 'gameweek_summary',
   everyMs: 30 * MINUTE,
@@ -69,13 +76,21 @@ export const gameweekSummaryJob: Job = {
         entryId: { not: null },
         pushSubscriptions: { some: {} },
         notificationLogs: { none: { key } },
-        OR: [{ notificationPrefs: { is: null } }, { notificationPrefs: { is: { fpl: true } } }],
+        OR: [
+          { notificationPrefs: { is: null } },
+          { notificationPrefs: { is: { fpl: true } } },
+          { notificationPrefs: { is: { league: true } } },
+        ],
       },
-      select: { id: true, entryId: true },
+      select: { id: true, entryId: true, notificationPrefs: true },
     });
+
+    const highlights = await leagueHighlightsByEntry(ctx);
     let failures = 0;
     const scores = new Map<string, { points: number; rank: number | null }>();
-    await mapWithConcurrency(users, SUMMARY_FPL_CONCURRENCY, async (user) => {
+    const moments = new Map<string, LeagueHighlight[]>();
+    const wantsSummary = users.filter((u) => prefValues(u.notificationPrefs).fpl);
+    await mapWithConcurrency(wantsSummary, SUMMARY_FPL_CONCURRENCY, async (user) => {
       const entryId = FplEntryIdSchema.safeParse(user.entryId);
       if (!entryId.success) return;
       try {
@@ -86,31 +101,68 @@ export const gameweekSummaryJob: Job = {
         ctx.log.warn({ err, userId: user.id }, 'gameweek summary: picks unavailable');
       }
     });
+    for (const user of users) {
+      const found = user.entryId === null ? undefined : highlights?.get(user.entryId);
+      if (found !== undefined && found.length > 0) moments.set(user.id, found);
+    }
+    // Users whose picks failed are left out (retried next run) — even their league moments, so the one
+    // combined push isn't spent on half the news.
+    const failed = new Set(wantsSummary.filter((u) => !scores.has(u.id)).map((u) => u.id));
+    const recipients = users.filter((u) => !failed.has(u.id) && (scores.has(u.id) || moments.has(u.id)));
+
     const result = await notify(app, {
       kind: 'gw_summary',
-      to: [...scores.keys()],
-      pref: 'fpl',
+      to: recipients.map((u) => u.id),
+      pref: ['fpl', 'league'],
       dedupeKeys: [key],
       options: { ttlSec: (12 * HOUR) / 1000, urgency: 'normal' },
-      build: ({ userId, locale }) => {
-        const score = scores.get(userId);
-        if (score === undefined) return null;
+      build: ({ userId, locale, prefs }) => {
+        const score = prefs.fpl ? scores.get(userId) : undefined;
+        const summary =
+          score === undefined ? null : gameweekSummaryCopy(locale, event.id, score.points, score.rank);
+        const leagueMoments = prefs.league ? (moments.get(userId) ?? []) : [];
+        const text =
+          leagueMoments.length === 0 ? summary : gameweekLeagueCopy(locale, leagueMoments, summary);
+        if (text === null) return null;
         return {
-          ...gameweekSummaryCopy(locale, event.id, score.points, score.rank),
-          url: '/my-team/',
+          ...text,
+          url: leagueMoments.length === 0 ? '/my-team/' : '/table/',
           tag: `gw-summary-${event.id}`,
           icon: PUSH_ICON,
           image: null,
         };
       },
     });
-    // Users whose picks failed are retried on the next run; the GW is "done" only without failures.
+    // The GW is "done" only without failures (league standings failing isn't one: plain summary instead).
     return {
-      summary: `GW${event.id}: ${result.recipients} sent, ${failures} failed`,
+      summary: `GW${event.id}: ${result.recipients} sent (${moments.size} with league moments${
+        highlights === null ? ', league unavailable' : ''
+      }), ${failures} failed`,
       state: failures === 0 ? { ...ctx.state, summarizedGw: event.id } : ctx.state,
     };
   },
 };
+
+/**
+ * entryId → league highlights for every manager of the configured league (all standings pages). null when
+ * no league is configured or the standings couldn't be read (logged; the summary goes out without them).
+ */
+async function leagueHighlightsByEntry(ctx: JobRunContext): Promise<Map<number, LeagueHighlight[]> | null> {
+  const { app } = ctx;
+  const settings = await getSettings(app.prisma);
+  if (settings.leagueId === null) return null;
+  const leagueId = FplLeagueIdSchema.safeParse(settings.leagueId);
+  if (!leagueId.success) return null;
+  try {
+    const pages = await fetchAllPages((page) => app.fpl.getLeagueStandings(leagueId.data, page));
+    const rows = allStandingRows(pages);
+    const max = rows.reduce((m, r) => Math.max(m, r.eventTotal), 0);
+    return new Map(rows.map((r) => [r.entryId, leagueHighlights(r, max)]));
+  } catch (err) {
+    ctx.log.warn({ err }, 'gameweek summary: league standings unavailable, sending the plain summary');
+    return null;
+  }
+}
 
 export const STORY_MEDIA_RETENTION_MS = 48 * HOUR;
 

@@ -4,7 +4,9 @@ import {
   EntryLiveSchema,
   EntryPicksSchema,
   EntrySummarySchema,
+  FixtureDetailSchema,
   FixtureSchema,
+  FixtureStatIdSchema,
   LeagueStandingsSchema,
   PlayerLiveSchema,
   PlayerStatusSchema,
@@ -14,6 +16,7 @@ import {
   type EntryPicks,
   type EntrySummary,
   type Fixture,
+  type FixtureDetail,
   type FixtureStatus,
   type LeagueStandings,
   type PlayerLive,
@@ -127,19 +130,100 @@ export function mapBootstrap(raw: RawBootstrap, fetchedAtMs: number): Bootstrap 
 }
 
 export function mapFixtures(raw: readonly RawFixture[]): Fixture[] {
-  return raw.map((f) =>
-    FixtureSchema.parse({
-      id: f.id,
-      event: f.event,
-      kickoffTime: f.kickoff_time === null ? null : toIso(f.kickoff_time),
-      teamH: f.team_h,
-      teamA: f.team_a,
-      teamHScore: f.team_h_score,
-      teamAScore: f.team_a_score,
-      minutes: f.minutes,
-      status: fixtureStatusOf(f),
-    }),
-  );
+  return raw.map(mapFixture);
+}
+
+function mapFixture(f: RawFixture): Fixture {
+  return FixtureSchema.parse({
+    id: f.id,
+    event: f.event,
+    kickoffTime: f.kickoff_time === null ? null : toIso(f.kickoff_time),
+    teamH: f.team_h,
+    teamA: f.team_a,
+    teamHScore: f.team_h_score,
+    teamAScore: f.team_a_score,
+    minutes: f.minutes,
+    status: fixtureStatusOf(f),
+  });
+}
+
+const FIXTURE_STAT_ORDER: readonly string[] = FixtureStatIdSchema.options;
+
+/**
+ * The FPL match sheet for one fixture.
+ *
+ * - `stats`: the fixtures endpoint's per-fixture `stats` (h = home, a = away), in `FixtureStatIdSchema`
+ *   order, blocks with no entries dropped, values desc (ties by player id). Identifiers we don't know
+ *   (FPL adds new ones) are skipped and reported through `onUnknownStat`.
+ * - `players`: from the GW live `explain`, ONLY the entry for this fixture (a DGW player's other fixture
+ *   is never mixed in): points = Σ explain.stats.points, minutes = the `minutes` row's value. Players with
+ *   0 minutes are dropped. Team = the side the fixture stats list the player under, else the bootstrap
+ *   team when it is one of the two clubs (players with no BPS entry, e.g. 0 BPS, aren't listed in stats).
+ * - Before kick-off both lists are empty.
+ */
+export function mapFixtureDetail(input: {
+  fixture: RawFixture;
+  live: RawLive | null;
+  teamOfPlayer: ReadonlyMap<number, number>;
+  nowMs: number;
+  onUnknownStat?: (identifier: string) => void;
+}): FixtureDetail {
+  const { fixture: f, live, teamOfPlayer } = input;
+  const started = fixtureStatusOf(f) !== 'not_started';
+  const byValue = (x: { value: number; element: number }, y: { value: number; element: number }) =>
+    y.value - x.value || x.element - y.element;
+  const toValues = (list: readonly { value: number; element: number }[]) =>
+    [...list].sort(byValue).map((s) => ({ playerId: s.element, value: s.value }));
+
+  const stats: {
+    id: string;
+    home: { playerId: number; value: number }[];
+    away: { playerId: number; value: number }[];
+  }[] = [];
+  const sideOf = new Map<number, number>();
+  if (started) {
+    for (const s of f.stats) {
+      for (const e of s.h) sideOf.set(e.element, f.team_h);
+      for (const e of s.a) sideOf.set(e.element, f.team_a);
+      if (!FIXTURE_STAT_ORDER.includes(s.identifier)) {
+        input.onUnknownStat?.(s.identifier);
+        continue;
+      }
+      if (s.h.length === 0 && s.a.length === 0) continue;
+      stats.push({ id: s.identifier, home: toValues(s.h), away: toValues(s.a) });
+    }
+    stats.sort((x, y) => FIXTURE_STAT_ORDER.indexOf(x.id) - FIXTURE_STAT_ORDER.indexOf(y.id));
+  }
+
+  const players: { playerId: number; teamId: number; minutes: number; points: number }[] = [];
+  if (started && live) {
+    for (const el of live.elements) {
+      const entries = el.explain.filter((x) => x.fixture === f.id);
+      if (entries.length === 0) continue;
+      let minutes = 0;
+      let points = 0;
+      for (const entry of entries)
+        for (const st of entry.stats) {
+          points += st.points;
+          if (st.identifier === 'minutes') minutes += st.value;
+        }
+      if (minutes <= 0) continue;
+      const bootstrapTeam = teamOfPlayer.get(el.id);
+      const teamId =
+        sideOf.get(el.id) ??
+        (bootstrapTeam === f.team_h || bootstrapTeam === f.team_a ? bootstrapTeam : undefined);
+      if (teamId === undefined) continue;
+      players.push({ playerId: el.id, teamId, minutes: Math.round(minutes), points });
+    }
+    players.sort((x, y) => y.points - x.points || y.minutes - x.minutes || x.playerId - y.playerId);
+  }
+
+  return FixtureDetailSchema.parse({
+    fixture: mapFixture(f),
+    stats,
+    players,
+    updatedAt: new Date(input.nowMs).toISOString(),
+  });
 }
 
 export function mapEntry(raw: RawEntry): EntrySummary {

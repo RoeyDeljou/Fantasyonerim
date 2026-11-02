@@ -42,12 +42,30 @@ function captainOf(picks: EntryPicks): Captain | null {
   return { playerId: captain.playerId, multiplier: captain.multiplier === 3 ? 3 : 2 };
 }
 
+/**
+ * The GW the battle is shown for: FPL's current GW (or the next before the season's first deadline), unless
+ * the admin saved the battle for a later GW. FPL unavailable → the saved GW.
+ */
+async function battleEvent(ctx: AppContext, saved: Gameweek, request: FastifyRequest): Promise<Gameweek> {
+  try {
+    const bootstrap = await ctx.fpl.getBootstrap();
+    const current = bootstrap.currentEvent ?? bootstrap.nextEvent;
+    return current === null || current < saved ? saved : current;
+  } catch (err) {
+    request.log.info({ err }, 'captain battle: bootstrap unavailable, using the saved gameweek');
+    return saved;
+  }
+}
+
 export function captainBattleRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth): void {
   app.get('/v1/captain-battle', async (request: FastifyRequest) => {
     const now = ctx.clock.now().toISOString();
     const battle = await getLatestBattle(ctx.prisma);
     if (!battle) return serialize(CaptainBattleSchema, { event: null, rows: [], updatedAt: now });
-    const event: Gameweek = GameweekSchema.parse(battle.event);
+    const savedEvent: Gameweek = GameweekSchema.parse(battle.event);
+    // The battle follows the game, not the last save: once FPL moves to a new GW, team-linked rows read that
+    // GW's captain by themselves. A battle saved ahead (next GW, before its deadline) is shown as saved.
+    const event = await battleEvent(ctx, savedEvent, request);
 
     const viewer = await auth.resolve(request);
     const viewerEntry =
@@ -90,7 +108,9 @@ export function captainBattleRoutes(app: FastifyInstance, ctx: AppContext, auth:
         ...base,
         source: 'player',
         entryId: null,
-        playerId: FplPlayerIdSchema.parse(e.playerId),
+        // A hand-picked captain belongs to the GW it was saved for: after a rollover the row stays, empty
+        // ("not picked yet for this GW"), until the admin picks again — never last week's player.
+        playerId: savedEvent === event ? FplPlayerIdSchema.parse(e.playerId) : null,
         multiplier: 2,
       };
     });

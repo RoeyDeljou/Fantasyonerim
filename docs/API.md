@@ -21,6 +21,7 @@ Legend: 🌐 public · 👤 signed-in user · 🛡 admin
 | GET     | `/v1/me/recovery-code`           | 👤                      | –                           | `{ recoveryCode }`                                                       |
 | GET     | `/v1/fpl/bootstrap`              | 🌐                      | –                           | `Bootstrap`                                                              |
 | GET     | `/v1/fpl/fixtures`               | 🌐                      | `?event=`                   | `Fixture[]`                                                              |
+| GET     | `/v1/fpl/fixtures/:fixtureId`    | 🌐                      | –                           | `FixtureDetail` (match sheet) · 404 unknown fixture · 400 invalid id     |
 | GET     | `/v1/fpl/entries/:entryId`       | 🌐                      | –                           | `EntrySummary`                                                           |
 | GET     | `/v1/fpl/entries/:entryId/picks` | 🌐                      | `?event=` (default current) | `EntryPicks`                                                             |
 | GET     | `/v1/fpl/entries/:entryId/live`  | 🌐                      | `?event=` (default current) | `EntryLive`                                                              |
@@ -33,6 +34,15 @@ Legend: 🌐 public · 👤 signed-in user · 🛡 admin
 | POST    | `/v1/admin/admins`               | 🛡                       | `CreateAdminBody`           | `AdminAccount` (201)                                                     |
 
 Upstream FPL failures map to `503 upstream_unavailable`.
+
+`/v1/fpl/fixtures/:fixtureId` sets `Cache-Control` by fixture state: `public, max-age=15, stale-while-revalidate=15`
+while `live` or `finished_provisional`, `public, max-age=60, stale-while-revalidate=30` before kick-off,
+`public, max-age=600, stale-while-revalidate=600` once `finished`.
+
+`/v1/captain-battle` follows FPL's current GW (or the next one before the season's first deadline), not the GW the
+battle was last saved for: team-linked rows (`source: 'entry'`) read that GW's captain with no admin action. A battle
+saved for a later GW is shown for that GW. Hand-picked rows (`source: 'player'`) saved for an earlier GW come back
+with `playerId: null`, `live: null` ("not picked yet for GW n", sorted last) until the admin picks again.
 
 ## Phase 2 — News feed, push, integrations
 
@@ -48,7 +58,7 @@ Schemas: `packages/shared/src/news.ts`.
 | POST    | `/v1/push/subscriptions`                       | 👤                            | `WebPushSubscriptionBody`                   | 204 — upsert by endpoint (re-binds the endpoint to this user)                                                                                                                                                                                                       |
 | DELETE  | `/v1/push/subscriptions`                       | 👤                            | `{ endpoint }`                              | 204                                                                                                                                                                                                                                                                 |
 | POST    | `/v1/push/devices`                             | 👤                            | `NativePushDeviceBody`                      | 204 — stored for the future native apps (no sender yet)                                                                                                                                                                                                             |
-| GET/PUT | `/v1/me/notification-prefs`                    | 👤                            | `NotificationPrefs`                         | `NotificationPrefs` (defaults: all true)                                                                                                                                                                                                                            |
+| GET/PUT | `/v1/me/notification-prefs`                    | 👤                            | `NotificationPrefs`                         | `NotificationPrefs` (defaults: all true). `league` / `captain` are optional on PUT: when omitted the stored values are kept                                                                                                                                         |
 | GET     | `/v1/admin/integrations`                       | 🛡                             | –                                           | `IntegrationList` — one row per `IntegrationId`, secrets never returned                                                                                                                                                                                             |
 | PUT     | `/v1/admin/integrations/:id`                   | 🛡                             | `IntegrationUpdateBody`                     | `IntegrationStatus` · 400 with a field-specific message                                                                                                                                                                                                             |
 | POST    | `/v1/admin/integrations/:id/sync`              | 🛡                             | –                                           | `IntegrationStatus` after running that source now                                                                                                                                                                                                                   |
@@ -109,3 +119,14 @@ Schemas: `packages/shared/src/broadcast.ts`.
 | POST   | `/v1/admin-invites/preview` | 🌐   | `RedeemAdminInviteBody` (`{ token }`) | `AdminInvitePreview` · 404 invalid/used/expired/revoked/malformed (generic) — token in the body, never in a URL                                                |
 | POST   | `/v1/auth/register`         | 🌐   | `RegisterBody` + `inviteToken`        | as before, the account is created with role admin when the token is valid; 400 "This invite link is no longer valid" otherwise (nothing created)               |
 | POST   | `/v1/me/admin-invite`       | 👤   | `RedeemAdminInviteBody`               | `Me` (role admin) · 400 invalid · 409 already an admin                                                                                                         |
+
+## Notifications sent by jobs
+
+| Job                | Pref(s)               | Dedupe key (per user)                        | What                                                                                                                                                                                                       |
+| ------------------ | --------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gameweek_summary` | `fpl` and/or `league` | `gw_summary:<gw>`                            | One push per finished GW: league moments (top scorer, first place, climbed 3+, into top 3 / top 10; ≤ 2, never negative) + the GW points / overall rank line. URL `/table/` with moments, else `/my-team/` |
+| `live_alerts`      | `captain`             | `live:<gw>:cap:<playerId>:g<n>` / `:a<n>`    | Your effective captain scored / assisted (every new goal or assist observed between two runs)                                                                                                              |
+| `live_alerts`      | `league`              | `live:<gw>:first:<n>` · `live:<gw>:jump:<n>` | Moved into first place of the live league (≤ 1/h) · jumped 5+ places vs the GW baseline / last alert (≤ 1 per 2 h, ≤ 3 per GW). ≤ 6 live alerts per user per GW in total                                   |
+
+`live_alerts` runs every 2 minutes while a fixture of the current GW is live (plus one pass after the last one ends);
+its first run of a GW only records a baseline. Pushes: urgency high, TTL 1 h, a unique tag per alert.

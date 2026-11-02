@@ -1,5 +1,6 @@
 import type { IntegrationId } from '@fant/shared';
 import { cleanupJob, deadlineRemindersJob, gameweekSummaryJob } from './fpl.js';
+import { liveAlertsJob } from './liveAlerts.js';
 import { podcastJob } from './podcast.js';
 import { instagramPostsJob, instagramStoriesJob, xJob } from './social.js';
 import type { Job, JobName } from './types.js';
@@ -15,6 +16,7 @@ export const JOBS: readonly Job[] = [
   xJob,
   deadlineRemindersJob,
   gameweekSummaryJob,
+  liveAlertsJob,
   cleanupJob,
 ];
 

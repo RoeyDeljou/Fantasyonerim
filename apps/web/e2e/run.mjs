@@ -9,7 +9,7 @@
 //   3. boots apps/api on :4100 in demo mode (offline, deterministic FPL data) and serves the export on :5100
 //   4. runs the user journeys below at a 390×844 phone viewport and fails on any unexpected console error
 //
-// Env overrides: E2E_DATABASE_URL, E2E_API_PORT, E2E_WEB_PORT, E2E_SKIP_BUILD=1, E2E_SKIP_DB_RESET=1, E2E_HEADED=1,
+// Env overrides: E2E_DB_NAME, E2E_DATABASE_URL, E2E_API_PORT, E2E_WEB_PORT, E2E_SKIP_BUILD=1, E2E_SKIP_DB_RESET=1, E2E_HEADED=1,
 // E2E_ONLY_UPDATES=1 (register, then only the app-update journeys).
 import { spawn, spawnSync } from 'node:child_process';
 import { createECDH, randomBytes } from 'node:crypto';
@@ -36,7 +36,8 @@ const API_PORT = Number(process.env.E2E_API_PORT ?? 4100);
 const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 5100);
 const API = `http://localhost:${API_PORT}`;
 const WEB = `http://localhost:${WEB_PORT}`;
-const DB_NAME = 'fantasyonerim_e2e';
+// Parallel runs (several agents / CI jobs on one Postgres) each pick their own: E2E_DB_NAME=fantasyonerim_e2e_web
+const DB_NAME = process.env.E2E_DB_NAME ?? 'fantasyonerim_e2e';
 const DATABASE_URL = process.env.E2E_DATABASE_URL ?? `postgresql://fant:fant@localhost:5432/${DB_NAME}`;
 const ADMIN = { username: 'e2e-admin', password: 'e2e-admin-password' };
 const DEMO = {
@@ -861,6 +862,42 @@ async function journeys(browser) {
     );
   });
 
+  await step('Profile → notifications: "My league" and "My captain" toggles persist via PUT', async () => {
+    await page.goto(`${WEB}/profile/`);
+    const prefs = page.getByTestId('notification-prefs');
+    await prefs.waitFor();
+    await prefs.getByText('מלך המחזור, עלייה למקום הראשון, קפיצות גדולות בטבלה').waitFor();
+    await prefs.getByText('התראה כשהקפטן שלך כובש או מבשל').waitFor();
+    for (const [name, key] of [
+      ['הליגה שלי', 'league'],
+      ['הקפטן שלי', 'captain'],
+    ]) {
+      const toggle = page.getByRole('switch', { name: new RegExp(`^${name}`) });
+      assert((await toggle.getAttribute('aria-checked')) === 'true', `${key} defaults to on`);
+      const put = page.waitForRequest(
+        (r) => r.url().endsWith('/v1/me/notification-prefs') && r.method() === 'PUT',
+      );
+      const res = page.waitForResponse(
+        (r) => r.url().endsWith('/v1/me/notification-prefs') && r.request().method() === 'PUT',
+      );
+      await toggle.click();
+      const body = JSON.parse((await put).postData() ?? '{}');
+      assert(body[key] === false, `PUT body ${key}=false: ${JSON.stringify(body)}`);
+      assert(
+        ['news', 'fpl', 'live', 'league', 'captain'].every((k) => k in body),
+        'PUT sends every pref',
+      );
+      assert((await res).ok(), `PUT notification-prefs (${key}) failed`);
+    }
+    await page.reload();
+    for (const name of ['הליגה שלי', 'הקפטן שלי']) {
+      const toggle = page.getByRole('switch', { name: new RegExp(`^${name}`) });
+      await toggle.waitFor();
+      assert((await toggle.getAttribute('aria-checked')) === 'false', `${name} did not persist`);
+    }
+    await noHorizontalScroll(page, 'notification prefs');
+  });
+
   await step('push self-heals: a dropped subscription is re-created and registered on resume', async () => {
     const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
     const { ctx, posted } = await pushContext(browser, token, { permission: 'granted' });
@@ -1251,6 +1288,381 @@ async function journeys(browser) {
     await page.getByText('קפטן הקהילה').first().waitFor();
     await noHorizontalScroll(page, 'captain battle');
   });
+
+  await step(
+    'Captain Battle: a hand-picked row not re-picked for this GW says "not picked yet"; admins get "Pick"',
+    async () => {
+      let event = null;
+      // The API's new-GW state: the community row (source "player") comes back without a player, sorted last.
+      const unpicked = async (r) => {
+        if (r.request().method() === 'OPTIONS') return r.continue();
+        const res = await r.fetch();
+        const body = await res.json();
+        event = body.event;
+        const rows = body.rows.map((row) =>
+          row.source === 'player' ? { ...row, playerId: null, live: null, captainPoints: 0 } : row,
+        );
+        rows.sort((a, b) => Number(a.playerId === null) - Number(b.playerId === null));
+        await r.fulfill(json({ ...body, rows }));
+      };
+      const label = () => `עוד לא נבחר למחזור ${event}`;
+
+      await page.route(`${API}/v1/captain-battle`, unpicked);
+      await page.goto(`${WEB}/live/?view=captains`);
+      const fan = page.getByTestId('battle-not-picked');
+      await fan.waitFor();
+      assert((await fan.textContent())?.includes(label()), `fan sees "${await fan.textContent()}"`);
+      assert((await fan.getByRole('link').count()) === 0, 'no "Pick" link for a fan');
+      // Entry rows keep their own state (never "not picked yet").
+      assert((await page.getByTestId('battle-not-picked').count()) === 1, 'only the hand-picked row');
+      const last = page.locator('ol > li').last();
+      assert((await last.getByTestId('battle-not-picked').count()) === 1, 'the unpicked row is sorted last');
+      await noHorizontalScroll(page, 'captain battle (not picked)');
+      await page.unroute(`${API}/v1/captain-battle`, unpicked);
+
+      // Admin: collapse the battle card, then "Pick" opens it from the battle screen.
+      await admin.goto(`${WEB}/admin/`);
+      const card = admin.locator('[data-testid=admin-card][data-card="settings.battle"]');
+      await card.waitFor();
+      if ((await card.getAttribute('data-open')) === 'true')
+        await card.getByTestId('card-toggle').first().click();
+      await admin.locator('[data-card="settings.battle"][data-open=false]').waitFor();
+      await admin.route(`${API}/v1/captain-battle`, unpicked);
+      await admin.goto(`${WEB}/live/?view=captains`);
+      const row = admin.getByTestId('battle-not-picked');
+      await row.waitFor();
+      assert((await row.textContent())?.includes(label()), 'admin sees the not-picked text');
+      const pick = row.getByRole('link', { name: 'לבחירה' });
+      const box = await pick.boundingBox();
+      assert(box && box.height >= 44, `"Pick" touch target ${box?.height}`);
+      await pick.click();
+      await admin.waitForURL('**/admin/?card=battle');
+      await admin.locator('[data-testid=admin-card][data-card="settings.battle"][data-open=true]').waitFor();
+      await admin.unroute(`${API}/v1/captain-battle`, unpicked);
+    },
+  );
+
+  // ---------- refresh + FPL match sheet ----------
+  await step(
+    'Live Action: the header refresh button refetches now (spins, then "Updated just now")',
+    async () => {
+      await page.goto(`${WEB}/live/`);
+      await page.locator('ol li button').first().waitFor();
+      const before = leagueCalls.length;
+      // A slow answer keeps the spinner observable.
+      await page.route(`${API}/v1/league/live**`, async (r) => {
+        await sleep(1_200);
+        await r.continue().catch(() => {});
+      });
+      const button = page.getByRole('button', { name: 'רענון' });
+      await button.click();
+      await page.locator('[data-testid=refresh-button][data-state=refreshing]').waitFor({ timeout: 1_000 });
+      await waitUntil(() => leagueCalls.length > before, 'a new /v1/league/live request');
+      const done = page.getByTestId('refresh-done');
+      await done.waitFor();
+      assert((await done.getAttribute('data-state')) === 'done', 'refresh confirmation state');
+      assert((await done.textContent())?.includes('עודכן עכשיו'), 'refresh confirmation text');
+      await page.locator('[data-testid=refresh-button][data-state=idle]').waitFor();
+      await page.unroute(`${API}/v1/league/live**`);
+      // 44px touch target
+      const box = await button.boundingBox();
+      assert(box && box.width >= 44 && box.height >= 44, `refresh button ${box?.width}×${box?.height}`);
+    },
+  );
+
+  await step(
+    'pull-to-refresh: a touch drag down from the top refetches; a sideways swipe does not',
+    async () => {
+      const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+      const ctx = await newContext(browser, { hasTouch: true, isMobile: true });
+      await ctx.addInitScript((tok) => globalThis.localStorage.setItem('fant.token', tok), token);
+      const p = await ctx.newPage();
+      watch(p, 'touch');
+      const calls = [];
+      p.on('request', (r) => {
+        if (r.url().startsWith(`${API}/v1/league/standings`)) calls.push(r.url());
+      });
+      await p.goto(`${WEB}/table/`);
+      await p.getByRole('heading', { name: 'Fantasyonerim League' }).waitFor();
+      await sleep(300);
+      const cdp = await ctx.newCDPSession(p);
+      const drag = async (from, to, steps = 12) => {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [from] });
+        for (let i = 1; i <= steps; i++) {
+          const x = from.x + ((to.x - from.x) * i) / steps;
+          const y = from.y + ((to.y - from.y) * i) / steps;
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y }] });
+          await sleep(16);
+        }
+      };
+      const release = () => cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+
+      // Sideways: ignored.
+      let n = calls.length;
+      await drag({ x: 330, y: 300 }, { x: 60, y: 330 });
+      await release();
+      await sleep(400);
+      assert(calls.length === n, 'a horizontal swipe must not refresh');
+
+      // Down from the top: the indicator arms, release refreshes.
+      n = calls.length;
+      await drag({ x: 195, y: 200 }, { x: 195, y: 420 });
+      const state = await p.getByTestId('pull-indicator').getAttribute('data-state');
+      assert(state === 'armed', `pull indicator while dragging: ${state}`);
+      await release();
+      await waitUntil(() => calls.length > n, 'a refetch after the pull');
+      await p.getByTestId('refresh-done').waitFor();
+      await noHorizontalScroll(p, 'table after pull');
+      await ctx.close();
+    },
+  );
+
+  await step(
+    'Live Action: a fixture card opens the FPL match sheet (both tabs, home side in RTL, not started)',
+    async () => {
+      const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+      const get = async (path) => {
+        const r = await globalThis.fetch(`${API}${path}`, { headers: { authorization: `Bearer ${token}` } });
+        assert(r.ok, `${path} → ${r.status}`);
+        return r.json();
+      };
+      const boot = await get('/v1/fpl/bootstrap');
+      const event = boot.currentEvent;
+      const fixtures = await get(`/v1/fpl/fixtures?event=${event}`);
+      const picks = await get(`/v1/fpl/entries/${DEMO.tripleCaptain}/picks?event=${event}`);
+      const playerById = new Map(boot.players.map((pl) => [pl.id, pl]));
+      const captainId = picks.picks.find((pk) => pk.isCaptain).playerId;
+      const captainTeam = playerById.get(captainId).teamId;
+      const fx = fixtures.find((x) => x.teamH === captainTeam || x.teamA === captainTeam) ?? fixtures[0];
+      const other = fixtures.find((x) => x.id !== fx.id);
+      assert(other, 'demo GW has at least two fixtures');
+      const squad = (teamId) => boot.players.filter((pl) => pl.teamId === teamId);
+      const homeP = squad(fx.teamH).filter((pl) => pl.id !== captainId);
+      const awayP = squad(fx.teamA).filter((pl) => pl.id !== captainId);
+      const captainHome = captainTeam === fx.teamH;
+      // Realistic sheet: home won 2–1, the home brace (2) shows its count, single goals/assists don't.
+      const brace = captainHome ? captainId : homeP[0].id;
+      const homeKeeper =
+        boot.players.find((pl) => pl.teamId === fx.teamH && pl.position === 'GKP') ?? homeP[1];
+      const detail = {
+        fixture: { ...fx, status: 'finished', teamHScore: 2, teamAScore: 1, minutes: 90 },
+        stats: [
+          {
+            id: 'goals_scored',
+            home: [{ playerId: brace, value: 2 }],
+            away: [{ playerId: awayP[0].id, value: 1 }],
+          },
+          {
+            id: 'assists',
+            home: [{ playerId: homeP[2].id, value: 1 }],
+            away: [{ playerId: awayP[1].id, value: 1 }],
+          },
+          { id: 'saves', home: [{ playerId: homeKeeper.id, value: 3 }], away: [] },
+          {
+            id: 'bps',
+            home: [
+              { playerId: brace, value: 41 },
+              { playerId: homeP[2].id, value: 27 },
+            ],
+            away: [{ playerId: awayP[0].id, value: 24 }],
+          },
+        ],
+        players: [
+          { playerId: brace, teamId: fx.teamH, minutes: 90, points: 13 },
+          { playerId: awayP[0].id, teamId: fx.teamA, minutes: 88, points: 7 },
+          { playerId: homeP[2].id, teamId: fx.teamH, minutes: 90, points: 6 },
+          { playerId: homeKeeper.id, teamId: fx.teamH, minutes: 90, points: 3 },
+          ...(captainHome ? [] : [{ playerId: captainId, teamId: captainTeam, minutes: 75, points: 2 }]),
+          { playerId: awayP[1].id, teamId: fx.teamA, minutes: 12, points: 1 },
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+      const kickoff = new Date(Date.now() + 26 * 3_600_000).toISOString();
+      const notStarted = {
+        fixture: {
+          ...other,
+          status: 'not_started',
+          teamHScore: null,
+          teamAScore: null,
+          minutes: 0,
+          kickoffTime: kickoff,
+        },
+        stats: [],
+        players: [],
+        updatedAt: new Date().toISOString(),
+      };
+      const detailCalls = [];
+      await page.route(`${API}/v1/fpl/fixtures/*`, async (r) => {
+        if (r.request().method() === 'OPTIONS') return r.continue();
+        const id = Number(new URL(r.request().url()).pathname.split('/').pop());
+        detailCalls.push(id);
+        if (id === fx.id) return r.fulfill(json(detail));
+        if (id === other.id) return r.fulfill(json(notStarted));
+        return r.fulfill(json({ error: { code: 'not_found', message: 'no such fixture' } }, 404));
+      });
+
+      await page.goto(`${WEB}/live/`);
+      const card = page.locator(`[data-fixture="${fx.id}"] button`);
+      await card.waitFor();
+      await card.click();
+      const sheet = page.locator('dialog[open] [data-testid=fixture-sheet]');
+      await sheet.waitFor();
+      assert(new URL(page.url()).searchParams.get('fixture') === String(fx.id), 'sheet is in the URL');
+      await sheet.locator('[data-testid=fixture-details]').waitFor();
+
+      // RTL: home is on the right in the header, in the card and in every stat block.
+      const x = async (loc) => (await loc.boundingBox()).x;
+      const header = sheet.getByTestId('fixture-header');
+      assert(
+        (await x(header.locator('[data-side=home]'))) > (await x(header.locator('[data-side=away]'))),
+        'header: home on the right in Hebrew',
+      );
+      for (const id of ['goals_scored', 'assists', 'bps']) {
+        const block = sheet.locator(`[data-testid=fixture-stat][data-stat=${id}]`);
+        assert(
+          (await x(block.locator('[data-side=home]'))) > (await x(block.locator('[data-side=away]'))),
+          `${id}: home column on the right`,
+        );
+      }
+      const titles = await sheet.locator('[data-testid=fixture-stat] h3').allTextContents();
+      assert(
+        titles.join('|') === 'שערים|בישולים|הצלות|BPS',
+        `block titles in API order: ${titles.join('|')}`,
+      );
+      const goals = sheet.locator('[data-testid=fixture-stat][data-stat=goals_scored]');
+      const homeGoals = (await goals.locator('[data-side=home]').textContent()) ?? '';
+      const awayGoals = (await goals.locator('[data-side=away]').textContent()) ?? '';
+      assert(
+        homeGoals.includes(playerById.get(brace).webName) && homeGoals.includes('(2)'),
+        `home goals "${homeGoals}"`,
+      );
+      assert(awayGoals.includes(awayP[0].webName) && !awayGoals.includes('('), `away goals "${awayGoals}"`);
+      const assists = (await sheet.locator('[data-stat=assists] [data-side=home]').textContent()) ?? '';
+      assert(!assists.includes('('), `single assist shows no count: "${assists}"`);
+      const saves = (await sheet.locator('[data-stat=saves] [data-side=home]').textContent()) ?? '';
+      assert(saves.includes('(3)'), `saves always show the value: "${saves}"`);
+      const scores = await header.locator('[data-score]').allTextContents();
+      assert(scores.join('-') === '2-1', `header score ${scores.join('-')}`);
+      await noHorizontalScroll(page, 'fixture sheet');
+
+      // Player stats: by points, my players highlighted, my captain with the C badge.
+      await sheet.getByRole('tab', { name: 'נתוני שחקנים' }).click();
+      const rows = sheet.locator('[data-testid=fixture-player]');
+      await rows.first().waitFor();
+      const ids = await rows.evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-player'))));
+      const expected = [...detail.players].sort((a, b) => b.points - a.points).map((pl) => pl.playerId);
+      assert(ids.join() === expected.join(), `players by points: ${ids.join()} vs ${expected.join()}`);
+      const cap = sheet.locator(`[data-testid=fixture-player][data-player="${captainId}"]`);
+      assert((await cap.getAttribute('data-captain')) === 'true', 'captain row flagged');
+      assert((await cap.getAttribute('data-mine')) === 'true', 'captain row is mine');
+      assert((await cap.textContent())?.includes('C'), 'C badge');
+      const mineCount = await sheet.locator('[data-testid=fixture-player][data-mine]').count();
+      const myIds = new Set(picks.picks.map((pk) => pk.playerId));
+      assert(
+        mineCount === detail.players.filter((pl) => myIds.has(pl.playerId)).length,
+        'my players highlighted',
+      );
+      await noHorizontalScroll(page, 'fixture sheet players');
+
+      // The sheet's own refresh refetches the detail.
+      const n = detailCalls.length;
+      await sheet.page().getByTestId('fixture-refresh').click();
+      await waitUntil(() => detailCalls.length > n, 'fixture detail refetch');
+
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+      assert(!new URL(page.url()).searchParams.has('fixture'), 'closing clears ?fixture');
+
+      // Not started: the message and the kick-off time, no tabs.
+      await page.locator(`[data-fixture="${other.id}"] button`).click();
+      const ns = page.locator('dialog[open] [data-testid=fixture-not-started]');
+      await ns.waitFor();
+      assert((await ns.textContent())?.includes('המשחק עוד לא התחיל'), 'not started text');
+      assert((await ns.textContent())?.includes('שריקת פתיחה'), 'kick-off time');
+      assert((await page.locator('dialog[open] [role=tab]').count()) === 0, 'no tabs before kick-off');
+      await page.keyboard.press('Escape');
+      await page.unroute(`${API}/v1/fpl/fixtures/*`);
+    },
+  );
+
+  await step(
+    "Live Action: a LIVE fixture sheet (62') shows the live badge and updates on the next poll",
+    async () => {
+      const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+      const get = async (path) => {
+        const r = await globalThis.fetch(`${API}${path}`, { headers: { authorization: `Bearer ${token}` } });
+        assert(r.ok, `${path} → ${r.status}`);
+        return r.json();
+      };
+      const boot = await get('/v1/fpl/bootstrap');
+      const fixtures = await get(`/v1/fpl/fixtures?event=${boot.currentEvent}`);
+      // Demo: fixture 87 is live at 62'.
+      const fx =
+        fixtures.find((x) => x.status === 'live') ?? fixtures.find((x) => x.id === 87) ?? fixtures[0];
+      const of = (teamId) => boot.players.filter((pl) => pl.teamId === teamId);
+      const [h1, h2] = of(fx.teamH);
+      const [a1] = of(fx.teamA);
+      let polls = 0;
+      const live = () => {
+        polls += 1;
+        const second = polls > 1;
+        return {
+          fixture: { ...fx, status: 'live', minutes: second ? 63 : 62, teamHScore: 1, teamAScore: 0 },
+          // Bonus is settled after the match; BPS is there live and moves between polls.
+          stats: [
+            { id: 'goals_scored', home: [{ playerId: h1.id, value: 1 }], away: [] },
+            {
+              id: 'bps',
+              home: [
+                { playerId: h1.id, value: second ? 34 : 29 },
+                { playerId: h2.id, value: 18 },
+              ],
+              away: [{ playerId: a1.id, value: 12 }],
+            },
+          ],
+          players: [
+            { playerId: h1.id, teamId: fx.teamH, minutes: second ? 63 : 62, points: 8 },
+            { playerId: h2.id, teamId: fx.teamH, minutes: second ? 63 : 62, points: 2 },
+            { playerId: a1.id, teamId: fx.teamA, minutes: second ? 63 : 62, points: 2 },
+          ],
+          updatedAt: new Date().toISOString(),
+        };
+      };
+      const p = await user.newPage();
+      watch(p, 'live-sheet');
+      await p.clock.install();
+      await p.route(`${API}/v1/fpl/fixtures/*`, async (r) => {
+        if (r.request().method() === 'OPTIONS') return r.continue();
+        const id = Number(new URL(r.request().url()).pathname.split('/').pop());
+        if (id !== fx.id) return r.fulfill(json({ error: { code: 'not_found', message: 'x' } }, 404));
+        return r.fulfill(json(live()));
+      });
+      await p.goto(`${WEB}/live/?fixture=${fx.id}`);
+      const sheet = p.locator('dialog[open] [data-testid=fixture-sheet]');
+      await sheet.locator('[data-testid=fixture-details]').waitFor();
+      await sheet.getByTestId('fixture-live').waitFor();
+      assert((await sheet.getByTestId('fixture-live').textContent())?.includes('חי'), 'LIVE badge');
+      assert((await sheet.getByTestId('fixture-status').textContent())?.includes('62'), 'minute 62');
+      const bps = sheet.locator('[data-stat=bps] [data-side=home]');
+      assert((await bps.textContent())?.includes('(29)'), `bps before: ${await bps.textContent()}`);
+      assert((await sheet.locator('[data-stat=bonus]').count()) === 0, 'no bonus block while live');
+      await sheet.getByRole('tab', { name: 'נתוני שחקנים' }).click();
+      assert((await sheet.locator('[data-testid=fixture-player]').count()) === 3, 'live players render');
+      await sheet.getByRole('tab', { name: 'פרטי משחק' }).click();
+      // The next poll (30 s while live) brings the new BPS and minute without any tap.
+      const before = polls;
+      await p.clock.fastForward('00:31');
+      await waitUntil(() => polls > before, 'a second live poll');
+      await p.waitForFunction(() =>
+        document
+          .querySelector('dialog[open] [data-stat=bps] [data-side=home]')
+          ?.textContent?.includes('(34)'),
+      );
+      assert((await sheet.getByTestId('fixture-status').textContent())?.includes('63'), 'minute 63');
+      await noHorizontalScroll(p, 'live fixture sheet');
+      await p.close();
+    },
+  );
 
   // ---------- Phase 3: Community ----------
   const POST_TEXT = 'פוסט בדיקה e2e — את מי לקפטן? https://example.com/e2e';

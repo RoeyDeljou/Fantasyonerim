@@ -5,7 +5,7 @@ import { CaptainBattleSchema } from '@fant/shared';
 import { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { makePicks, upstreamDown, type FakeFplService } from './fakeFpl.js';
+import { makeBootstrap, makePicks, upstreamDown, type FakeFplService } from './fakeFpl.js';
 import {
   adminToken,
   bearer,
@@ -141,6 +141,67 @@ describe('GET /v1/captain-battle', () => {
     const battle = await getBattle();
     expect(battle.event).toBe(10);
     expect(battle.rows.map((r) => r.label)).toEqual(['Next week']);
+  });
+
+  it('GW rollover with no admin save: entry rows show the new GW captains, picked rows wait', async () => {
+    fpl.addEntry(777).addEntry(888);
+    fpl.picks.set('777:9', makePicks(777, 9, 4, 2));
+    fpl.picks.set('888:9', makePicks(888, 9, 3, 2));
+    await configureBattle(9, [
+      { label: "Dor's team", source: 'entry', entryId: 777, kind: 'custom' },
+      { label: "Itay's team", source: 'entry', entryId: 888, kind: 'custom' },
+    ]);
+    expect((await getBattle()).event).toBe(9);
+
+    // FPL moves on to GW10; nobody touches the admin console.
+    fpl.bootstrap = makeBootstrap(10, 11);
+    fpl.picks.set('777:10', makePicks(777, 10, 2, 3)); // Dor: TC Haaland (13) → 39
+    fpl.picks.set('888:10', makePicks(888, 10, 1, 2)); // Itay: Salah (6) → 12
+    fpl.calls = [];
+    const battle = await getBattle();
+    expect(battle.event).toBe(10);
+    expect(
+      battle.rows.map((r) => [r.label, r.source, r.playerId, r.multiplier, r.captainPoints, r.live === null]),
+    ).toEqual([
+      ["Dor's team", 'entry', 2, 3, 39, false],
+      ["Itay's team", 'entry', 1, 2, 12, false],
+      // Hand-picked rows: "not picked yet for GW10" (no player, never last week's), sorted last.
+      ['Community captain', 'player', null, 2, 0, true],
+      ["Dor's captain", 'player', null, 2, 0, true],
+      ["Moshe's captain", 'player', null, 2, 0, true],
+    ]);
+    expect(fpl.calls.filter((c) => c.startsWith('getEntryPicks')).sort()).toEqual([
+      'getEntryPicks:777:10',
+      'getEntryPicks:888:10',
+    ]);
+    expect(fpl.calls.filter((c) => c.startsWith('getPlayersLive'))).toEqual(['getPlayersLive:1,2:10']);
+
+    // The admin picks the community captain for GW10 → that row fills in again.
+    const token = await adminToken(app, prisma, 'second-admin');
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/admin/captain-battle',
+      headers: bearer(token),
+      payload: {
+        event: 10,
+        entries: [
+          { label: 'Community captain', source: 'player', playerId: 3, kind: 'community' },
+          { label: "Dor's team", source: 'entry', entryId: 777, kind: 'custom' },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const saved = await getBattle();
+    expect(saved.rows.every((r) => r.playerId !== null)).toBe(true);
+  });
+
+  it('the signed-in fan row also follows the current GW', async () => {
+    const fan = await registerUser(app, fpl, 555);
+    await configureBattle(9);
+    fpl.bootstrap = makeBootstrap(10, 11);
+    fpl.picks.set('555:10', makePicks(555, 10, 4, 2));
+    const battle = await getBattle(bearer(fan.token));
+    expect(battle.rows.find((r) => r.kind === 'mine')).toMatchObject({ playerId: 4, captainPoints: 18 });
   });
 
   it('503s when FPL live data is unavailable', async () => {
