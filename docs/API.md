@@ -27,6 +27,7 @@ Legend: 🌐 public · 👤 signed-in user · 🛡 admin
 | GET     | `/v1/fpl/entries/:entryId/live`  | 🌐                      | `?event=` (default current) | `EntryLive`                                                              |
 | GET     | `/v1/league/standings`           | 🌐                      | `?page=`                    | `LeagueStandings` · 404 when no league configured                        |
 | GET     | `/v1/league/live`                | 🌐                      | `?page=`                    | `LiveLeague`                                                             |
+| GET     | `/v1/league/position`            | 👤                      | –                           | `LeaguePosition` (find my team, below) · 404 when no league set          |
 | GET     | `/v1/captain-battle`             | 🌐 (👤 adds "mine" row) | –                           | `CaptainBattle`                                                          |
 | GET/PUT | `/v1/admin/settings`             | 🛡                       | `AdminSettings`             | `AdminSettings`                                                          |
 | GET/PUT | `/v1/admin/captain-battle`       | 🛡                       | `CaptainBattleConfig`       | `CaptainBattleConfig` (GET → null when unset)                            |
@@ -43,6 +44,15 @@ while `live` or `finished_provisional`, `public, max-age=60, stale-while-revalid
 battle was last saved for: team-linked rows (`source: 'entry'`) read that GW's captain with no admin action. A battle
 saved for a later GW is shown for that GW. Hand-picked rows (`source: 'player'`) saved for an earlier GW come back
 with `playerId: null`, `live: null` ("not picked yet for GW n", sorted last) until the admin picks again.
+
+**Find my team** (`/v1/league/position`). `page` is the standings page (50 per page) that holds the team, and the
+same `page` works for `/v1/league/live`: FplService builds live page N from the managers of standings page N and
+re-ranks them **within** that page only (live ranks are numbered from `(N − 1) × 50 + 1`), so no manager moves
+between pages in the live table. Only the order inside the page and `liveRank` can differ from the standings.
+The API keeps one entry → page/rank index per league, filled page by page (stopping at the first page with the
+team, at most 40 pages) and rebuilt after the standings TTL (2 min) or an admin settings change, so 150 users
+asking cost one scan. A user without a team gets all three null; a team not in the league gets `page`/`rank` null.
+Per user: `private, no-cache` with an ETag.
 
 ## Phase 2 — News feed, push, integrations
 

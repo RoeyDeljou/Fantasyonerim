@@ -255,7 +255,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   meRoutes(app, ctx, auth, communityLimits.writes, strictLimit);
   authRoutes(app, ctx, auth, strictLimit);
   fplRoutes(app, ctx);
-  leagueRoutes(app, ctx);
+  leagueRoutes(app, ctx, auth);
   captainBattleRoutes(app, ctx, auth);
   adminRoutes(app, ctx, auth, strictLimit);
   newsRoutes(app, ctx);

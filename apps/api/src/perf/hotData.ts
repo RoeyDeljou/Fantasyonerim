@@ -1,4 +1,4 @@
-import { mapWithConcurrency, type FplService } from '@fant/fpl';
+import { FPL_CACHE_TTL, mapWithConcurrency, type FplService } from '@fant/fpl';
 import {
   BootstrapSchema,
   CaptainBattleSchema,
@@ -31,7 +31,7 @@ import type { AppSettings, PrismaClient } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
 import type { Clock } from '../context.js';
-import { fetchAllPages } from '../league/pages.js';
+import { fetchAllPages, LEAGUE_MAX_PAGES } from '../league/pages.js';
 import { derivedSocials, getLatestBattle, getSettings, toPublicConfig } from '../settings.js';
 import { serialize } from '../validate.js';
 import { HotCache, type HotPolicy, type HotResult } from './hotCache.js';
@@ -52,6 +52,28 @@ export const HOT_POLICY = {
   config: { freshMs: 30 * SECOND, staleMs: MINUTE },
   news: { freshMs: 15 * SECOND, staleMs: 45 * SECOND },
 } as const satisfies Record<string, HotPolicy>;
+
+/** A league's entry → standings page/rank index is rebuilt after this (FplService's standings TTL). */
+export const LEAGUE_POSITION_TTL_MS = FPL_CACHE_TTL.standings;
+
+/** Where an entry sits in the league's standings (page = 50 per page, same paging as the live table). */
+export interface EntryPosition {
+  page: number;
+  rank: number;
+}
+
+/**
+ * Entry → position for one league, filled page by page as lookups need it: 150 users asking cost one scan of the
+ * standings (shared, one page fetch at a time), not 150.
+ */
+interface PositionIndex {
+  leagueId: FplLeagueId;
+  builtAt: number;
+  positions: Map<number, EntryPosition>;
+  pagesScanned: number;
+  done: boolean;
+  next: Promise<void> | null;
+}
 
 /** Recompute now (deduped with any refresh in flight): the warmer and jobs that need current data. */
 export const REFRESH_NOW: HotPolicy = { freshMs: 0, staleMs: 0 };
@@ -119,6 +141,7 @@ export class HotData {
   private settingsMemo: { at: number; value: Promise<AppSettings> } | null = null;
   private timer: NodeJS.Timeout | null = null;
   private warming: Promise<string> | null = null;
+  private positionIndex: PositionIndex | null = null;
 
   constructor(private readonly deps: HotDataDeps) {
     this.cache = new HotCache({
@@ -156,6 +179,7 @@ export class HotData {
   /** After an admin edit of settings / captain battle / integrations: drop everything derived from them. */
   invalidateConfig(): void {
     this.settingsMemo = null;
+    this.positionIndex = null;
     this.cache.invalidate('config');
     this.cache.invalidate('battle');
     this.cache.invalidate('league:');
@@ -252,6 +276,47 @@ export class HotData {
         return null;
       }
     });
+  }
+
+  /**
+   * The standings page + official rank of `entryId` in `leagueId`, or null when it isn't in the league (or past
+   * LEAGUE_MAX_PAGES). Pages are read in order through FplService's standings cache, stopping at the first page
+   * that has the entry; every row seen is remembered, so later lookups (any user) are answered from memory until
+   * the index is LEAGUE_POSITION_TTL_MS old. The live table uses the same pages (FplService builds live page N
+   * from standings page N and only re-ranks within it), so `page` is valid for /v1/league/live too.
+   */
+  async leaguePosition(leagueId: FplLeagueId, entryId: FplEntryId): Promise<EntryPosition | null> {
+    const now = this.deps.clock.now().getTime();
+    let index = this.positionIndex;
+    if (index === null || index.leagueId !== leagueId || now - index.builtAt >= LEAGUE_POSITION_TTL_MS) {
+      index = { leagueId, builtAt: now, positions: new Map(), pagesScanned: 0, done: false, next: null };
+      this.positionIndex = index;
+    }
+    for (;;) {
+      const hit = index.positions.get(entryId);
+      if (hit !== undefined) return hit;
+      if (index.done) return null;
+      index.next ??= this.scanNextPage(index);
+      await index.next;
+    }
+  }
+
+  /** Reads the index's next standings page (one fetch shared by every waiting lookup). */
+  private async scanNextPage(index: PositionIndex): Promise<void> {
+    const page = index.pagesScanned + 1;
+    try {
+      const standings = await this.deps.fpl.getLeagueStandings(index.leagueId, page);
+      for (const row of standings.rows) {
+        // Standings can shift between page reads: the first sighting wins (as in fetchAllPages users).
+        if (!index.positions.has(row.entryId)) {
+          index.positions.set(row.entryId, { page: standings.page, rank: row.rank });
+        }
+      }
+      index.pagesScanned = page;
+      index.done = !standings.hasNext || page >= LEAGUE_MAX_PAGES;
+    } finally {
+      index.next = null;
+    }
   }
 
   // ---------- captain battle ----------
