@@ -12,6 +12,7 @@ import {
   FixtureDetailSchema,
   FixtureSchema,
   LeagueStandingsSchema,
+  LeaguePositionSchema,
   LiveLeagueSchema,
   MeSchema,
   PublicConfigSchema,
@@ -63,6 +64,7 @@ import type {
   FplEntryId,
   Gameweek,
   LeagueStandings,
+  LeaguePosition,
   LiveLeague,
   Me,
   PublicConfig,
@@ -313,6 +315,9 @@ export const api = {
 
   standings: (page: number, o: Signal = {}): Promise<LeagueStandings> =>
     request('GET', '/v1/league/standings', LeagueStandingsSchema, { ...o, query: { page } }),
+  /** Where the signed-in user's team sits in the league (page/rank null when it isn't in it). */
+  leaguePosition: (o: Signal = {}): Promise<LeaguePosition> =>
+    request('GET', '/v1/league/position', LeaguePositionSchema, o),
   liveLeague: (page: number, o: Signal = {}): Promise<LiveLeague> =>
     request('GET', '/v1/league/live', LiveLeagueSchema, { ...o, query: { page } }),
   captainBattle: (o: Signal = {}): Promise<CaptainBattle> =>

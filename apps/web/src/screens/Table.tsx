@@ -2,16 +2,19 @@
 
 import { Suspense, memo, useCallback } from 'react';
 import { FplEntryIdSchema } from '@fant/shared';
-import type { LeagueStandingRow } from '@fant/shared';
+import type { FplEntryId, LeagueStandingRow, LeagueStandings as LeagueStanding } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import { isApiError } from '@/lib/api';
-import { useConfig, useFplIndex, useLivePollInterval, useMe, useStandings } from '@/lib/queries';
+import { qk, useConfig, useFplIndex, useLivePollInterval, useMe, useStandings } from '@/lib/queries';
+import { useQueryClient } from '@tanstack/react-query';
+import type { InfiniteData } from '@tanstack/react-query';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { REFRESH_SCOPES } from '@/lib/refresh';
 import { AppShell, ShellSkeleton } from '@/components/AppShell';
 import { ArrowDownIcon, ArrowUpIcon, ClockIcon, DotIcon, TableIcon } from '@/components/icons';
 import { ChipIcon } from '@/components/team/ChipIcon';
 import { ManagerSheet } from '@/components/lazySheets';
+import { FindMyTeam, loadPagesUntil } from '@/components/team/FindMyTeam';
 import {
   Button,
   EmptyState,
@@ -77,6 +80,7 @@ function TableInner() {
   const me = useMe();
   const fpl = useFplIndex();
   const { interval } = useLivePollInterval();
+  const qc = useQueryClient();
   const [entryParam, setEntryParam] = useQueryParam('entry');
   const selectedId = FplEntryIdSchema.safeParse(entryParam ?? undefined);
   const openEntry = useCallback(
@@ -135,6 +139,13 @@ function TableInner() {
         </div>
       )}
 
+      <FindMyTeam
+        enabled={rows.length > 0}
+        loadPage={(page) => loadPagesUntil(standings, page)}
+        rankOf={(id) => rankIn(qc.getQueryData<InfiniteData<LeagueStanding>>(qk.standings), id)}
+        rowsKey={rows.length}
+      />
+
       {standings.isFetchNextPageError && <InlineError>{errorMessage(t, standings.error)}</InlineError>}
       {standings.hasNextPage && (
         <Button
@@ -175,7 +186,7 @@ const StandingRow = memo(function StandingRow({
 }) {
   const { t } = useI18n();
   return (
-    <li className="table-row">
+    <li className="table-row" data-entry={r.entryId}>
       <button
         type="button"
         onClick={() => onOpen(r.entryId)}
@@ -210,3 +221,9 @@ const StandingRow = memo(function StandingRow({
     </li>
   );
 });
+
+/** Official rank of an entry in the loaded standings (null when its page isn't loaded). */
+function rankIn(data: InfiniteData<LeagueStanding> | undefined, id: FplEntryId): number | null {
+  for (const p of data?.pages ?? []) for (const r of p.rows) if (r.entryId === id) return r.rank;
+  return null;
+}

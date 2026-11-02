@@ -481,3 +481,12 @@ export const DocIcon = (p: IconProps) => (
     <path d="M14 3v4h4M9 12h6M9 15.5h6M9 8.5h2" />
   </Svg>
 );
+
+/** Crosshair: "find my team" (jump to the viewer's row). */
+export const LocateIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="6.5" />
+    <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+    <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" />
+  </Svg>
+);

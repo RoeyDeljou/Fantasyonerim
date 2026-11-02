@@ -3,7 +3,7 @@
 import { Suspense, memo, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { FplEntryIdSchema, FplFixtureIdSchema } from '@fant/shared';
-import type { CaptainBattleRow, Fixture, LiveLeagueRow, PlTeam } from '@fant/shared';
+import type { CaptainBattleRow, Fixture, FplEntryId, LiveLeague, LiveLeagueRow, PlTeam } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import type { Formatters, Messages } from '@/i18n';
 import { isApiError } from '@/lib/api';
@@ -17,6 +17,10 @@ import {
   useMe,
 } from '@/lib/queries';
 import type { FplIndex } from '@/lib/queries';
+import { qk } from '@/lib/queries';
+import { useQueryClient } from '@tanstack/react-query';
+import type { InfiniteData } from '@tanstack/react-query';
+import { FindMyTeam, loadPagesUntil } from '@/components/team/FindMyTeam';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { REFRESH_SCOPES } from '@/lib/refresh';
 import { AppShell, ShellSkeleton } from '@/components/AppShell';
@@ -260,6 +264,7 @@ function LiveTable({ index, interval }: { index: FplIndex; interval: number }) {
   const me = useMe();
   const [entryParam, setEntryParam] = useQueryParam('entry');
   const selectedId = FplEntryIdSchema.safeParse(entryParam ?? undefined);
+  const qc = useQueryClient();
   const openEntry = useCallback((id: LiveLeagueRow['entryId']) => setEntryParam(String(id)), [setEntryParam]);
 
   let body;
@@ -316,6 +321,12 @@ function LiveTable({ index, interval }: { index: FplIndex; interval: number }) {
             </ol>
           </div>
         )}
+        <FindMyTeam
+          enabled={rows.length > 0}
+          loadPage={(page) => loadPagesUntil(league, page)}
+          rankOf={(id) => liveRankIn(qc.getQueryData<InfiniteData<LiveLeague>>(qk.liveLeague), id)}
+          rowsKey={rows.length}
+        />
         {league.isFetchNextPageError && <InlineError>{errorMessage(t, league.error)}</InlineError>}
         {league.hasNextPage && (
           <Button
@@ -366,7 +377,7 @@ const LiveLeagueRowItem = memo(function LiveLeagueRowItem({
   const captain = effectiveId ? index.players.get(effectiveId) : undefined;
   const viceTook = r.effectiveCaptainPlayerId !== null && r.effectiveCaptainPlayerId !== r.captainPlayerId;
   return (
-    <li className="table-row">
+    <li className="table-row" data-entry={r.entryId}>
       <button
         type="button"
         onClick={() => onOpen(r.entryId)}
@@ -592,4 +603,10 @@ function CaptainRow({
       </span>
     </li>
   );
+}
+
+/** Live rank of an entry in the loaded live table (found by entry id: it can differ from the official rank). */
+function liveRankIn(data: InfiniteData<LiveLeague> | undefined, id: FplEntryId): number | null {
+  for (const p of data?.pages ?? []) for (const r of p.rows) if (r.entryId === id) return r.liveRank;
+  return null;
 }

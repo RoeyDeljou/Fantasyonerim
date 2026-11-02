@@ -18,6 +18,7 @@ import {
   FixtureDetailSchema,
   FixtureSchema,
   LeagueStandingsSchema,
+  LeaguePositionSchema,
   LiveLeagueSchema,
   MeSchema,
   NewsFilterSchema,
@@ -65,6 +66,7 @@ function kindOf(key: QueryKey): Kind | null {
   if (a === 'league' && key.length === 2) {
     if (b === 'standings') return { schema: LeagueStandingsSchema, infinite: true };
     if (b === 'live') return { schema: LiveLeagueSchema, infinite: true };
+    if (b === 'position') return { schema: LeaguePositionSchema };
     return null;
   }
   if (a === 'news' && key.length === 2) {

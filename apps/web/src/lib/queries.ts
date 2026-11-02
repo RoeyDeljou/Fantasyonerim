@@ -73,6 +73,7 @@ export const qk = {
   entryLive: (id: FplEntryId, event: Gameweek | null) => ['fpl', 'live', id, event ?? 'current'] as const,
   standings: ['league', 'standings'] as const,
   liveLeague: ['league', 'live'] as const,
+  leaguePosition: ['league', 'position'] as const,
   captainBattle: ['captain-battle'] as const,
   adminSettings: ['admin', 'settings'] as const,
   adminCaptainBattle: ['admin', 'captain-battle'] as const,
@@ -364,6 +365,15 @@ export function useLiveLeague(refetchInterval: number, enabled: boolean) {
     ...(enabled ? o : { ...o, queryFn: skipToken }),
     refetchInterval,
     refetchIntervalInBackground: false,
+  });
+}
+
+/** The viewer's own page/rank in the league ("find my team"). Only while a table is open; cached ~2 min. */
+export function useLeaguePosition(enabled: boolean) {
+  return useQuery({
+    queryKey: qk.leaguePosition,
+    queryFn: enabled ? ({ signal }) => api.leaguePosition({ signal }) : skipToken,
+    staleTime: 2 * 60_000,
   });
 }
 

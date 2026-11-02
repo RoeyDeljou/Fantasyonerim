@@ -233,6 +233,9 @@ export const en: Messages = {
     empty: 'No teams in the league yet.',
     managerTeam: "{name}'s team",
     openTeam: "View {name}'s team",
+    findMyTeam: 'My team',
+    findMyTeamLabel: 'Jump to my team in the table',
+    myTeamAt: 'Your team is in place {rank}',
   },
   liveAction: {
     revealedAtDeadline: 'Revealed at the deadline',

@@ -237,6 +237,9 @@ export const he = {
     empty: 'אין עדיין קבוצות בליגה.',
     managerTeam: 'הקבוצה של {name}',
     openTeam: 'צפייה בקבוצה של {name}',
+    findMyTeam: 'הקבוצה שלי',
+    findMyTeamLabel: 'קפיצה לקבוצה שלי בטבלה',
+    myTeamAt: 'הקבוצה שלך במקום {rank}',
   },
   liveAction: {
     revealedAtDeadline: 'ייחשף בדדליין',

@@ -523,6 +523,53 @@ async function slowApi(page, ms) {
   });
 }
 
+/**
+ * A 150-manager league in pages of 50 (standings + live) built from the demo's first page, with the e2e fan
+ * (DEMO.tripleCaptain) at official rank 114 / live rank 112 when `rank` is set, and GET /v1/league/position
+ * answering `{ page, rank }`.
+ */
+async function bigLeague(ctx, { page, rank }) {
+  const me = Number(DEMO.tripleCaptain);
+  const synth = async (r, live) => {
+    const res = await r.fetch({
+      url: r
+        .request()
+        .url()
+        .replace(/page=\d+/, 'page=1'),
+    });
+    const body = await res.json();
+    const n = Number(new URL(r.request().url()).searchParams.get('page') ?? '1');
+    const rows = Array.from({ length: 50 }, (_, i) => {
+      const pos = (n - 1) * 50 + i + 1;
+      const src = body.rows[i % body.rows.length];
+      const mine = rank !== null && pos === rank;
+      const entryId = mine ? me : pos === 1 && src.entryId !== me ? src.entryId : 3000000 + pos;
+      const common = {
+        ...src,
+        entryId,
+        entryName: mine ? src.entryName : `Team ${pos}`,
+        managerName: `Manager ${pos}`,
+      };
+      return live
+        ? { ...common, liveRank: mine ? rank - 2 : pos, officialRank: pos }
+        : { ...common, rank: pos, lastRank: pos };
+    });
+    await r.fulfill({ response: res, json: { ...body, page: n, hasNext: n < 3, rows } });
+  };
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/league/standings',
+    (r) => synth(r, false),
+  );
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/league/live',
+    (r) => synth(r, true),
+  );
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/league/position',
+    (r) => r.fulfill(json({ entryId: me, page, rank })),
+  );
+}
+
 async function journeys(browser) {
   let recoveryCode = '';
   const user = await newContext(browser);
@@ -1279,6 +1326,71 @@ async function journeys(browser) {
     const label = (await icons.first().getAttribute('aria-label')) ?? '';
     assert(/הופעל במחזור/.test(label), `chip icon label: "${label}"`);
     await noHorizontalScroll(page, 'live table with chips');
+  });
+
+  // "Find my team": a 150-manager league (50 per page) with this fan on page 3 — official rank 114, live rank 112.
+  await step(
+    'find my team: Table and live table jump to the fan on page 3 (loaded, centred, pulsed, focused)',
+    async () => {
+      const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+      const ctx = await newContext(browser);
+      await ctx.addInitScript((tok) => globalThis.localStorage.setItem('fant.token', tok), token);
+      await bigLeague(ctx, { page: 3, rank: 114 });
+      const p = await ctx.newPage();
+      watch(p, 'find-my-team');
+      for (const [path, rank] of [
+        ['/table/', 114],
+        ['/live/', 112],
+      ]) {
+        await p.goto(`${WEB}${path}`);
+        await p.locator('main ol li button').first().waitFor();
+        assert((await p.locator('main ol > li').count()) === 50, `${path}: only page 1 is loaded at first`);
+        const btn = p.getByTestId('find-my-team');
+        await btn.waitFor();
+        assert((await btn.textContent())?.includes('הקבוצה שלי'), `${path}: button label`);
+        await noHorizontalScroll(p, `${path} with the my-team button`);
+        await btn.click();
+        const row = p.locator(`main li[data-entry="${DEMO.tripleCaptain}"]`);
+        await row.waitFor();
+        await p.waitForFunction((sel) => {
+          const r = document.querySelector(sel)?.getBoundingClientRect();
+          return !!r && r.top >= 0 && r.bottom <= globalThis.innerHeight;
+        }, `main li[data-entry="${DEMO.tripleCaptain}"]`);
+        assert((await p.locator('main ol > li').count()) === 150, `${path}: pages 2 and 3 were loaded`);
+        assert(/\brow-pulse\b/.test((await row.getAttribute('class')) ?? ''), `${path}: the row pulses`);
+        assert(
+          await row.evaluate((el) => el.contains(document.activeElement)),
+          `${path}: focus moved to the row`,
+        );
+        await p.getByTestId('find-my-team-status').getByText(`הקבוצה שלך במקום ${rank}`).waitFor();
+        // The row is on screen → the button goes away; scrolled back to the top → it's back.
+        await btn.waitFor({ state: 'detached' });
+        await p.evaluate(() => globalThis.scrollTo(0, 0));
+        await btn.waitFor();
+      }
+      await ctx.close();
+    },
+  );
+
+  await step('find my team: no button when the fan is not in the league (both tables)', async () => {
+    const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+    const ctx = await newContext(browser);
+    await ctx.addInitScript((tok) => globalThis.localStorage.setItem('fant.token', tok), token);
+    await bigLeague(ctx, { page: null, rank: null });
+    const p = await ctx.newPage();
+    watch(p, 'find-my-team-out');
+    for (const path of ['/table/', '/live/']) {
+      let asked = false;
+      p.on('request', (r) => {
+        if (r.url().startsWith(`${API}/v1/league/position`)) asked = true;
+      });
+      await p.goto(`${WEB}${path}`);
+      await p.locator('main ol li button').first().waitFor();
+      await waitUntil(() => asked, `${path}: position requested`);
+      await sleep(800);
+      assert((await p.getByTestId('find-my-team').count()) === 0, `${path}: no button outside the league`);
+    }
+    await ctx.close();
   });
 
   await step('Captain Battle lists the configured rows plus "my captain"', async () => {
