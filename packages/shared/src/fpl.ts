@@ -248,6 +248,19 @@ export const LeagueStandingsSchema = z.object({
 });
 export type LeagueStandings = z.infer<typeof LeagueStandingsSchema>;
 
+/**
+ * GET /v1/league/position (signed in) — where the viewer's own team sits in the podcast league, so the Table and
+ * Live tables can jump straight to it. `page` is the standings page (50 per page) that contains the entry, also
+ * valid for /v1/league/live (same paging); null when the viewer's team isn't in the league.
+ */
+export const LeaguePositionSchema = z.object({
+  entryId: FplEntryIdSchema.nullable(),
+  page: z.number().int().min(1).nullable(),
+  /** Official league rank (null when not in the league). */
+  rank: z.number().int().min(1).nullable(),
+});
+export type LeaguePosition = z.infer<typeof LeaguePositionSchema>;
+
 export const LiveLeagueRowSchema = z.object({
   liveRank: z.number().int(),
   officialRank: z.number().int(),
