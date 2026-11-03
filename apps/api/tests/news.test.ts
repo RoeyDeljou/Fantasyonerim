@@ -27,6 +27,7 @@ import {
 import type { FakeFplService } from './fakeFpl.js';
 import type { TestClock } from './helpers.js';
 import { buildTestApp, createTestPrisma, migrateTestDb, registerUser, resetDb } from './helpers.js';
+import { mediaKeysWithVariants } from '../src/media/variants.js';
 
 const prisma = createTestPrisma();
 const HOUR = 3_600_000;
@@ -326,7 +327,7 @@ describe('instagram jobs', () => {
     expect(media.deleted).toEqual([]);
     clock.advance(18 * HOUR);
     await app.jobs.run('cleanup', { force: true });
-    expect(media.deleted).toEqual(['instagram/st/0.jpg']);
+    expect(media.deleted).toEqual(mediaKeysWithVariants('instagram/st/0.jpg'));
     expect((await prisma.newsMedia.findFirstOrThrow()).storageKey).toBeNull();
   });
 
@@ -381,6 +382,7 @@ describe('failures, leases and the cron tick', () => {
       'gameweek_summary',
       'live_alerts',
       'cleanup',
+      'image_variants',
     ]);
     expect(await prisma.newsItem.count({ where: { source: 'instagram_post' } })).toBe(1);
     const rss = await integration('podcast_rss');
@@ -420,7 +422,7 @@ describe('failures, leases and the cron tick', () => {
   it('runs a job only when due; the tick reports what ran', async () => {
     const tick = () =>
       app.inject({ method: 'POST', url: '/internal/jobs/tick', headers: { 'x-cron-secret': CRON } });
-    expect((await tick()).json().ran).toHaveLength(9);
+    expect((await tick()).json().ran).toHaveLength(10);
     expect((await tick()).json().ran).toEqual([]);
     clock.advance(5 * 60_000);
     expect((await tick()).json().ran).toEqual([

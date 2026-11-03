@@ -10,6 +10,7 @@ import { getSettings } from '../settings.js';
 import { HOUR, MINUTE, type Job, type JobRunContext } from './types.js';
 import { purgeDeletedPostImages } from '../community/moderation.js';
 import { purgePendingMediaDeletes } from '../media/pending.js';
+import { deleteWithVariants } from '../media/variants.js';
 
 /** A reminder that is due but more than this late (host was asleep) is dropped, not sent late. */
 export const REMINDER_MAX_LATENESS_MS = 30 * MINUTE;
@@ -188,11 +189,11 @@ export const cleanupJob: Job = {
     let deleted = 0;
     for (const m of old) {
       try {
-        if (m.storageKey !== null) await app.media.delete(m.storageKey);
-        if (m.posterKey !== null) await app.media.delete(m.posterKey);
+        if (m.storageKey !== null) await deleteWithVariants(app.media, m.storageKey);
+        if (m.posterKey !== null) await deleteWithVariants(app.media, m.posterKey);
         await app.prisma.newsMedia.update({
           where: { id: m.id },
-          data: { storageKey: null, posterKey: null },
+          data: { storageKey: null, posterKey: null, variants: [] },
         });
         deleted += 1;
       } catch (err) {
@@ -227,7 +228,7 @@ async function deleteUnusedUploads(app: AppContext, now: Date): Promise<number> 
     const claimed = await app.prisma.upload.deleteMany({ where: { id: upload.id, usedAt: null } });
     if (claimed.count === 0) continue;
     // A failed file delete leaves an orphaned object but never an unusable row.
-    await app.media.delete(upload.storageKey).catch(() => undefined);
+    await deleteWithVariants(app.media, upload.storageKey).catch(() => undefined);
     count += 1;
   }
   return count;

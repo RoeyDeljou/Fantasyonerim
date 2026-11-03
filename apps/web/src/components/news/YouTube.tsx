@@ -37,6 +37,8 @@ export function YouTubePlayer({
   playerKey,
   videoId,
   thumbnail,
+  srcSet,
+  sizes,
   title,
   shape,
 }: {
@@ -44,6 +46,9 @@ export function YouTubePlayer({
   playerKey: string;
   videoId: string;
   thumbnail: string;
+  /** Smaller copies of the thumbnail (`srcSetOf`) and the slot's `sizes`. */
+  srcSet?: string | undefined;
+  sizes?: string | undefined;
   title: string;
   shape: 'short' | 'video';
 }) {
@@ -77,7 +82,7 @@ export function YouTubePlayer({
       data-testid="youtube-player"
       data-shape={shape}
     >
-      <MediaImage src={thumbnail} alt="" className="size-full object-cover" />
+      <MediaImage src={thumbnail} srcSet={srcSet} sizes={sizes} alt="" className="size-full object-cover" />
       <span className="absolute inset-0 flex items-center justify-center">
         <span className="flex size-14 items-center justify-center rounded-full bg-media-scrim text-on-media backdrop-blur-sm transition-transform group-active:scale-95">
           <PlayIcon size={26} />

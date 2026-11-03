@@ -8,6 +8,9 @@ import { WARMUP_SCRIPT } from '@/lib/warmupScript';
 import { EARLY_FETCH_SCRIPT } from '@/lib/earlyFetch';
 import { THEME_META_COLORS } from './theme-meta';
 
+/** The API is another origin: open its connection (DNS + TLS) while the HTML is still parsing. */
+const API_ORIGIN = new URL(process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000').origin;
+
 export const metadata: Metadata = {
   title: { default: 'Fantasyonerim · פנטזיונרים', template: '%s · Fantasyonerim' },
   description: 'האפליקציה הרשמית של פנטזיונרים — הפודקאסט הישראלי לפנטזי פרמייר ליג',
@@ -39,6 +42,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     // data-build: the deploy this page belongs to (compared with /version.json — src/lib/updates.ts).
     <html lang="he" dir="rtl" data-build={process.env.NEXT_PUBLIC_BUILD_ID} suppressHydrationWarning>
       <head>
+        {/* anonymous: the API calls carry a bearer header, never cookies — the same connection pool. */}
+        <link rel="preconnect" href={API_ORIGIN} crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href={API_ORIGIN} />
         {/* First: start waking the (possibly sleeping) API before anything else loads. */}
         <script dangerouslySetInnerHTML={{ __html: WARMUP_SCRIPT }} />
         {/* Then the tab's own first requests, so they overlap the bundle download (lib/earlyFetch.ts). */}

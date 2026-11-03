@@ -2196,6 +2196,58 @@ async function journeys(browser) {
     assert(broadcastNewsUrl.includes('/news/?item='), 'news deep link');
   });
 
+  await step(
+    'a live update with a photo shows it on its News card; the cold-start preload is that very image, fetched once',
+    async () => {
+      const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+      const ctx = await newContext(browser);
+      await ctx.addInitScript((tok) => globalThis.localStorage.setItem('fant.token', tok), token);
+      const p = await ctx.newPage();
+      watch(p, 'live-update-photo');
+      const mediaLoads = [];
+      p.on('request', (r) => {
+        if (r.resourceType() === 'image' && new URL(r.url()).pathname.startsWith('/media/'))
+          mediaLoads.push(r.url());
+      });
+      await p.goto(`${WEB}/news/`);
+      const card = p.locator('[data-testid=news-card]', { hasText: BROADCAST_TEXT }).first();
+      await card.waitFor();
+      // It is the newest item: the first card of the feed, so its photo is the screen's LCP.
+      assert(
+        (await p.locator('[data-testid=news-card]').first().textContent())?.includes(BROADCAST_TEXT),
+        'the live update is the first card',
+      );
+      const img = card.locator('img[src*="/media/"]').first();
+      await img.waitFor();
+      await p.waitForFunction((el) => el.complete && el.naturalWidth > 0, await img.elementHandle());
+      const { currentSrc, priority } = await img.evaluate((el) => ({
+        currentSrc: el.currentSrc,
+        priority: el.getAttribute('fetchpriority'),
+      }));
+      assert(priority === 'high', `first card photo fetchpriority: ${priority}`);
+      const preloads = await p.evaluate(() =>
+        [...document.querySelectorAll('link[rel=preload][as=image]')]
+          // Next's own preload of the header logo is static; the feed preload is the one for API media.
+          .filter((l) => new URL(l.href).pathname.startsWith('/media/'))
+          .map((l) => ({ href: l.href, srcset: l.getAttribute('imagesrcset') ?? '' })),
+      );
+      assert(preloads.length === 1, `one media preload (got ${preloads.length})`);
+      const candidates = [
+        preloads[0].href,
+        ...preloads[0].srcset.split(',').map((c) => c.trim().split(' ')[0]),
+      ];
+      assert(
+        candidates.includes(currentSrc),
+        `preloaded ${JSON.stringify(preloads[0])}, shown ${currentSrc}`,
+      );
+      await sleep(500);
+      assert(mediaLoads.length === 1, `the photo is downloaded once (got ${mediaLoads.join(', ')})`);
+      assert(mediaLoads[0] === currentSrc, `downloaded ${mediaLoads[0]}, shown ${currentSrc}`);
+      await noHorizontalScroll(p, 'news with a live-update photo');
+      await ctx.close();
+    },
+  );
+
   const NEW_PASSWORD = 'e2e-new-admin-password';
   await step('admin password: validation, wrong current password, then a successful change', async () => {
     await admin.goto(`${WEB}/admin/?view=account`);

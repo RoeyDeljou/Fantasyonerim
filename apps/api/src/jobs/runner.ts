@@ -16,6 +16,8 @@ const NEWS_JOBS: ReadonlySet<JobName> = new Set<JobName>([
   'instagram_stories',
   'x',
   'cleanup',
+  // Adds `variants` to News media.
+  'image_variants',
 ]);
 const EPOCH = new Date(0);
 const StateSchema = z.record(z.string(), z.unknown());

@@ -14,6 +14,7 @@ import type {
   User,
 } from '@prisma/client';
 import type { MediaUrlMapper } from '../media/publicUrl.js';
+import { withVariants } from '../news/serialize.js';
 import { serialize } from '../validate.js';
 
 /** The author columns a post/comment shows (never the whole User row). */
@@ -24,7 +25,12 @@ const AUTHOR_SELECT = {
   teamName: true,
   role: true,
 } as const satisfies Prisma.UserSelect;
-const IMAGE_SELECT = { url: true, width: true, height: true } as const satisfies Prisma.UploadSelect;
+const IMAGE_SELECT = {
+  url: true,
+  width: true,
+  height: true,
+  variants: true,
+} as const satisfies Prisma.UploadSelect;
 
 /** Every post query includes these relations. */
 export const POST_INCLUDE = {
@@ -68,7 +74,12 @@ export function toPost(
       image:
         row.image === null
           ? null
-          : { url: mediaUrl(row.image.url), width: row.image.width, height: row.image.height },
+          : {
+              url: mediaUrl(row.image.url),
+              width: row.image.width,
+              height: row.image.height,
+              ...withVariants(row.image.variants, mediaUrl),
+            },
       team: team === null || !team.success ? null : team.data,
       likeCount: row.likeCount,
       commentCount: row.commentCount,

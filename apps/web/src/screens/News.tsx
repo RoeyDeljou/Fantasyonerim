@@ -19,10 +19,9 @@ import type { PushError, PushState } from '@/lib/push';
 import { useMe, useNewsFeed, useNewsFilters, useNewsHead, useNewsItem } from '@/lib/queries';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { REFRESH_SCOPES } from '@/lib/refresh';
-import { AppShell, ShellSkeleton } from '@/components/AppShell';
+import { AppShell, NewsShellSkeleton } from '@/components/AppShell';
 import { BottomSheet } from '@/components/BottomSheet';
 import { IosInstallSteps } from '@/components/InstallGuide';
-import { pushErrorText } from '@/components/NotificationsCard';
 import { ArrowUpIcon, BellIcon, CloseIcon, MicIcon, RefreshIcon } from '@/components/icons';
 import { FilterChips } from '@/components/news/FilterChips';
 import { NewsCard, NewsCardSkeleton } from '@/components/news/NewsCards';
@@ -42,8 +41,12 @@ import {
 export function NewsScreen() {
   const { t } = useI18n();
   return (
-    <AppShell title={t.news.title} refresh={REFRESH_SCOPES.news}>
-      <Suspense fallback={<ShellSkeleton />}>
+    <AppShell
+      title={t.news.title}
+      refresh={REFRESH_SCOPES.news}
+      skeleton={<NewsShellSkeleton card={<NewsCardSkeleton />} />}
+    >
+      <Suspense fallback={<NewsShellSkeleton card={<NewsCardSkeleton />} />}>
         <NewsInner />
       </Suspense>
     </AppShell>
@@ -183,7 +186,7 @@ function PushPrompt() {
       >
         <CloseIcon size={18} />
       </IconButton>
-      {error && <InlineError>{pushErrorText(t, error)}</InlineError>}
+      {error && <InlineError>{error === 'unconfigured' ? t.push.unconfigured : t.push.failed}</InlineError>}
       <div className="flex gap-2">
         {state === 'needs-install' ? (
           <Button className="flex-1" onClick={() => setGuide(true)}>
@@ -239,7 +242,9 @@ function Feed({
   }, [feed.data, skipId]);
   // A new page (or a poll) renders as an interruptible background update: the rows appended at the end never
   // block a scroll frame (they used to be one 150–200 ms task on a mid-range phone).
-  const shown = useDeferredValue(items);
+  const deferred = useDeferredValue(items);
+  // The first rows render right away (they are the screen's content and LCP); only later changes are deferred.
+  const shown = deferred.length === 0 ? items : deferred;
 
   // Newer items on the server than the top of our list → offer the pill.
   const newest = feed.data?.pages[0]?.items[0];

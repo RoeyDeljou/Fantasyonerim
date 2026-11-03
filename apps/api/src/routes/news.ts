@@ -22,7 +22,7 @@ import { cleanQuery } from './query.js';
 
 const CursorSchema = z.union([
   // [iso, id, filter | null] — the filter the cursor was issued for.
-  z.tuple([z.string().datetime({ offset: true }), z.string().min(1).max(100), NewsFilterSchema.nullable()]),
+  z.tuple([z.string().datetime({ offset: true }), z.string().min(1).max(100), z.nullable(NewsFilterSchema)]),
   // [iso, id] — cursors issued before filters existed: the unfiltered feed.
   z.tuple([z.string().datetime({ offset: true }), z.string().min(1).max(100)]),
 ]);
@@ -56,7 +56,15 @@ const ParamsSchema = z.object({ id: NewsItemIdSchema });
 const NEWS_MEDIA_INCLUDE = {
   media: {
     orderBy: { order: 'asc' },
-    select: { order: true, kind: true, url: true, posterUrl: true, width: true, height: true },
+    select: {
+      order: true,
+      kind: true,
+      url: true,
+      posterUrl: true,
+      width: true,
+      height: true,
+      variants: true,
+    },
   },
 } as const satisfies Prisma.NewsItemInclude;
 

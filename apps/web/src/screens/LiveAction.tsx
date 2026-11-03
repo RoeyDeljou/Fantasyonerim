@@ -23,7 +23,7 @@ import type { InfiniteData } from '@tanstack/react-query';
 import { FindMyTeam, loadPagesUntil } from '@/components/team/FindMyTeam';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { REFRESH_SCOPES } from '@/lib/refresh';
-import { AppShell, ShellSkeleton } from '@/components/AppShell';
+import { AppShell, TableShellSkeleton } from '@/components/AppShell';
 import { ImageWithFallback, fplImage } from '@/components/FplImages';
 import { ClockIcon, ShirtIcon, TableIcon } from '@/components/icons';
 import { FixtureSheet, ManagerSheet } from '@/components/lazySheets';
@@ -52,8 +52,8 @@ type View = 'table' | 'captains';
 export function LiveActionScreen() {
   const { t } = useI18n();
   return (
-    <AppShell title={t.liveAction.title} refresh={REFRESH_SCOPES.live}>
-      <Suspense fallback={<ShellSkeleton />}>
+    <AppShell title={t.liveAction.title} refresh={REFRESH_SCOPES.live} skeleton={<TableShellSkeleton tabs />}>
+      <Suspense fallback={<TableShellSkeleton tabs />}>
         <LiveActionInner />
       </Suspense>
     </AppShell>

@@ -33,6 +33,7 @@ import {
 import { Badge, Button, IconButton, InlineError, Spinner, cx, errorMessage } from '@/components/ui';
 import { MediaCarousel, MediaGrid } from './Media';
 import { ExpandableText, ExternalButton, MediaImage, RelativeTime, useNow } from './parts';
+import { MEDIA_LAYOUT, firstImageOf } from '@/lib/images';
 import { YouTubePlayer } from './YouTube';
 import { SourceBadge, SourceLabel, sourceKind, sourceLabel } from './SourceBadge';
 
@@ -182,6 +183,10 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
   const headerShowsDate = now === 0 || relativeParts(item.publishedAt, now) === null;
   const showDuration = duration !== null && duration > 0;
 
+  // The same candidates the inline LCP preload uses (lib/images.ts `firstImageOf`).
+  const first = firstImageOf(item, MEDIA_LAYOUT);
+  const coverSrcSet = first && first.src === cover ? (first.srcSet ?? undefined) : undefined;
+  const coverSizes = first && first.src === cover ? (first.sizes ?? undefined) : undefined;
   const coverEl = wide ? (
     <div
       className="relative w-full overflow-hidden rounded-2xl bg-surface-2 shadow-card"
@@ -189,7 +194,13 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
       data-testid="episode-cover"
       data-shape="wide"
     >
-      <MediaImage src={cover ?? ''} alt={t.news.cover} className="size-full object-contain" />
+      <MediaImage
+        src={cover ?? ''}
+        srcSet={coverSrcSet}
+        sizes={coverSizes}
+        alt={t.news.cover}
+        className="size-full object-contain"
+      />
     </div>
   ) : (
     <div
@@ -200,6 +211,8 @@ function PodcastCard({ item, isAdmin, highlighted }: CardProps) {
       {cover ? (
         <MediaImage
           src={cover}
+          srcSet={coverSrcSet}
+          sizes={coverSizes}
           alt={t.news.cover}
           // A square box: square covers fill it; anything else is contained, never cropped.
           className={cx(
@@ -376,7 +389,13 @@ function InstagramCard({ item, isAdmin, highlighted }: CardProps) {
   return (
     <CardFrame item={item} highlighted={highlighted}>
       <CardHeader item={item} isAdmin={isAdmin} />
-      {item.media.length > 0 && <MediaCarousel media={item.media} alt={item.text?.slice(0, 120) ?? ''} />}
+      {item.media.length > 0 && (
+        <MediaCarousel
+          media={item.media}
+          alt={item.text?.slice(0, 120) ?? ''}
+          first={firstImageOf(item, MEDIA_LAYOUT)}
+        />
+      )}
       {item.text && <ExpandableText text={item.text} platform="instagram" lines={3} />}
       {item.links.instagram && (
         <ExternalButton href={item.links.instagram} icon={<CameraIcon size={18} />} tone="outline">
@@ -395,7 +414,13 @@ function XCard({ item, isAdmin, highlighted }: CardProps) {
     <CardFrame item={item} highlighted={highlighted}>
       <CardHeader item={item} isAdmin={isAdmin} />
       {item.text && <ExpandableText text={item.text} platform="x" lines={6} />}
-      {item.media.length > 0 && <MediaGrid media={item.media} alt={item.text?.slice(0, 120) ?? ''} />}
+      {item.media.length > 0 && (
+        <MediaGrid
+          media={item.media}
+          alt={item.text?.slice(0, 120) ?? ''}
+          first={firstImageOf(item, MEDIA_LAYOUT)}
+        />
+      )}
       {item.links.x && (
         <ExternalButton href={item.links.x} icon={<XBrandIcon size={16} />} tone="outline">
           {t.news.viewOnX}
@@ -440,6 +465,14 @@ function AdminUpdateCard({ item, isAdmin, highlighted }: CardProps) {
           {item.text && <ExpandableText text={item.text} platform="none" lines={6} />}
         </div>
       </div>
+      {/* A live update's photo (e.g. a match moment), laid out like an X post's media. */}
+      {item.media.length > 0 && (
+        <MediaGrid
+          media={item.media}
+          alt={item.title ?? item.text?.slice(0, 120) ?? ''}
+          first={firstImageOf(item, MEDIA_LAYOUT)}
+        />
+      )}
       {links.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {links.map((l) => (
@@ -468,6 +501,9 @@ function YouTubeCard({ item, isAdmin, highlighted }: CardProps) {
   const thumbnail =
     (media?.kind === 'image' ? media.url : (media?.posterUrl ?? null)) ??
     (id ? youtubeThumbnailUrl(id) : null);
+  const first = firstImageOf(item, MEDIA_LAYOUT);
+  const thumbSrcSet = first && first.src === thumbnail ? (first.srcSet ?? undefined) : undefined;
+  const thumbSizes = first && first.src === thumbnail ? (first.sizes ?? undefined) : undefined;
   const title = item.title ?? '';
   const now = useNow();
   const headerShowsDate = now === 0 || relativeParts(item.publishedAt, now) === null;
@@ -475,7 +511,15 @@ function YouTubeCard({ item, isAdmin, highlighted }: CardProps) {
     <CardFrame item={item} highlighted={highlighted}>
       <CardHeader item={item} isAdmin={isAdmin} />
       {id && thumbnail ? (
-        <YouTubePlayer playerKey={item.id} videoId={id} thumbnail={thumbnail} title={title} shape={shape} />
+        <YouTubePlayer
+          playerKey={item.id}
+          videoId={id}
+          thumbnail={thumbnail}
+          srcSet={thumbSrcSet}
+          sizes={thumbSizes}
+          title={title}
+          shape={shape}
+        />
       ) : (
         thumbnail && (
           <div
@@ -484,7 +528,13 @@ function YouTubeCard({ item, isAdmin, highlighted }: CardProps) {
               shape === 'short' ? 'mx-auto aspect-[9/16] w-full max-w-72' : 'aspect-video w-full',
             )}
           >
-            <MediaImage src={thumbnail} alt="" className="size-full object-cover" />
+            <MediaImage
+              src={thumbnail}
+              srcSet={thumbSrcSet}
+              sizes={thumbSizes}
+              alt=""
+              className="size-full object-cover"
+            />
           </div>
         )
       )}

@@ -9,7 +9,7 @@ import { markStorySeen } from '@/lib/localState';
 import { CameraIcon, CloseIcon, MuteIcon, VolumeIcon } from '@/components/icons';
 import { Logo } from '@/components/AppShell';
 import { Spinner, cx } from '@/components/ui';
-import { RelativeTime } from './parts';
+import { RelativeTime, srcSetOf } from './parts';
 import { SourceBadge } from './SourceBadge';
 
 const IMAGE_MS = 5000;
@@ -251,6 +251,8 @@ export function StoryViewer({
             <img
               key={story.id}
               src={media.url}
+              srcSet={srcSetOf(media.url, media.width, media.variants)}
+              sizes="100vw"
               alt={story.text ?? ''}
               draggable={false}
               className={cx('size-full', fit)}

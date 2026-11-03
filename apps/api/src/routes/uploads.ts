@@ -6,7 +6,15 @@ import { requireWriter } from '../community/guard.js';
 import { MAX_UPLOAD_BYTES, processUpload } from '../community/images.js';
 import type { AppContext } from '../context.js';
 import { ApiHttpError, badRequest } from '../errors.js';
+import { storeVariants, variantsForClient, type StoredVariant } from '../media/variants.js';
 import { serialize } from '../validate.js';
+
+/**
+ * The smaller copies are included in the upload response only when they are ready within this budget; otherwise
+ * the response goes out and they finish in the background (the post reads them from the Upload row). On a 0.1-CPU
+ * host a phone photo's variants take ~2 s, so in production they practically always finish after the response.
+ */
+export const UPLOAD_VARIANTS_BUDGET_MS = 300;
 
 /** Unused uploads (never attached to a post) are deleted by the hourly cleanup job after this. */
 export const UNUSED_UPLOAD_TTL_MS = 24 * 60 * 60 * 1000;
@@ -67,11 +75,42 @@ export function uploadRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, 
       await ctx.media.delete(storageKey).catch(() => undefined);
       throw err;
     }
+    // Smaller copies: one image at a time process-wide (media/variants.ts), saved on the row when done.
+    const started = performance.now();
+    const variants = storeVariants(ctx.media, storageKey, image.bytes)
+      .then(async (stored) => {
+        await prisma.upload.updateMany({ where: { id: uploadId }, data: { variants: stored } });
+        request.log.info(
+          { uploadId, variants: stored.length, ms: Math.round(performance.now() - started) },
+          'upload variants stored',
+        );
+        return stored;
+      })
+      .catch((err: unknown) => {
+        request.log.warn({ err, uploadId }, 'upload variants failed');
+        return null;
+      });
+    const ready = await Promise.race([
+      variants,
+      new Promise<'later'>((resolve) =>
+        setTimeout(() => resolve('later'), UPLOAD_VARIANTS_BUDGET_MS).unref(),
+      ),
+    ]);
+    const done: StoredVariant[] | null = ready === 'later' ? null : ready;
     return reply.code(201).send(
       serialize(UploadResponseSchema, {
         uploadId,
-        image: { url: ctx.mediaUrl(url), width: image.width, height: image.height },
+        image: {
+          url: ctx.mediaUrl(url),
+          width: image.width,
+          height: image.height,
+          ...(done === null ? {} : optionalVariants(variantsForClient(done, ctx.mediaUrl))),
+        },
       }),
     );
   });
+}
+
+function optionalVariants(v: { url: string; width: number }[] | undefined) {
+  return v === undefined ? {} : { variants: v };
 }

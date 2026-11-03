@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import * as z from 'zod/mini';
 import {
   FplEntryIdSchema,
   FplLeagueIdSchema,
@@ -40,28 +40,28 @@ export type Locale = z.infer<typeof LocaleSchema>;
 export const RoleSchema = z.enum(['user', 'admin']);
 export type Role = z.infer<typeof RoleSchema>;
 
-export const DisplayNameSchema = z
-  .string()
-  .trim()
-  .min(2)
-  .max(40)
-  .regex(/^[^<>]*$/, 'no angle brackets')
+export const DisplayNameSchema = z.string().check(
+  z.trim(),
+  z.minLength(2),
+  z.maxLength(40),
+  z.regex(/^[^<>]*$/, 'no angle brackets'),
   // Bidi overrides/isolates (U+202A–202E, U+2066–2069) can make a name render reversed or spoof another.
-  .regex(/^[^\u202A-\u202E\u2066-\u2069]*$/, 'no direction-control characters');
+  z.regex(/^[^\u202A-\u202E\u2066-\u2069]*$/, 'no direction-control characters'),
+);
 
 export const MeSchema = z.object({
   id: UserIdSchema,
   /** Output: any stored name (input rules may tighten over time); inputs use DisplayNameSchema. */
-  name: z.string().min(1).max(80),
+  name: z.string().check(z.minLength(1), z.maxLength(80)),
   /** Null only for admin-only accounts that never linked an FPL team. */
-  entryId: FplEntryIdSchema.nullable(),
+  entryId: z.nullable(FplEntryIdSchema),
   /** FPL team name, cached at registration and refreshed in the background. */
-  teamName: z.string().nullable(),
+  teamName: z.nullable(z.string()),
   role: RoleSchema,
   locale: LocaleSchema,
   /** False while banned: the user can read but not post, comment, like, report or upload. */
   canPost: z.boolean(),
-  createdAt: z.string().datetime({ offset: true }),
+  createdAt: z.string().check(z.iso.datetime({ offset: true })),
 });
 export type Me = z.infer<typeof MeSchema>;
 
@@ -69,9 +69,9 @@ export type Me = z.infer<typeof MeSchema>;
 export const RegisterBodySchema = z.object({
   name: DisplayNameSchema,
   entryId: FplEntryIdSchema,
-  locale: LocaleSchema.optional(),
+  locale: z.optional(LocaleSchema),
   /** From an admin invite link (`/onboarding/?invite=<token>`): the new account is created as an admin. */
-  inviteToken: z.string().min(20).max(200).optional(),
+  inviteToken: z.optional(z.string().check(z.minLength(20), z.maxLength(200))),
 });
 export type RegisterBody = z.infer<typeof RegisterBodySchema>;
 
@@ -81,27 +81,23 @@ export type RegisterBody = z.infer<typeof RegisterBodySchema>;
  */
 export const RecoverBodySchema = z.object({
   entryId: FplEntryIdSchema,
-  recoveryCode: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .regex(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/),
+  recoveryCode: z.string().check(z.trim(), z.toUpperCase(), z.regex(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/)),
 });
 export type RecoverBody = z.infer<typeof RecoverBodySchema>;
 
 export const AdminLoginBodySchema = z.object({
-  username: z.string().trim().min(3).max(40),
-  password: z.string().min(8).max(200),
+  username: z.string().check(z.trim(), z.minLength(3), z.maxLength(40)),
+  password: z.string().check(z.minLength(8), z.maxLength(200)),
 });
 export type AdminLoginBody = z.infer<typeof AdminLoginBodySchema>;
 
 /** Returned by register / recover / admin-login. Token is long-lived (sliding 1 year). */
-export const AuthResponseSchema = z.object({ token: z.string().min(20), user: MeSchema });
+export const AuthResponseSchema = z.object({ token: z.string().check(z.minLength(20)), user: MeSchema });
 export type AuthResponse = z.infer<typeof AuthResponseSchema>;
 
 export const UpdateMeBodySchema = z.object({
-  name: DisplayNameSchema.optional(),
-  locale: LocaleSchema.optional(),
+  name: z.optional(DisplayNameSchema),
+  locale: z.optional(LocaleSchema),
 });
 export type UpdateMeBody = z.infer<typeof UpdateMeBodySchema>;
 
@@ -110,23 +106,23 @@ export type RecoveryCodeResponse = z.infer<typeof RecoveryCodeResponseSchema>;
 
 // ---------- app config (public) ----------
 /** Only https links are accepted for anything we render as a link (blocks javascript:, http:, data:). */
-export const HttpsUrlSchema = z
-  .string()
-  .trim()
-  .url()
-  .max(500)
-  .refine((v) => v.startsWith('https://'), 'must be an https:// link');
+export const HttpsUrlSchema = z.string().check(
+  z.trim(),
+  z.url(),
+  z.maxLength(500),
+  z.refine((v) => v.startsWith('https://'), 'must be an https:// link'),
+);
 
 /** GET /v1/config — public, unauthenticated; what the client needs to render tabs. */
 export const PublicConfigSchema = z.object({
-  league: z.object({ id: FplLeagueIdSchema, name: z.string().nullable() }).nullable(),
-  captainBattleEvent: GameweekSchema.nullable(),
+  league: z.nullable(z.object({ id: FplLeagueIdSchema, name: z.nullable(z.string()) })),
+  captainBattleEvent: z.nullable(GameweekSchema),
   socials: z.object({
-    spotifyUrl: HttpsUrlSchema.nullable(),
-    appleUrl: HttpsUrlSchema.nullable(),
-    instagramUrl: HttpsUrlSchema.nullable(),
-    xUrl: HttpsUrlSchema.nullable(),
-    whatsappUrl: HttpsUrlSchema.nullable(),
+    spotifyUrl: z.nullable(HttpsUrlSchema),
+    appleUrl: z.nullable(HttpsUrlSchema),
+    instagramUrl: z.nullable(HttpsUrlSchema),
+    xUrl: z.nullable(HttpsUrlSchema),
+    whatsappUrl: z.nullable(HttpsUrlSchema),
   }),
 });
 export type PublicConfig = z.infer<typeof PublicConfigSchema>;
@@ -136,7 +132,7 @@ export const CaptainBattleEntryKindSchema = z.enum(['community', 'custom']);
 
 const CaptainBattleEntryBase = {
   /** e.g. "הקפטן של דור", "קפטן הקהילה". Free text chosen by the admin. */
-  label: z.string().trim().min(1).max(40),
+  label: z.string().check(z.trim(), z.minLength(1), z.maxLength(40)),
   /** 'community' rows get the community highlight; everything else is 'custom'. */
   kind: CaptainBattleEntryKindSchema,
 };
@@ -154,7 +150,7 @@ export type CaptainBattleEntryInput = z.infer<typeof CaptainBattleEntryInputSche
 /** PUT /v1/admin/captain-battle */
 export const CaptainBattleConfigSchema = z.object({
   event: GameweekSchema,
-  entries: z.array(CaptainBattleEntryInputSchema).max(20),
+  entries: z.array(CaptainBattleEntryInputSchema).check(z.maxLength(20)),
 });
 export type CaptainBattleConfig = z.infer<typeof CaptainBattleConfigSchema>;
 
@@ -165,46 +161,46 @@ export const CaptainBattleRowSchema = z.object({
   kind: z.enum(['community', 'custom', 'mine']),
   source: z.enum(['player', 'entry', 'mine']),
   /** Set for entry-linked rows and the "mine" row. */
-  entryId: FplEntryIdSchema.nullable(),
+  entryId: z.nullable(FplEntryIdSchema),
   /**
    * Null while unknown: an entry-linked row before the GW deadline (FPL hides picks until then) or when that
    * team's picks couldn't be loaded. Such rows sort last and show "revealed at the deadline".
    */
-  playerId: FplPlayerIdSchema.nullable(),
+  playerId: z.nullable(FplPlayerIdSchema),
   /** basePoints × multiplier; 0 while playerId is null. */
-  captainPoints: z.number().int(),
+  captainPoints: z.number().check(z.int()),
   /** 2 normally, 3 for a linked team / viewer on Triple Captain; 2 for hand-picked players. */
-  multiplier: z.number().int().min(1).max(3),
-  live: PlayerLiveSchema.nullable(),
+  multiplier: z.number().check(z.int(), z.gte(1), z.lte(3)),
+  live: z.nullable(PlayerLiveSchema),
 });
 export type CaptainBattleRow = z.infer<typeof CaptainBattleRowSchema>;
 
 /** GET /v1/captain-battle — rows sorted by captainPoints desc. */
 export const CaptainBattleSchema = z.object({
-  event: GameweekSchema.nullable(),
+  event: z.nullable(GameweekSchema),
   rows: z.array(CaptainBattleRowSchema),
-  updatedAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().check(z.iso.datetime({ offset: true })),
 });
 export type CaptainBattle = z.infer<typeof CaptainBattleSchema>;
 
 // ---------- admin ----------
 /** GET/PUT /v1/admin/settings */
 export const AdminSettingsSchema = z.object({
-  leagueId: FplLeagueIdSchema.nullable(),
+  leagueId: z.nullable(FplLeagueIdSchema),
   /** Read-only: resolved from FPL when leagueId is saved. Ignored on PUT. */
-  leagueName: z.string().nullable().optional(),
+  leagueName: z.optional(z.nullable(z.string())),
   /** Minutes before each FPL deadline to send a reminder push, e.g. [1440, 120]. */
-  deadlineReminderMinutes: z.array(z.number().int().min(5).max(4320)).max(5),
+  deadlineReminderMinutes: z.array(z.number().check(z.int(), z.gte(5), z.lte(4320))).check(z.maxLength(5)),
   socials: PublicConfigSchema.shape.socials,
 });
 export type AdminSettings = z.infer<typeof AdminSettingsSchema>;
 
-export const CreateAdminBodySchema = AdminLoginBodySchema.extend({ name: DisplayNameSchema });
+export const CreateAdminBodySchema = z.extend(AdminLoginBodySchema, { name: DisplayNameSchema });
 export type CreateAdminBody = z.infer<typeof CreateAdminBodySchema>;
 /** username is null for admins who joined via an invite link (they sign in with their app account). */
 export const AdminAccountSchema = z.object({
   userId: UserIdSchema,
-  username: z.string().nullable(),
+  username: z.nullable(z.string()),
   name: z.string(),
 });
 export type AdminAccount = z.infer<typeof AdminAccountSchema>;
@@ -230,21 +226,26 @@ export const AdminInviteSchema = z.object({
   /** Who it's for, e.g. "Dor". */
   label: z.string(),
   createdBy: z.string(),
-  createdAt: z.string().datetime({ offset: true }),
-  expiresAt: z.string().datetime({ offset: true }),
-  usedAt: z.string().datetime({ offset: true }).nullable(),
-  usedByName: z.string().nullable(),
-  revokedAt: z.string().datetime({ offset: true }).nullable(),
+  createdAt: z.string().check(z.iso.datetime({ offset: true })),
+  expiresAt: z.string().check(z.iso.datetime({ offset: true })),
+  usedAt: z.nullable(z.string().check(z.iso.datetime({ offset: true }))),
+  usedByName: z.nullable(z.string()),
+  revokedAt: z.nullable(z.string().check(z.iso.datetime({ offset: true }))),
   status: z.enum(['pending', 'used', 'expired', 'revoked']),
 });
 export type AdminInvite = z.infer<typeof AdminInviteSchema>;
 
 /** POST /v1/admin/invites */
-export const CreateAdminInviteBodySchema = z.object({ label: z.string().trim().min(1).max(40) });
+export const CreateAdminInviteBodySchema = z.object({
+  label: z.string().check(z.trim(), z.minLength(1), z.maxLength(40)),
+});
 export type CreateAdminInviteBody = z.infer<typeof CreateAdminInviteBodySchema>;
 
 /** 201 — `url` = `${WEB_APP_URL}/onboarding/?invite=<token>`; the only time the token is visible. */
-export const AdminInviteCreatedSchema = z.object({ invite: AdminInviteSchema, url: z.string().url() });
+export const AdminInviteCreatedSchema = z.object({
+  invite: AdminInviteSchema,
+  url: z.string().check(z.url()),
+});
 export type AdminInviteCreated = z.infer<typeof AdminInviteCreatedSchema>;
 
 /** GET /v1/admin/invites — newest first. DELETE /v1/admin/invites/:id → 204 (revoke a pending invite). */
@@ -256,10 +257,12 @@ export const AdminInviteListSchema = z.object({ items: z.array(AdminInviteSchema
  */
 export const AdminInvitePreviewSchema = z.object({
   label: z.string(),
-  expiresAt: z.string().datetime({ offset: true }),
+  expiresAt: z.string().check(z.iso.datetime({ offset: true })),
 });
 export type AdminInvitePreview = z.infer<typeof AdminInvitePreviewSchema>;
 
 /** POST /v1/me/admin-invite — an already-registered user redeems an invite; returns the upgraded Me. */
-export const RedeemAdminInviteBodySchema = z.object({ token: z.string().min(20).max(200) });
+export const RedeemAdminInviteBodySchema = z.object({
+  token: z.string().check(z.minLength(20), z.maxLength(200)),
+});
 export type RedeemAdminInviteBody = z.infer<typeof RedeemAdminInviteBodySchema>;

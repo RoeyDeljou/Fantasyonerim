@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import type { AppContext } from '../context.js';
 import { conflict } from '../errors.js';
 import { purgePendingMediaDeletes, recordPendingMediaDeletes } from '../media/pending.js';
+import { mediaKeysWithVariants } from '../media/variants.js';
 
 export const LAST_ADMIN_MESSAGE = "You're the only admin — add another admin first";
 
@@ -52,7 +53,10 @@ export async function deleteAccount(ctx: Pick<AppContext, 'prisma' | 'media' | '
       where: { ownerId: userId },
       select: { storageKey: true, broadcasts: { select: { id: true }, take: 1 } },
     });
-    const fileKeys = uploads.filter((u) => u.broadcasts.length === 0).map((u) => u.storageKey);
+    // The original and its smaller copies (variant keys are derived from the original's key).
+    const fileKeys = uploads
+      .filter((u) => u.broadcasts.length === 0)
+      .flatMap((u) => mediaKeysWithVariants(u.storageKey));
     await recordPendingMediaDeletes(tx, fileKeys, now);
 
     await tx.user.delete({ where: { id: userId } });

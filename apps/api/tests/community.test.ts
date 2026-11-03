@@ -30,6 +30,7 @@ import {
   resetDb,
   type TestClock,
 } from './helpers.js';
+import { mediaKeysWithVariants } from '../src/media/variants.js';
 
 const prisma = createTestPrisma();
 const HOUR = 3_600_000;
@@ -211,10 +212,10 @@ describe('POST /v1/uploads', () => {
     expect(run).toBe('ok');
     const remaining = (await prisma.upload.findMany()).map((u) => u.id).sort();
     expect(remaining).toEqual([img.uploadId, fresh.uploadId].sort());
-    expect(media.deleted).toEqual([`uploads/${alice.user.id}/${stale.uploadId}.webp`]);
+    expect(media.deleted).toEqual(mediaKeysWithVariants(`uploads/${alice.user.id}/${stale.uploadId}.webp`));
     // Still idempotent: a second run deletes nothing more.
     await app.jobs.run(cleanupJob.name, { force: true });
-    expect(media.deleted).toHaveLength(1);
+    expect(media.deleted).toHaveLength(3);
   });
 });
 

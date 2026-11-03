@@ -16,6 +16,9 @@ import { openExternal } from '@/lib/external';
 import type { LinkPlatform } from '@/lib/newsFormat';
 import { cx } from '@/components/ui';
 
+export { SIZES, srcSetOf } from '@/lib/images';
+export type { ImageVariant } from '@/lib/images';
+
 // ---------- a shared, minute-resolution clock for relative times ----------
 
 let now = 0;
@@ -210,10 +213,15 @@ export function MediaImage({
   loading,
   fallback,
   onLoad,
+  srcSet,
+  sizes,
 }: {
   src: string;
   alt: string;
   className?: string;
+  /** From `srcSetOf()`; needs `sizes`. */
+  srcSet?: string | undefined;
+  sizes?: string | undefined;
   /** Default: eager inside <MediaPriority value>, lazy everywhere else. */
   loading?: 'lazy' | 'eager';
   fallback?: ReactNode;
@@ -227,6 +235,8 @@ export function MediaImage({
   return (
     <img
       src={src}
+      srcSet={srcSet}
+      sizes={srcSet ? sizes : undefined}
       alt={alt}
       loading={priority ? 'eager' : (loading ?? 'lazy')}
       fetchPriority={priority ? 'high' : undefined}

@@ -191,6 +191,8 @@ model NewsMedia {
   storageKey String?
   /// MediaStore key of `posterUrl` when re-hosted.
   posterKey  String?
+  /// Smaller WebP copies for srcset: [{ width, url, key }] (media/variants.ts). null = not generated yet.
+  variants   Json?
 
   item NewsItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
@@ -357,6 +359,8 @@ model Upload {
   createdAt   DateTime  @default(now())
   /// Set when attached to a post (an upload can be used once).
   usedAt      DateTime?
+  /// Smaller WebP copies for srcset: [{ width, url, key }] (media/variants.ts). null = not generated yet.
+  variants    Json?
 
   owner      User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   post       CommunityPost?

@@ -3,6 +3,7 @@ import type { NewsLinks } from '@fant/shared';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { downloadMedia } from '../media/download.js';
 import type { MediaStore } from '../media/store.js';
+import { storeVariants, type StoredVariant } from '../media/variants.js';
 import { readLinks, type NewsItemWithMedia } from './serialize.js';
 
 export interface IngestDeps {
@@ -35,6 +36,24 @@ interface MediaRow {
   sourceUrl: string;
   storageKey: string | null;
   posterKey: string | null;
+  /** Re-hosted images: their smaller copies ([] for videos); omitted (NULL) = the backfill job makes them. */
+  variants?: StoredVariant[];
+}
+
+/**
+ * Variants of a freshly re-hosted image (we already hold its bytes: no second download). Ingest runs in jobs only,
+ * never in a request. Best-effort: a failure leaves the row for the backfill job.
+ */
+async function variantsOf(
+  deps: IngestDeps,
+  key: string,
+  bytes: Uint8Array,
+): Promise<StoredVariant[] | undefined> {
+  try {
+    return await storeVariants(deps.media, key, bytes);
+  } catch {
+    return undefined;
+  }
 }
 
 /** `instagram:17890` → `17890` (only key-safe characters). */
@@ -72,6 +91,7 @@ async function rehostMedia(deps: IngestDeps, draft: NewsItemDraft): Promise<Medi
     const file = got.file;
     const storageKey = `${base}/${n}.${file.ext}`;
     const url = await deps.media.put(storageKey, file.bytes, file.contentType);
+    const variants = m.kind === 'image' ? await variantsOf(deps, storageKey, file.bytes) : [];
     let posterUrl: string | null = null;
     let posterKey: string | null = null;
     if (m.posterSourceUrl !== null) {
@@ -89,6 +109,7 @@ async function rehostMedia(deps: IngestDeps, draft: NewsItemDraft): Promise<Medi
       sourceUrl: got.sourceUrl,
       storageKey,
       posterKey,
+      ...(variants === undefined ? {} : { variants }),
     });
   }
   return rows;

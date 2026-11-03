@@ -9,6 +9,7 @@ import { ensureIntegrationRows, seedIntegrationSecrets } from './integrations/st
 import { JobScheduler } from './jobs/runner.js';
 import { mediaUrlConfigFromEnv } from './media/publicUrl.js';
 import { LocalDiskMediaStore, S3MediaStore, type MediaStore } from './media/store.js';
+import { configureSharpForSmallHost } from './media/variants.js';
 import { startRuntimeMonitor } from './perf/runtime.js';
 import { WebPushProvider } from './push/provider.js';
 import { devSecretsKey, parseSecretsKey } from './secrets.js';
@@ -37,6 +38,8 @@ export async function startServer({
   fpl: fplOverride,
   fetch: fetchOverride,
 }: StartServerOptions): Promise<RunningServer> {
+  // One libvips thread, small cache: image work is serialized anyway (media/variants.ts) on a 0.1-CPU host.
+  configureSharpForSmallHost();
   const logger =
     env.NODE_ENV === 'development'
       ? { level: env.LOG_LEVEL, transport: { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss' } } }

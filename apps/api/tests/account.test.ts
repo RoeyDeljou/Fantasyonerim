@@ -15,6 +15,7 @@ import {
   resetDb,
   type TestAppOptions,
 } from './helpers.js';
+import { mediaKeysWithVariants } from '../src/media/variants.js';
 
 const prisma = createTestPrisma();
 
@@ -183,7 +184,8 @@ describe('DELETE /v1/me', () => {
     });
     // No stored files left behind, nothing pending.
     expect([...media.objects.keys()].filter((k) => k.includes(a.user.id))).toEqual([]);
-    expect(media.deleted.sort()).toEqual(aKeys.sort());
+    // Each original and its (possible) smaller copies.
+    expect(media.deleted.sort()).toEqual(aKeys.flatMap(mediaKeysWithVariants).sort());
     expect(await prisma.pendingMediaDelete.count()).toBe(0);
     expect(spare.uploadId).toBeTruthy();
 
@@ -235,7 +237,9 @@ describe('DELETE /v1/me', () => {
     expect((await del(a.token, CONFIRM)).statusCode).toBe(204);
     expect(await prisma.user.count({ where: { id: a.user.id } })).toBe(0);
     const pending = await prisma.pendingMediaDelete.findMany();
-    expect(pending.map((p) => p.key)).toEqual([`uploads/${a.user.id}/${photo.uploadId}.webp`]);
+    expect(pending.map((p) => p.key).sort()).toEqual(
+      mediaKeysWithVariants(`uploads/${a.user.id}/${photo.uploadId}.webp`).sort(),
+    );
 
     media.failDeletes = false;
     expect(await app.jobs.run(cleanupJob.name, { force: true })).toBe('ok');

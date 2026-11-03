@@ -153,10 +153,13 @@ function usePrefetchTab(ready: boolean) {
 export function AppShell({
   title,
   refresh,
+  skeleton,
   children,
 }: {
   title?: string;
   refresh?: RefreshScope;
+  /** Shown until the session is known — and so in the static HTML: shaped like the tab's real content. */
+  skeleton?: ReactNode;
   children: ReactNode;
 }) {
   const ready = useRequireSession();
@@ -186,7 +189,7 @@ export function AppShell({
         id="main"
         className="mx-auto w-full max-w-xl px-4 pt-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))]"
       >
-        {ready ? children : <ShellSkeleton />}
+        {ready ? children : (skeleton ?? <ShellSkeleton />)}
       </main>
       <TabBar />
     </div>
@@ -199,6 +202,39 @@ export function ShellSkeleton() {
       <Skeleton className="h-28" />
       <Skeleton className="h-12" />
       <Skeleton className="h-72" />
+    </div>
+  );
+}
+
+/** News, before anything loaded: the profile header, the filter chips and two cards. */
+export function NewsShellSkeleton({ card }: { card: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-4" role="status" aria-busy="true">
+      <div className="flex flex-col items-center gap-2 pt-2 pb-1">
+        <Skeleton className="size-[7.5rem] rounded-full" />
+        <Skeleton className="h-6 w-36" />
+        <Skeleton className="h-4 w-28" />
+      </div>
+      <div className="flex gap-2">
+        <Skeleton className="h-11 w-16 rounded-full" />
+        <Skeleton className="h-11 w-24 rounded-full" />
+        <Skeleton className="h-11 w-24 rounded-full" />
+      </div>
+      {card}
+      {card}
+    </div>
+  );
+}
+
+/** A league table before anything loaded: the title line and its rows. */
+export function TableShellSkeleton({ tabs = false }: { tabs?: boolean }) {
+  return (
+    <div className="flex flex-col gap-3" role="status" aria-busy="true">
+      {tabs && <Skeleton className="h-11 rounded-full" />}
+      <Skeleton className="h-8 w-48" />
+      {Array.from({ length: 9 }, (_, i) => (
+        <Skeleton key={i} className="h-16" />
+      ))}
     </div>
   );
 }

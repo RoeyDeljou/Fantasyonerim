@@ -9,7 +9,7 @@ export interface AdminUpdateInput {
   text: string;
   links?: { [K in keyof NewsLinks]?: NewsLinks[K] | undefined } | undefined;
   /** A claimed upload shown as the card's image. */
-  image?: Pick<Upload, 'url' | 'width' | 'height'> | null;
+  image?: (Pick<Upload, 'url' | 'width' | 'height'> & Partial<Pick<Upload, 'variants'>>) | null;
 }
 
 /**
@@ -42,6 +42,8 @@ export async function createAdminUpdate(
                   width: image.width,
                   height: image.height,
                   sourceUrl: image.url,
+                  // The upload's smaller copies (they belong to the Upload, like the original file).
+                  ...(Array.isArray(image.variants) ? { variants: image.variants } : {}),
                 },
               ],
             },

@@ -10,7 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { REFRESH_SCOPES } from '@/lib/refresh';
-import { AppShell, ShellSkeleton } from '@/components/AppShell';
+import { AppShell, TableShellSkeleton } from '@/components/AppShell';
 import { ArrowDownIcon, ArrowUpIcon, ClockIcon, DotIcon, TableIcon } from '@/components/icons';
 import { ChipIcon } from '@/components/team/ChipIcon';
 import { ManagerSheet } from '@/components/lazySheets';
@@ -30,8 +30,8 @@ import {
 export function TableScreen() {
   const { t } = useI18n();
   return (
-    <AppShell title={t.table.title} refresh={REFRESH_SCOPES.table}>
-      <Suspense fallback={<ShellSkeleton />}>
+    <AppShell title={t.table.title} refresh={REFRESH_SCOPES.table} skeleton={<TableShellSkeleton />}>
+      <Suspense fallback={<TableShellSkeleton />}>
         <TableInner />
       </Suspense>
     </AppShell>

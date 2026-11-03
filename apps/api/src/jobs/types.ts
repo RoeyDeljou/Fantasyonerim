@@ -10,7 +10,8 @@ export type JobName =
   | 'deadline_reminders'
   | 'gameweek_summary'
   | 'live_alerts'
-  | 'cleanup';
+  | 'cleanup'
+  | 'image_variants';
 
 export interface JobRunContext {
   app: AppContext;

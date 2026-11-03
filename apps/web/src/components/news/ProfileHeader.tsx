@@ -42,7 +42,8 @@ export function ProfileHeader() {
 
   const avatar = (
     <span
-      className={has ? 'story-ring flex rounded-full' : 'flex rounded-full'}
+      // No stories: the same 8 px the ring takes, so the header doesn't grow when stories arrive (CLS).
+      className={has ? 'story-ring flex rounded-full' : 'flex rounded-full p-2'}
       data-seen={has ? String(allSeen) : undefined}
       data-testid="profile-avatar"
       data-state={has ? (allSeen ? 'seen' : 'unseen') : 'none'}

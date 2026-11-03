@@ -21,12 +21,12 @@ const MediaDraftSchema = z.object({
 /** Final gate: every draft leaving this package satisfies the `@fant/shared` News contract. */
 const NewsItemDraftSchema = z.object({
   dedupeKey: z.string().min(3).max(500),
-  source: NewsSourceSchema.exclude(['admin_update']),
+  source: z.enum(NewsSourceSchema.options).exclude(['admin_update']),
   title: z.string().nullable(),
   text: z.string().nullable(),
   media: z.array(MediaDraftSchema),
   links: NewsLinksSchema,
-  podcast: PodcastMetaSchema.nullable(),
+  podcast: z.nullable(PodcastMetaSchema),
   publishedAt: z.date().refine((d) => !Number.isNaN(d.getTime()), 'invalid date'),
   expiresAt: z
     .date()

@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient, ReportTargetKind } from '@prisma/client';
 import type { MediaStore } from '../media/store.js';
 import { z } from 'zod';
 import { badRequest } from '../errors.js';
+import { deleteWithVariants } from '../media/variants.js';
 
 /** How a report was closed. */
 export type ReportResolution = 'removed' | 'dismissed' | 'deleted';
@@ -115,7 +116,7 @@ export async function purgeDeletedPostImages(
   let purged = 0;
   for (const upload of uploads) {
     try {
-      await media.delete(upload.storageKey);
+      await deleteWithVariants(media, upload.storageKey);
     } catch {
       continue;
     }

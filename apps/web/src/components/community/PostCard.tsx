@@ -7,7 +7,7 @@ import { fmt, plural, useI18n } from '@/i18n';
 import { useBanned } from '@/lib/banned';
 import { useDeletePost, useLikePost, useMe } from '@/lib/queries';
 import { ChatIcon, HeartIcon } from '@/components/icons';
-import { ExpandableText, LinkifiedText, MediaImage } from '@/components/news/parts';
+import { ExpandableText, LinkifiedText, MediaImage, SIZES, srcSetOf } from '@/components/news/parts';
 import { Num, cx } from '@/components/ui';
 import { ContentMenu } from './ContentMenu';
 import { ImageViewer } from '../lazySheets';
@@ -97,7 +97,13 @@ export function PostCard({
             style={{ aspectRatio: aspect(post.image.width, post.image.height) }}
             data-testid="post-image"
           >
-            <MediaImage src={post.image.url} alt={imageAlt} className="size-full object-cover" />
+            <MediaImage
+              src={post.image.url}
+              srcSet={srcSetOf(post.image.url, post.image.width, post.image.variants)}
+              sizes={SIZES.full}
+              alt={imageAlt}
+              className="size-full object-cover"
+            />
           </button>
           <ImageViewer image={post.image} alt={imageAlt} open={viewer} onClose={() => setViewer(false)} />
         </>

@@ -92,3 +92,110 @@ describe('early fetch (inline <head> script)', () => {
     expect(thread.calls).toEqual([]);
   });
 });
+
+describe('LCP image preload', () => {
+  const v = (w: number) => ({ url: `https://cdn.test/m-${w}.webp`, width: w });
+  const img = (
+    url: string,
+    width: number | null,
+    height: number | null,
+    variants?: { url: string; width: number }[],
+  ) => ({
+    kind: 'image',
+    url,
+    posterUrl: null,
+    width,
+    height,
+    ...(variants ? { variants } : {}),
+  });
+  const video = {
+    kind: 'video',
+    url: 'https://cdn.test/v.mp4',
+    posterUrl: 'https://cdn.test/poster.jpg',
+    width: 1080,
+    height: 1920,
+  };
+
+  it('every source: preloads exactly what its card renders first (srcset + sizes), or nothing', async () => {
+    const { lcpImageOf } = await import('./earlyFetch');
+    const { MEDIA_LAYOUT, SIZES, firstImageOf, srcSetOf } = await import('./images');
+    const { NewsSourceSchema } = await import('@fant/shared');
+    const photo = img('https://cdn.test/p.jpg', 1080, 1350, [v(320), v(640)]);
+    const wide = img('https://cdn.test/w.jpg', 1280, 720, [v(320), v(640)]);
+    const ss = (m: typeof photo) => srcSetOf(m.url, m.width, m.variants) ?? null;
+    // What each card renders as its first image (NewsCards.tsx / Media.tsx), with one photo and with two.
+    const expected: Record<string, (media: unknown[]) => unknown> = {
+      podcast: () => ({ src: wide.url, srcSet: ss(wide), sizes: SIZES.full }),
+      instagram_post: () => ({ src: photo.url, srcSet: ss(photo), sizes: SIZES.full }),
+      instagram_story: () => null,
+      x_post: (media) => ({
+        src: photo.url,
+        srcSet: ss(photo),
+        sizes: media.length > 1 ? SIZES.half : SIZES.full,
+      }),
+      admin_update: (media) => ({
+        src: photo.url,
+        srcSet: ss(photo),
+        sizes: media.length > 1 ? SIZES.half : SIZES.full,
+      }),
+      youtube_short: () => ({ src: photo.url, srcSet: ss(photo), sizes: SIZES.short }),
+      youtube_video: () => ({ src: photo.url, srcSet: ss(photo), sizes: SIZES.full }),
+    };
+    expect(Object.keys(MEDIA_LAYOUT).sort()).toEqual([...NewsSourceSchema.options].sort());
+    for (const source of NewsSourceSchema.options) {
+      for (const media of source === 'podcast' ? [[wide]] : [[photo], [photo, photo]]) {
+        const item = { source, media };
+        const want = expected[source]?.(media);
+        expect(firstImageOf(item, MEDIA_LAYOUT), source).toEqual(want);
+        // The preload of a page whose first card is this item (stories are skipped, never preloaded).
+        const page = { items: [item] };
+        expect(lcpImageOf(page, 'news', firstImageOf, MEDIA_LAYOUT), source).toEqual(
+          source === 'instagram_story' ? null : want,
+        );
+      }
+    }
+  });
+
+  it('edge cases: square covers, posters, no variants, community photos', async () => {
+    const { lcpImageOf } = await import('./earlyFetch');
+    const { MEDIA_LAYOUT, SIZES, firstImageOf, srcSetOf } = await import('./images');
+    const lcp = (body: unknown, feed: 'news' | 'community' = 'news') =>
+      lcpImageOf(body, feed, firstImageOf, MEDIA_LAYOUT);
+    const square = img('https://cdn.test/sq.jpg', 640, 640, [v(320)]);
+    expect(lcp({ items: [{ source: 'podcast', media: [square] }] })?.sizes).toBe(SIZES.cover);
+    expect(lcp({ items: [{ source: 'instagram_post', media: [video] }] })).toEqual({
+      src: video.posterUrl,
+      srcSet: null,
+      sizes: null,
+    });
+    const plain = img('https://cdn.test/plain.jpg', 1080, 1350);
+    expect(lcp({ items: [{ source: 'admin_update', media: [plain] }] })).toEqual({
+      src: plain.url,
+      srcSet: null,
+      sizes: null,
+    });
+    expect(lcp({ items: [{ source: 'admin_update', media: [] }] })).toBeNull();
+    const post = { url: 'https://cdn.test/c.jpg', width: 1080, height: 1080, variants: [v(640)] };
+    expect(lcp({ items: [{ image: post }] }, 'community')).toEqual({
+      src: post.url,
+      srcSet: srcSetOf(post.url, 1080, [v(640)]),
+      sizes: SIZES.full,
+    });
+    expect(lcp(null)).toBeNull();
+  });
+
+  it('srcSetOf and the serialized copy inside firstImageOf agree', async () => {
+    const { MEDIA_LAYOUT, firstImageOf, srcSetOf } = await import('./images');
+    for (const [w, variants] of [
+      [1080, [v(320), v(640)]],
+      [null, [v(320)]],
+      [300, [v(320), v(640)]],
+      [1080, undefined],
+    ] as const) {
+      const m = img('https://cdn.test/a.jpg', w, 1000, variants ? [...variants] : undefined);
+      expect(firstImageOf({ source: 'instagram_post', media: [m] }, MEDIA_LAYOUT)?.srcSet ?? undefined).toBe(
+        srcSetOf(m.url, m.width, m.variants),
+      );
+    }
+  });
+});

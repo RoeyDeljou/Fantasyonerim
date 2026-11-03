@@ -296,6 +296,54 @@ Not simulated: TLS and the network to Neon (~1–2 ms per query from Render Fran
 real FPL API's latency (FplService refreshes ahead of expiry, so users don't wait on it), and the browser's own
 work.
 
+## Smaller image copies (srcset)
+
+Every image the API re-hosts gets **WebP copies 320 and 640 px wide** (quality 75, auto-rotated, all metadata
+stripped; widths ≥ the original are skipped, nothing is upscaled). They are stored next to the original as
+`<key>.w320.webp` / `<key>.w640.webp`, so the existing `/media` CDN rules apply unchanged: immutable (30 days CDN /
+1 year browser) for Instagram, YouTube and Spotify copies, 5 minutes for `uploads/` (the takedown delay). The rows
+keep them (`NewsMedia.variants`, `Upload.variants`, additive migration `20261103090000_image_variants`;
+`NULL` = not generated yet, `[]` = nothing smaller worth making) and the API serves them as `variants` (smallest
+first, through the same public-URL mapping as the original). Videos have none (the contract says so); their
+posters are not given copies.
+
+**Where the CPU goes** (sharp/libvips, one image at a time process-wide, one libvips thread, yields between
+widths; median of 5):
+
+| Work                                          |        CPU | Wall at 0.1 CPU | Where                                 |
+| --------------------------------------------- | ---------: | --------------: | ------------------------------------- |
+| Instagram 1080×1350 JPEG → 320 + 640          |      95 ms |           1.0 s | ingest job (bytes already in hand)    |
+| Community upload (2048 px WebP) → 320 + 640   | 170–190 ms |           1.9 s | after the upload response             |
+| YouTube 480×360 thumbnail → 320               |      14 ms |           0.1 s | ingest job                            |
+| _existing_ upload re-encode, 12 MP phone JPEG |     480 ms |           4.9 s | the upload request itself (unchanged) |
+
+- Jobs (Instagram/YouTube ingest, Spotify episode thumbnails) generate variants right after storing the original,
+  from the bytes they already downloaded. Never in a user's request.
+- **Uploads**: the response waits at most 300 ms (`UPLOAD_VARIANTS_BUDGET_MS`) for the variants; on 0.1 CPU they
+  take ~2 s, so in production the response goes out first and the variants are saved on the Upload row when ready
+  (a post shows them from then on). Admin broadcasts copy the upload's variants onto their News item.
+- Worth knowing: the upload request itself was already ~5 s of wall time for a 12 MP photo at 0.1 CPU (decode +
+  re-encode to 2048 px WebP); Starter (0.5 CPU) makes it ~1 s.
+
+**Backfill** (`image_variants` job, every 10 min, `jobs/imageVariants.ts`): 10 images per run, newest first, only
+outside a live fixture and outside quiet hours. Each image is downloaded once through its public URL (the Vercel
+`/media` CDN, else the bucket), its copies are written and the row updated — idempotent (deterministic keys) and
+resumable (the rows are the queue). A gone file (4xx) is marked `[]` and never retried; a network error stops the
+batch until the next run. Uploads younger than 5 minutes are left to the upload route.
+
+**B2 free tier stays free** (10 GB stored, ~2,500 Class B downloads/day, Class A free):
+
+- **Storage.** A 320 copy is ~10–20 KB, a 640 copy ~30–60 KB: ≤ ~80 KB per image (the synthetic, noise-heavy test
+  photo gave 12 + 59 KB). Generous season volume: ~1,500 Instagram images (posts + carousel slides), ~400 YouTube
+  thumbnails, ~70 episode thumbnails, ~7,500 community photos (150 fans × 50) ≈ 9,500 images × 80 KB ≈ **0.75 GB**
+  worst case, typically 0.3–0.5 GB — under 10 % of the 10 GB. Deleted posts and expired stories delete their copies
+  with the original.
+- **Transactions.** Uploads (originals and copies, incl. the backfill's) and deletes are Class A: free. The backfill
+  reads each existing image once, at most 10 per 10 minutes (≤ ~1,100/day, usually through the CDN cache, so
+  fewer B2 reads), and only until the existing media is done. Clients load one size per image, so CDN
+  misses (Class B) stay ~one object per image per region per CDN TTL, as before — just smaller ones.
+- The `$0` caps in [DEPLOY.md → Keep B2 free](DEPLOY.md#keep-b2-free) remain the hard stop.
+
 ## Web
 
 The PWA as fans use it: an iPhone on mobile data, mostly reopening an installed app. Measured on the production
@@ -434,3 +482,72 @@ npm run perf:budget -w @fant/web -- out --json
 
 The budget (`scripts/perf-budget.mjs`, default 240 KB) is a regression guard set just above today's figure. Lower
 it to the 200 KB target once Zod leaves the first load.
+
+## Web — first load
+
+Goal (owner): make the first open faster without spending money. Same setup as "Web" above: Lighthouse 13.6.0
+mobile (simulated slow 4G, 4× CPU, median of 3), Playwright time to content (applied 4G + 4× CPU, median of 3),
+the static export served with brotli and `vercel.json` headers, and the demo API. The seed now carries 320/640 WebP
+`variants` for every image, as the API generates them. _Before_ = the previous Web build, _after_ = this change.
+Both were measured back to back on the same machine, because this shared box drifts ±30 % between hours: its TBT
+and LCP are higher than in the "Web" section above for both builds.
+
+| Tab       | LCP cold (before → after) |      LCP warm |   TBT cold |    TBT warm |      CLS cold | First-load JS (gzip) | Time to content cold | Time to content warm |
+| --------- | ------------------------: | ------------: | ---------: | ----------: | ------------: | -------------------: | -------------------: | -------------------: |
+| News      |             4.74 → 4.32 s | 1.44 → 1.49 s | 1010 → 640 | 529 → 1032¹ | 0.127 → 0.006 |     236.8 → 223.3 KB |    5.56 → **3.63 s** |        2.32 → 2.15 s |
+| Live      |             4.24 → 4.24 s | 1.35 → 1.26 s |  760 → 661 |   477 → 651 | 0.006 → 0.027 |     230.9 → 219.1 KB |        4.06 → 3.63 s |        2.30 → 1.78 s |
+| My Team   |             4.50 → 4.19 s | 1.27 → 1.20 s |  551 → 577 |   605 → 265 | 0.007 → 0.006 |     232.4 → 219.5 KB |        3.77 → 3.27 s |        2.15 → 1.61 s |
+| Table     |             4.34 → 4.28 s | 1.59 → 1.14 s |  604 → 584 |   608 → 216 | 0.000 → 0.000 |     228.2 → 215.3 KB |        3.77 → 3.44 s |        1.86 → 1.68 s |
+| Community |             4.27 → 4.32 s | 1.45 → 1.21 s | 1058 → 619 |   964 → 686 | 0.072 → 0.000 |     235.5 → 223.0 KB |    4.75 → **3.38 s** |        2.35 → 1.85 s |
+
+FCP 0.75–0.85 s → 0.75–0.81 s. ¹ One slow run out of three (540 / 1032 / 1080 ms); the machine is noisy.
+
+### Targets
+
+| Target (best effort, free)      | Result                                                                                  |
+| ------------------------------- | --------------------------------------------------------------------------------------- |
+| Cold LCP ≤ 3 s (Lighthouse)     | **Not met**: 4.2–4.3 s. Applied-throttling time to content is 3.3–3.6 s, from 3.8–5.6 s |
+| Warm LCP ≤ 1 s                  | **Not met**: 1.1–1.5 s, from 1.3–1.6 s                                                  |
+| Fan first-load JS ≤ 200 KB gzip | **Not met**: 215–223 KB, from 228–237 KB. Budget now fails the build above 228 KB       |
+| CLS                             | Every tab ≤ 0.03; News and Community were 0.13 and 0.07                                 |
+
+### What changed
+
+- **`@fant/shared` moved to `zod/mini`** (Zod 4's functional, tree-shakeable API): same schemas, same inferred
+  types, same runtime checks (`.check(z.minLength…)`, `z.optional()`, `z._default()`, `z.extend()`, … one for one).
+  The contract's Zod runtime in the first load fell from ~34 KB to ~18 KB of module code, about 13 KB gzip per tab.
+  apps/api keeps classic Zod for its own schemas; both interoperate as Zod 4 core types. `apps/api/src/validate.ts`
+  now sets the English locale explicitly (mini loads none, so a 400 would otherwise only say "Invalid input").
+  All 661 tests pass.
+- **The LCP image starts with the data, not after React.** The inline early-fetch script (`lib/earlyFetch.ts`) reads
+  the first feed page as soon as it arrives and inserts `<link rel=preload as=image fetchpriority=high>` with the
+  same `imagesrcset` / `imagesizes` the first card's `<img>` will use (unit-tested against `lib/images.ts`). In the
+  cold News trace the cover request moved from 667 ms to 326 ms.
+- **`srcset` + `sizes` from the API `variants`** (320/640 WebP) on feed photos, carousels, X grids (half width),
+  podcast covers (96 px tile or full width), YouTube / Shorts thumbnails, community photos and stories. Falls back
+  to `url` when variants are absent. The 96 px covers and 2-up grid tiles now download a 320 px WebP instead of the
+  original. Full-width images on a ≥ 2× phone still need more than 640 px, so they keep the original. A 960 or
+  1080 px WebP variant would be the next byte saving there (API side).
+- **The static HTML is shaped like each tab**: News (profile header, chips, two cards), Community (composer, two
+  posts), Table / Live (title and rows). It replaces the generic block skeleton.
+  `preconnect` + `dns-prefetch` to the API origin. `/media` is same-origin (Vercel rewrite), so it needs none.
+- **CLS**:
+  - The feed's deferred rendering now shows the first rows immediately. Before, it rendered an empty list for a
+    frame, so the end-of-feed marker jumped.
+  - The profile header reserves the story ring's 8 px whether or not stories exist.
+- **Fonts**: already `swap` with only the 9 KB Hebrew subset preloaded. In the observed (unthrottled) trace it is done by ~40 ms, well
+  before LCP, so it stays: the system-font fallback paints first anyway.
+- **Not done**:
+  - Painting cached News titles from localStorage before hydration. It only helps the text, while the warm LCP is
+    the first card's image. And it needs DOM outside React's tree, which isn't "safe and simple".
+  - Splitting admin-only strings out of the Hebrew dictionary (~6 KB gzip, but it weakens the dictionary's type
+    safety).
+
+### What still separates us from the targets
+
+1. **Framework floor**: React DOM + the Next.js app router are ~133 KB gzip of ~220 KB, and their parse + hydrate
+   time at 4× CPU is most of the remaining cold time.
+2. The Hebrew dictionary (~12 KB gzip) and TanStack Query (~13 KB) are needed by every tab.
+3. Lighthouse's slow-4G model puts ~220 KB of JS at ~1.2 s of transfer before anything can render the feed. Without
+   dropping the framework there's no free path to 3 s in that model. On a real 4G/5G connection, with an iPhone
+   CPU, the applied-throttling time to content (3.3–3.6 s cold, 1.6–2.2 s warm at 4× CPU) is the closer guide.

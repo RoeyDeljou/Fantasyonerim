@@ -6,7 +6,8 @@ import type { NewsMedia } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import { ChevronEndIcon, ChevronStartIcon, PlayIcon } from '@/components/icons';
 import { cx } from '@/components/ui';
-import { MediaImage } from './parts';
+import { MediaImage, SIZES, srcSetOf } from './parts';
+import type { FirstImage } from '@/lib/images';
 
 /** Aspect ratio from the first item, clamped to Instagram's range (4:5 portrait … 1.91:1 landscape). */
 function ratioOf(media: readonly NewsMedia[]): number {
@@ -59,13 +60,29 @@ export function VideoTile({ media, className }: { media: NewsMedia; className?: 
   );
 }
 
-/** `later`: not the first slide — always lazy, even in the feed's first card. */
-function Slide({ media, alt, later }: { media: NewsMedia; alt: string; later: boolean }) {
+/**
+ * `first`: the card's first image as `firstImageOf()` (lib/images.ts) describes it — the very candidates the inline
+ * LCP preload fetched — used for slide 0. Later slides are always lazy, even in the feed's first card.
+ */
+function Slide({
+  media,
+  alt,
+  first,
+  sizes = SIZES.full,
+}: {
+  media: NewsMedia;
+  alt: string;
+  first?: FirstImage | null | undefined;
+  sizes?: string;
+}) {
+  const later = first === undefined;
   return media.kind === 'video' ? (
     <VideoTile media={media} className="size-full" />
   ) : (
     <MediaImage
       src={media.url}
+      srcSet={first ? (first.srcSet ?? undefined) : srcSetOf(media.url, media.width, media.variants)}
+      sizes={first ? (first.sizes ?? undefined) : sizes}
       alt={alt}
       {...(later ? { loading: 'lazy' as const } : {})}
       className="size-full object-cover"
@@ -77,7 +94,15 @@ function Slide({ media, alt, later }: { media: NewsMedia; alt: string; later: bo
  * Swipeable media carousel (native scroll-snap). In RTL the browser lays slides out right-to-left, so the
  * first item is on the right and swiping left moves forward — the same order Instagram uses in Hebrew.
  */
-export function MediaCarousel({ media, alt }: { media: readonly NewsMedia[]; alt: string }) {
+export function MediaCarousel({
+  media,
+  alt,
+  first,
+}: {
+  media: readonly NewsMedia[];
+  alt: string;
+  first: FirstImage | null;
+}) {
   const { t } = useI18n();
   const scroller = useRef<HTMLDivElement>(null);
   const slides = useRef<Array<HTMLDivElement | null>>([]);
@@ -129,7 +154,7 @@ export function MediaCarousel({ media, alt }: { media: readonly NewsMedia[]; alt
             aria-roledescription="slide"
             aria-label={fmt(t.news.mediaOf, { i: i + 1, n: media.length })}
           >
-            <Slide media={m} alt={alt} later={i > 0} />
+            <Slide media={m} alt={alt} {...(i === 0 ? { first } : {})} />
           </div>
         ))}
       </div>
@@ -180,7 +205,15 @@ export function MediaCarousel({ media, alt }: { media: readonly NewsMedia[]; alt
 }
 
 /** X-style grid: 1 full, 2 side by side, 3 = one tall + two, 4 = 2×2. */
-export function MediaGrid({ media, alt }: { media: readonly NewsMedia[]; alt: string }) {
+export function MediaGrid({
+  media,
+  alt,
+  first,
+}: {
+  media: readonly NewsMedia[];
+  alt: string;
+  first: FirstImage | null;
+}) {
   const items = media.slice(0, 4);
   if (items.length === 0) return null;
   if (items.length === 1) {
@@ -193,7 +226,7 @@ export function MediaGrid({ media, alt }: { media: readonly NewsMedia[]; alt: st
         className="overflow-hidden rounded-2xl border border-line bg-surface-2"
         style={{ aspectRatio: String(ratio) } as CSSProperties}
       >
-        <Slide media={only} alt={alt} later={false} />
+        <Slide media={only} alt={alt} first={first} />
       </div>
     );
   }
@@ -212,7 +245,7 @@ export function MediaGrid({ media, alt }: { media: readonly NewsMedia[]; alt: st
             items.length === 3 && i === 0 && 'row-span-2',
           )}
         >
-          <Slide media={m} alt={alt} later={i > 0} />
+          <Slide media={m} alt={alt} sizes={SIZES.half} {...(i === 0 ? { first } : {})} />
         </div>
       ))}
     </div>

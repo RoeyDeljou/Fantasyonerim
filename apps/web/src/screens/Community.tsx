@@ -9,19 +9,27 @@ import { useI18n } from '@/i18n';
 import { useBanned } from '@/lib/banned';
 import { useCommunityFeed, useCommunityHead, useMe } from '@/lib/queries';
 import { useQueryParam } from '@/lib/useQueryParam';
-import { AppShell, ShellSkeleton } from '@/components/AppShell';
+import { AppShell } from '@/components/AppShell';
 import { ArrowUpIcon, CommunityIcon, ImageIcon, RefreshIcon, ShirtIcon } from '@/components/icons';
 import { ComposerSheet, Thread } from '@/components/lazySheets';
 import { PostCard, PostCardSkeleton } from '@/components/community/PostCard';
 import { AuthorAvatar, BannedNotice, CommunityToastProvider } from '@/components/community/parts';
 import { MediaPriority } from '@/components/news/parts';
-import { Button, EmptyState, ErrorState, InlineError, Spinner, errorMessage } from '@/components/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  InlineError,
+  Skeleton,
+  Spinner,
+  errorMessage,
+} from '@/components/ui';
 
 export function CommunityScreen() {
   const { t } = useI18n();
   return (
-    <AppShell title={t.community.title}>
-      <Suspense fallback={<ShellSkeleton />}>
+    <AppShell title={t.community.title} skeleton={<CommunityShellSkeleton />}>
+      <Suspense fallback={<CommunityShellSkeleton />}>
         <CommunityToastProvider>
           <CommunityInner />
         </CommunityToastProvider>
@@ -127,7 +135,9 @@ function Feed() {
   }, [feed.data]);
   // A new page (or a poll) renders as an interruptible background update: the rows appended at the end never
   // block a scroll frame (they used to be one 150–200 ms task on a mid-range phone).
-  const shown = useDeferredValue(items);
+  const deferred = useDeferredValue(items);
+  // The first rows render right away (they are the screen's content and LCP); only later changes are deferred.
+  const shown = deferred.length === 0 ? items : deferred;
 
   const newest = items[0];
   const hasNewer =
@@ -226,3 +236,14 @@ const FeedRow = memo(function FeedRow({ post, first }: { post: CommunityPost; fi
     </li>
   );
 });
+
+/** Community before anything loaded: the composer entry and two posts. */
+function CommunityShellSkeleton() {
+  return (
+    <div className="flex flex-col gap-4" role="status" aria-busy="true">
+      <Skeleton className="h-16 rounded-3xl" />
+      <PostCardSkeleton />
+      <PostCardSkeleton />
+    </div>
+  );
+}

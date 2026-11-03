@@ -18,6 +18,7 @@ import {
 import { Prisma, type ReportTargetKind, type User } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { omit } from 'zod/mini';
 import type { Auth } from '../auth/session.js';
 import { blockedIdsOf, hasBlocked } from '../community/blocks.js';
 import { requireWriter } from '../community/guard.js';
@@ -37,7 +38,7 @@ import { cleanQuery } from './query.js';
 const PostParamsSchema = z.object({ id: PostIdSchema });
 const CommentParamsSchema = z.object({ id: CommentIdSchema });
 /** Comment pages take the same cursor/limit as post pages (no author filter). */
-const CommentPageQuerySchema = CommunityPageQuerySchema.omit({ authorId: true });
+const CommentPageQuerySchema = omit(CommunityPageQuerySchema, { authorId: true });
 
 export interface CommunityLimits {
   posts: object;

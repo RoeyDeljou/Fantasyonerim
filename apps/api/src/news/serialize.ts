@@ -1,3 +1,4 @@
+import { partial } from 'zod/mini';
 import {
   NewsItemSchema,
   NewsLinksSchema,
@@ -7,11 +8,22 @@ import {
 } from '@fant/shared';
 import type { NewsItem as NewsItemRow, NewsMedia } from '@prisma/client';
 import { mapMediaUrl, type MediaUrlMapper } from '../media/publicUrl.js';
+import { variantsForClient } from '../media/variants.js';
 import { serialize } from '../validate.js';
 
 /** The media columns the serializer reads (routes select only these). */
-export type NewsMediaFields = Pick<NewsMedia, 'order' | 'kind' | 'url' | 'posterUrl' | 'width' | 'height'>;
+export type NewsMediaFields = Pick<NewsMedia, 'order' | 'kind' | 'url' | 'posterUrl' | 'width' | 'height'> &
+  Partial<Pick<NewsMedia, 'variants'>>;
 export type NewsItemWithMedia = NewsItemRow & { media: NewsMediaFields[] };
+
+/** `{ variants }` when the row has any (through the public-URL mapping), else nothing (the field is optional). */
+export function withVariants(
+  json: unknown,
+  mediaUrl: MediaUrlMapper,
+): { variants?: { url: string; width: number }[] } {
+  const variants = variantsForClient(json, mediaUrl);
+  return variants === undefined ? {} : { variants };
+}
 
 export const EMPTY_LINKS: NewsLinks = {
   spotify: null,
@@ -24,7 +36,7 @@ export const EMPTY_LINKS: NewsLinks = {
 };
 
 export function readLinks(json: unknown): NewsLinks {
-  const parsed = NewsLinksSchema.partial().safeParse(json);
+  const parsed = partial(NewsLinksSchema).safeParse(json);
   if (!parsed.success) return { ...EMPTY_LINKS };
   const l = parsed.data;
   return {
@@ -57,6 +69,7 @@ export function toNewsItem(row: NewsItemWithMedia, mediaUrl: MediaUrlMapper): Ne
           posterUrl: mapMediaUrl(mediaUrl, m.posterUrl),
           width: m.width,
           height: m.height,
+          ...withVariants(m.kind === 'image' ? m.variants : null, mediaUrl),
         })),
       links: readLinks(row.links),
       podcast: podcast === null || !podcast.success ? null : podcast.data,

@@ -4,6 +4,7 @@ import { liveAlertsJob } from './liveAlerts.js';
 import { podcastJob } from './podcast.js';
 import { instagramPostsJob, instagramStoriesJob, xJob } from './social.js';
 import type { Job, JobName } from './types.js';
+import { imageVariantsJob } from './imageVariants.js';
 import { youtubeJob } from './youtube.js';
 
 /** The job registry (run in this order by a tick). */
@@ -18,6 +19,8 @@ export const JOBS: readonly Job[] = [
   gameweekSummaryJob,
   liveAlertsJob,
   cleanupJob,
+  // Last: smaller image copies for existing media, a few per run, outside matches and quiet hours.
+  imageVariantsJob,
 ];
 
 /** Which jobs "sync now" runs for an integration. */

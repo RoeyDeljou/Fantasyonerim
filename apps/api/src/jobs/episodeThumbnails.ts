@@ -2,6 +2,7 @@ import { IntegrationRateLimitError } from '@fant/integrations';
 import { Prisma } from '@prisma/client';
 import type { AppContext } from '../context.js';
 import { downloadMedia } from '../media/download.js';
+import { storeVariants } from '../media/variants.js';
 import { readLinks } from '../news/serialize.js';
 import { HOUR } from './types.js';
 
@@ -76,6 +77,8 @@ export async function fillEpisodeThumbnails(app: AppContext, now: Date): Promise
       const file = await downloadMedia(app.fetch, thumb.url, 'image');
       const storageKey = `spotify/${keySafe(item.dedupeKey)}/thumbnail.${file.ext}`;
       const url = await app.media.put(storageKey, file.bytes, file.contentType);
+      // Smaller copies while we hold the bytes (a job, never a request); a failure leaves it to the backfill job.
+      const variants = await storeVariants(app.media, storageKey, file.bytes).catch(() => undefined);
       await app.prisma.$transaction([
         app.prisma.newsMedia.deleteMany({ where: { itemId: id } }),
         app.prisma.newsMedia.create({
@@ -89,6 +92,7 @@ export async function fillEpisodeThumbnails(app: AppContext, now: Date): Promise
             height: thumb.height === null ? null : Math.round(thumb.height),
             sourceUrl: thumb.url,
             storageKey,
+            ...(variants === undefined ? {} : { variants }),
           },
         }),
         app.prisma.newsItem.update({
