@@ -9,6 +9,8 @@ import type { Locale } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import { useMe, useRecoveryCode, useUpdateMe } from '@/lib/queries';
 import { useSession } from '@/lib/session';
+import { useIsGuest } from '@/lib/guest';
+import { SignUpPrompt } from '@/components/SignUpPrompt';
 import { useTheme } from '@/lib/theme';
 import type { ThemePref } from '@/lib/prefs';
 import { promptInstall, useInstallState } from '@/lib/pwa';
@@ -68,13 +70,35 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function ProfileInner() {
-  const { t, locale, setLocale } = useI18n();
+  const { t, setLocale } = useI18n();
   const me = useMe();
   const update = useUpdateMe();
-  const theme = useTheme();
   const { signOut } = useSession();
   const [confirmOut, setConfirmOut] = useState(false);
-  const listenPref = useListenPref();
+  const guest = useIsGuest();
+
+  // A guest: sign up (back to onboarding, prefilled) + the device preferences. The join-league strip is on top.
+  if (guest) {
+    return (
+      <div className="flex flex-col gap-3">
+        <SignUpPrompt title={t.guest.profileTitle} body={t.guest.profileBody} />
+        <PreferencesCard onLocale={setLocale} />
+        <InstallCard />
+        <Link
+          href="/terms/"
+          data-testid="profile-terms"
+          className="flex min-h-14 items-center gap-3 rounded-2xl border border-line bg-surface px-4 font-semibold text-ink shadow-card hover:bg-surface-2"
+        >
+          <DocIcon className="text-primary" />
+          <span className="flex-1">{t.terms.profileLink}</span>
+          <ChevronEndIcon className="text-muted" />
+        </Link>
+        <p className="text-center text-xs text-muted" dir="ltr" data-testid="app-version">
+          {fmt(t.profile.version, { v: APP_VERSION })}
+        </p>
+      </div>
+    );
+  }
 
   if (me.isPending) {
     return (
@@ -136,48 +160,7 @@ function ProfileInner() {
 
       <MyPostsCard userId={user.id} />
 
-      <Card className="flex flex-col gap-4">
-        <div>
-          <SectionTitle>{t.profile.language}</SectionTitle>
-          <Segmented<Locale>
-            label={t.profile.language}
-            value={locale}
-            onChange={changeLocale}
-            options={[
-              { value: 'he', label: t.profile.langHe },
-              { value: 'en', label: t.profile.langEn },
-            ]}
-          />
-        </div>
-        <div>
-          <SectionTitle>{t.profile.theme}</SectionTitle>
-          <Segmented<ThemePref>
-            label={t.profile.theme}
-            value={theme.pref}
-            onChange={theme.setPref}
-            options={[
-              { value: 'system', label: t.profile.themeSystem },
-              { value: 'light', label: t.profile.themeLight },
-              { value: 'dark', label: t.profile.themeDark },
-            ]}
-          />
-        </div>
-        <div>
-          <SectionTitle>{t.listen.prefTitle}</SectionTitle>
-          <p className="-mt-1 mb-2 text-xs text-muted">{t.listen.prefBody}</p>
-          <Segmented<ListenPref>
-            label={t.listen.prefTitle}
-            value={listenPref}
-            onChange={setListenPref}
-            options={[
-              { value: 'ask', label: t.listen.prefAsk },
-              { value: 'spotify', label: t.socials.spotify },
-              { value: 'apple', label: 'Apple' },
-              { value: 'youtube', label: t.socials.youtube },
-            ]}
-          />
-        </div>
-      </Card>
+      <PreferencesCard onLocale={changeLocale} />
 
       <NotificationsCard />
       <BlockedUsersCard />
@@ -220,6 +203,58 @@ function ProfileInner() {
         {fmt(t.profile.version, { v: APP_VERSION })}
       </p>
     </div>
+  );
+}
+
+/** Language, theme and podcast app — device preferences, for members and guests alike. */
+function PreferencesCard({ onLocale }: { onLocale(l: Locale): void }) {
+  const { t, locale } = useI18n();
+  const theme = useTheme();
+  const listenPref = useListenPref();
+  const changeLocale = onLocale;
+  return (
+    <Card className="flex flex-col gap-4">
+      <div>
+        <SectionTitle>{t.profile.language}</SectionTitle>
+        <Segmented<Locale>
+          label={t.profile.language}
+          value={locale}
+          onChange={changeLocale}
+          options={[
+            { value: 'he', label: t.profile.langHe },
+            { value: 'en', label: t.profile.langEn },
+          ]}
+        />
+      </div>
+      <div>
+        <SectionTitle>{t.profile.theme}</SectionTitle>
+        <Segmented<ThemePref>
+          label={t.profile.theme}
+          value={theme.pref}
+          onChange={theme.setPref}
+          options={[
+            { value: 'system', label: t.profile.themeSystem },
+            { value: 'light', label: t.profile.themeLight },
+            { value: 'dark', label: t.profile.themeDark },
+          ]}
+        />
+      </div>
+      <div>
+        <SectionTitle>{t.listen.prefTitle}</SectionTitle>
+        <p className="-mt-1 mb-2 text-xs text-muted">{t.listen.prefBody}</p>
+        <Segmented<ListenPref>
+          label={t.listen.prefTitle}
+          value={listenPref}
+          onChange={setListenPref}
+          options={[
+            { value: 'ask', label: t.listen.prefAsk },
+            { value: 'spotify', label: t.socials.spotify },
+            { value: 'apple', label: 'Apple' },
+            { value: 'youtube', label: t.socials.youtube },
+          ]}
+        />
+      </div>
+    </Card>
   );
 }
 

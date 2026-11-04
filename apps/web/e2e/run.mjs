@@ -354,6 +354,9 @@ async function step(name, fn) {
   } catch (e) {
     results.push({ name, ok: false, ms: Date.now() - t0, error: e instanceof Error ? e.message : String(e) });
     log(`✗ ${name}\n    ${e instanceof Error ? e.message.split('\n')[0] : e}`);
+    // Where it failed (the journey line in this file), for a quick look at the log.
+    const at = e instanceof Error ? (e.stack ?? '').split('\n').find((l) => l.includes('run.mjs')) : null;
+    if (at) log(`    ${at.trim()}`);
     throw e;
   }
 }
@@ -566,8 +569,27 @@ async function bigLeague(ctx, { page, rank }) {
   );
   await ctx.route(
     (u) => u.origin === API && u.pathname === '/v1/league/position',
-    (r) => r.fulfill(json({ entryId: me, page, rank })),
+    (r) => r.fulfill(json({ entryId: me, page, rank, member: page !== null })),
   );
+}
+
+/** The podcast league's invite (what the API serves once an admin set the code). */
+const LEAGUE_JOIN = { code: 'KJJGKB', url: 'https://fantasy.premierleague.com/leagues/auto-join/KJJGKB' };
+
+/** GET /v1/config with the league invite set; `position` (if given) answers GET /v1/league/position. */
+async function joinLeagueRoutes(ctx, position) {
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/config',
+    async (r) => {
+      const res = await r.fetch();
+      await r.fulfill({ response: res, json: { ...(await res.json()), leagueJoin: LEAGUE_JOIN } });
+    },
+  );
+  if (position)
+    await ctx.route(
+      (u) => u.origin === API && u.pathname === '/v1/league/position',
+      (r) => r.fulfill(json(position())),
+    );
 }
 
 async function journeys(browser) {
@@ -1391,6 +1413,100 @@ async function journeys(browser) {
       assert((await p.getByTestId('find-my-team').count()) === 0, `${path}: no button outside the league`);
     }
     await ctx.close();
+  });
+
+  // "Join our league": a signed-in fan whose team isn't in the league (member: false).
+  await step(
+    'join league: a non-member gets the bar on every tab and the join button; copy-code works',
+    async () => {
+      const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+      const ctx = await newContext(browser, { permissions: ['clipboard-read', 'clipboard-write'] });
+      await ctx.addInitScript((tok) => globalThis.localStorage.setItem('fant.token', tok), token);
+      let member = false;
+      await joinLeagueRoutes(ctx, () => ({
+        entryId: Number(DEMO.tripleCaptain),
+        page: null,
+        rank: null,
+        member,
+      }));
+      const p = await ctx.newPage();
+      watch(p, 'join-league');
+      for (const path of ['/news/', '/community/', '/my-team/', '/table/', '/live/', '/profile/']) {
+        await p.goto(`${WEB}${path}`);
+        const bar = p.getByTestId('join-bar');
+        await bar.waitFor();
+        await bar.getByText('הצטרפו לליגה שלנו — קוד:').waitFor();
+        assert(
+          (await bar.getByTestId('join-bar-link').getAttribute('href')) === LEAGUE_JOIN.url,
+          `${path}: bar link`,
+        );
+        // Inside the sticky header: the page content starts below it, never under it.
+        const { headerBottom, mainTop } = await p.evaluate(() => ({
+          headerBottom: document.querySelector('header')?.getBoundingClientRect().bottom ?? 0,
+          mainTop: document.querySelector('main')?.getBoundingClientRect().top ?? 0,
+        }));
+        assert(mainTop >= headerBottom - 1, `${path}: content below the bar (${mainTop} < ${headerBottom})`);
+        await noHorizontalScroll(p, `${path} with the join bar`);
+        if (path === '/table/' || path === '/live/') {
+          const join = p.getByTestId('join-league');
+          await join.waitFor();
+          assert(
+            (await join.textContent())?.includes('הצטרפו לליגת פנטזיונרים עכשיו!'),
+            `${path}: join label`,
+          );
+          assert((await join.getAttribute('href')) === LEAGUE_JOIN.url, `${path}: join href`);
+          assert((await p.getByTestId('find-my-team').count()) === 0, `${path}: no find button`);
+          if (path === '/table/') {
+            // The "copied" toast sits above the floating join button, never on it.
+            await p.getByTestId('join-copy').click();
+            const toast = p.getByText('הקוד הועתק');
+            await toast.waitFor();
+            const [tb, jb] = [await toast.boundingBox(), await join.boundingBox()];
+            assert(
+              tb && jb && tb.y + tb.height <= jb.y,
+              `toast ${JSON.stringify(tb)} over button ${JSON.stringify(jb)}`,
+            );
+          }
+        }
+      }
+      await p.getByTestId('join-copy').click();
+      await p.getByText('הקוד הועתק').waitFor();
+      assert((await p.evaluate(() => navigator.clipboard.readText())) === LEAGUE_JOIN.code, 'code copied');
+
+      // Joined in the FPL app, back to ours: the resume re-check hides the bar.
+      member = true;
+      await resume(p);
+      await p.getByTestId('join-bar').waitFor({ state: 'detached' });
+      await ctx.close();
+    },
+  );
+
+  await step('join league: a member and an admin see no bar; the member keeps the find button', async () => {
+    const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+    const ctx = await newContext(browser);
+    await ctx.addInitScript((tok) => globalThis.localStorage.setItem('fant.token', tok), token);
+    await bigLeague(ctx, { page: 3, rank: 114 });
+    await joinLeagueRoutes(ctx);
+    const p = await ctx.newPage();
+    watch(p, 'join-member');
+    await p.goto(`${WEB}/table/`);
+    await p.getByTestId('find-my-team').waitFor();
+    assert((await p.getByTestId('join-bar').count()) === 0, 'member: no bar');
+    assert((await p.getByTestId('join-league').count()) === 0, 'member: no join button');
+    await ctx.close();
+
+    const adminToken = await admin.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+    const actx = await newContext(browser);
+    await actx.addInitScript((tok) => globalThis.localStorage.setItem('fant.token', tok), adminToken);
+    await joinLeagueRoutes(actx, () => ({ entryId: null, page: null, rank: null, member: false }));
+    const ap = await actx.newPage();
+    watch(ap, 'join-admin');
+    await ap.goto(`${WEB}/table/`);
+    await ap.locator('main ol li button').first().waitFor();
+    await sleep(800);
+    assert((await ap.getByTestId('join-bar').count()) === 0, 'admin: no bar');
+    assert((await ap.getByTestId('join-league').count()) === 0, 'admin: no join button');
+    await actx.close();
   });
 
   await step('Captain Battle lists the configured rows plus "my captain"', async () => {
@@ -2244,6 +2360,134 @@ async function journeys(browser) {
       assert(mediaLoads.length === 1, `the photo is downloaded once (got ${mediaLoads.join(', ')})`);
       assert(mediaLoads[0] === currentSrc, `downloaded ${mediaLoads[0]}, shown ${currentSrc}`);
       await noHorizontalScroll(p, 'news with a live-update photo');
+      await ctx.close();
+    },
+  );
+
+  await step(
+    'sign-up with an unknown Team ID offers: try again, create an FPL team, continue as guest',
+    async () => {
+      const ctx = await newContext(browser);
+      await joinLeagueRoutes(ctx);
+      // FPL has no such team: the API's "not found" (what FPL's 404 becomes).
+      await ctx.route(
+        (u) => u.origin === API && u.pathname === '/v1/fpl/entries/99999999',
+        (r) => r.fulfill(json({ error: { code: 'not_found', message: 'no such team' } }, 404)),
+      );
+      const p = await ctx.newPage();
+      watch(p, 'guest');
+      const authed = [];
+      p.on('request', (r) => {
+        if (r.url().startsWith(API) && r.headers().authorization) authed.push(r.url());
+      });
+      await p.goto(`${WEB}/onboarding/`);
+      await p.getByRole('button', { name: 'בואו נתחיל' }).click();
+      await p.getByLabel('איך לקרוא לכם?').fill('Guest Tester');
+      const field = p.getByLabel('Team ID של FPL');
+      await field.fill('99999999');
+      await p.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
+      const options = p.getByTestId('team-not-found');
+      await options.waitFor();
+      await noHorizontalScroll(p, 'team not found options');
+      // 1. Try again: back in the field, the value selected for retyping.
+      await options.getByTestId('team-retry').click();
+      const sel = await p.evaluate(() => {
+        const el = document.activeElement;
+        return el?.tagName === 'INPUT' ? { v: el.value, s: el.selectionStart, e: el.selectionEnd } : null;
+      });
+      assert(
+        sel && sel.v === '99999999' && sel.s === 0 && sel.e === 8,
+        `focused + selected: ${JSON.stringify(sel)}`,
+      );
+      await p.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
+      await options.waitFor();
+      // 2. Create a team: FPL's own site, opened outside the app, with the come-back hint.
+      const create = options.getByTestId('team-create');
+      assert(
+        (await create.getAttribute('href')) === 'https://fantasy.premierleague.com/',
+        'create-team link',
+      );
+      await options.getByText('אחרי שיצרתם קבוצה, חזרו והזינו את ה־Team ID').waitFor();
+      const [popup] = await Promise.all([p.waitForEvent('popup'), create.click()]);
+      await popup.close();
+      // 3. Continue as guest: into the app, remembered on the device.
+      await options.getByTestId('team-guest').click();
+      await p.waitForURL('**/news/');
+      await p.locator('[data-testid=news-card]').first().waitFor();
+      assert(
+        (await p.evaluate(() => globalThis.localStorage.getItem('fant.guest'))) === '1',
+        'guest remembered',
+      );
+      await p.getByTestId('join-bar').waitFor(); // guests are invited to the league too
+
+      // Guests browse the public tabs…
+      await p.goto(`${WEB}/table/`);
+      await p.locator('main ol li button').first().waitFor();
+      await p.goto(`${WEB}/live/`);
+      await p.locator('main ol li button').first().waitFor();
+      await p.locator('[data-fixture] button').first().click();
+      await p.locator('dialog[open] [data-testid=fixture-sheet]').waitFor();
+      await p.keyboard.press('Escape');
+      await p.goto(`${WEB}/live/?view=captains`);
+      await p.getByText('הקפטן של דור').first().waitFor();
+      assert((await p.getByText('הקפטן שלי').count()) === 0, 'no "my captain" row for a guest');
+      // …read Community, and every account-only action asks them to sign up.
+      await p.goto(`${WEB}/community/`);
+      await p.locator('[data-testid=post-card]').first().waitFor();
+      await p.getByTestId('signup-prompt').first().waitFor();
+      assert((await p.getByTestId('composer-open').count()) === 0, 'no composer for a guest');
+      await p.locator('[data-testid=post-card] [data-testid=like-button]').first().click();
+      await p.locator('dialog[open] [data-testid=signup-prompt]').waitFor();
+      await p.keyboard.press('Escape');
+      await p.locator('[data-testid=post-card] [data-testid=content-menu]').first().click();
+      await p.locator('dialog[open] [data-testid=signup-prompt]').waitFor();
+      await p.keyboard.press('Escape');
+      await p.locator('[data-testid=post-card] [data-testid=comments-link]').first().click();
+      await p.waitForURL('**/community/?post=*');
+      await p.getByTestId('signup-prompt').waitFor();
+      await p.goto(`${WEB}/my-team/`);
+      await p.getByTestId('signup-prompt').waitFor();
+      await p.goto(`${WEB}/news/`);
+      await p.locator('[data-testid=news-card]').first().waitFor();
+      assert((await p.getByTestId('push-prompt').count()) === 0, 'no notifications prompt for a guest');
+      // Reopening skips onboarding.
+      await p.reload();
+      await p.locator('[data-testid=news-card]').first().waitFor();
+      assert(p.url().endsWith('/news/'), `guest reopen: ${p.url()}`);
+      // Profile → Sign up: back to the form, prefilled with what they typed.
+      await p.goto(`${WEB}/profile/`);
+      await p.getByTestId('join-bar').waitFor();
+      await p.getByTestId('signup-link').click();
+      await p.waitForURL('**/onboarding/?signup=1');
+      await p.getByLabel('Team ID של FPL').waitFor();
+      assert((await p.getByLabel('Team ID של FPL').inputValue()) === '99999999', 'Team ID prefilled');
+      assert((await p.getByLabel('איך לקרוא לכם?').inputValue()) === 'Guest Tester', 'name prefilled');
+      assert(authed.length === 0, `guest requests carried an auth header: ${authed.join(', ')}`);
+      const kept = await persistedKeys(p);
+      assert(
+        !kept.some((k) => /^(me|fpl,(entry|picks|live)|league,position)/.test(k)),
+        `per-user data persisted for a guest: ${kept.join(' · ')}`,
+      );
+
+      // The guest signs up for real: the prefill (name + Team ID) is wiped — on a shared phone the next person
+      // must start blank — and stays gone after signing out.
+      const draft = () => p.evaluate(() => globalThis.localStorage.getItem('fant.guest.draft'));
+      assert((await draft()) !== null, 'the prefill was kept while a guest');
+      await p.getByLabel('Team ID של FPL').fill('1000009');
+      await p.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
+      await p.getByRole('button', { name: 'כן, זו הקבוצה שלי' }).click();
+      await p.getByRole('button', { name: 'שמרתי, יאללה' }).click();
+      await p.waitForURL('**/news/');
+      assert((await draft()) === null, 'sign-up prefill cleared after registering');
+      assert(
+        (await p.evaluate(() => globalThis.localStorage.getItem('fant.guest'))) === null,
+        'no longer a guest',
+      );
+      await p.goto(`${WEB}/profile/`);
+      await p.getByRole('button', { name: 'התנתקות' }).click();
+      await p.getByRole('button', { name: 'התנתקות' }).first().click();
+      await p.waitForURL('**/onboarding/');
+      assert((await draft()) === null, 'sign-up prefill still gone after signing out');
       await ctx.close();
     },
   );

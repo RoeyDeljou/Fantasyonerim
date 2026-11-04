@@ -1,7 +1,7 @@
 'use client';
 
 import { firstGrapheme } from '@/lib/text';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -15,7 +15,9 @@ import { flash } from '@/lib/flash';
 import { clearInviteToken, takeInviteToken } from '@/lib/invite';
 import { Logo } from '@/components/AppShell';
 import { TermsAgreeLine } from './Terms';
-import { ChevronDownIcon, ChevronStartIcon, InfoIcon, KeyIcon } from '@/components/icons';
+import { ChevronDownIcon, ChevronStartIcon, ExternalIcon, InfoIcon, KeyIcon } from '@/components/icons';
+import { openExternal } from '@/lib/external';
+import { readSignUpDraft, saveSignUpDraft } from '@/lib/guest';
 import {
   Button,
   Card,
@@ -41,7 +43,7 @@ function formatRecoveryCode(raw: string): string {
 export function OnboardingScreen() {
   const { t, f, locale } = useI18n();
   const router = useRouter();
-  const { status, signIn } = useSession();
+  const { status, signIn, continueAsGuest } = useSession();
   const [step, setStep] = useState<Step>('welcome');
   const [name, setName] = useState('');
   const [teamId, setTeamId] = useState('');
@@ -51,7 +53,21 @@ export function OnboardingScreen() {
   const [codeError, setCodeError] = useState<string | null>(null);
   const [preview, setPreview] = useState<EntrySummary | null>(null);
   const [becameAdmin, setBecameAdmin] = useState(false);
+  /** FPL answered "no such team": offer try again / create a team / continue as guest. */
+  const [notFound, setNotFound] = useState(false);
+  const teamField = useRef<HTMLDivElement>(null);
   const invite = useInvite();
+
+  // A guest coming to sign up (Profile → "Sign up"): straight to the form, with what they typed last time.
+  useEffect(() => {
+    if (status !== 'guest' && !new URLSearchParams(window.location.search).has('signup')) return;
+    const draft = readSignUpDraft();
+    if (draft) {
+      setName(draft.name);
+      setTeamId(draft.teamId);
+    }
+    setStep((s) => (s === 'welcome' ? 'form' : s));
+  }, [status]);
 
   // Already signed in (e.g. opened /onboarding/ directly) → straight to the app — unless an admin invite came
   // with the link, then offer to upgrade this account instead.
@@ -69,6 +85,7 @@ export function OnboardingScreen() {
     },
     onError: (e) => {
       if (isApiError(e, 'not_found') || isApiError(e, 'bad_request')) setTeamError(t.onboarding.teamNotFound);
+      setNotFound(isApiError(e, 'not_found'));
     },
   });
 
@@ -98,6 +115,7 @@ export function OnboardingScreen() {
       else if (isApiError(e, 'conflict')) setStep('conflict');
       else if (isApiError(e, 'not_found')) {
         setTeamError(t.onboarding.teamNotFound);
+        setNotFound(true);
         setStep('form');
       }
     },
@@ -156,13 +174,22 @@ export function OnboardingScreen() {
       autoComplete="off"
       dir="ltr"
       value={teamId}
-      error={teamError}
+      // Not found: the options card below says it (and what to do), so the field doesn't repeat it.
+      error={notFound ? null : teamError}
       onChange={(e) => {
         setTeamId(e.target.value.replace(/[^\d]/g, '').slice(0, 8));
         setTeamError(null);
+        setNotFound(false);
       }}
     />
   );
+
+  const retryTeamId = () => {
+    setNotFound(false);
+    const input = teamField.current?.querySelector('input');
+    input?.focus();
+    input?.select();
+  };
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4 pt-[calc(1.5rem+env(safe-area-inset-top))] pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
@@ -209,8 +236,18 @@ export function OnboardingScreen() {
               setNameError(null);
             }}
           />
-          {teamIdField}
-          <TeamIdHelp />
+          <div ref={teamField}>{teamIdField}</div>
+          {notFound ? (
+            <NotFoundOptions
+              onRetry={retryTeamId}
+              onGuest={() => {
+                saveSignUpDraft({ name, teamId });
+                continueAsGuest();
+              }}
+            />
+          ) : (
+            <TeamIdHelp />
+          )}
           {lookup.isError && !teamError && <InlineError>{errorMessage(t, lookup.error)}</InlineError>}
           <div className="mt-auto flex flex-col gap-2 pt-2">
             <TermsAgreeLine />
@@ -354,6 +391,46 @@ export function OnboardingScreen() {
         </div>
       )}
     </main>
+  );
+}
+
+/** FPL's own site: opens the FPL app when it's installed (universal / app links). */
+const FPL_HOME = 'https://fantasy.premierleague.com/';
+
+/**
+ * A Team ID FPL doesn't know: three ways forward instead of a dead end. Only for a real "not found" — a network or
+ * server error stays the normal error with its retry.
+ */
+function NotFoundOptions({ onRetry, onGuest }: { onRetry(): void; onGuest(): void }) {
+  const { t } = useI18n();
+  const o = t.onboarding;
+  return (
+    <Card className="flex flex-col gap-3" data-testid="team-not-found">
+      <p className="text-base font-bold text-ink">{o.notFoundTitle}</p>
+      <Button block variant="secondary" onClick={onRetry} data-testid="team-retry">
+        {o.tryAgain}
+      </Button>
+      <div className="flex flex-col gap-1">
+        <a
+          href={FPL_HOME}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => {
+            e.preventDefault();
+            openExternal(FPL_HOME);
+          }}
+          data-testid="team-create"
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-sm font-bold text-on-primary"
+        >
+          <ExternalIcon size={16} />
+          {o.createTeam}
+        </a>
+        <p className="text-center text-xs text-muted">{o.createTeamHint}</p>
+      </div>
+      <Button block variant="ghost" onClick={onGuest} data-testid="team-guest">
+        {t.guest.continue}
+      </Button>
+    </Card>
   );
 }
 

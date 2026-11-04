@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { FplEntryId } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import { useLeaguePosition, useMe } from '@/lib/queries';
-import { LocateIcon } from '@/components/icons';
+import { LocateIcon, TableIcon } from '@/components/icons';
+import { JoinLink, useJoinLeague } from '@/components/JoinLeague';
 
 /** How long the row pulses after a jump (matches `.row-pulse` in globals.css). */
 const PULSE_MS = 1_600;
@@ -77,6 +78,7 @@ export function FindMyTeam({
   const me = useMe();
   const entryId = me.data?.entryId ?? null;
   const position = useLeaguePosition(enabled && entryId !== null);
+  const join = useJoinLeague();
   const page = position.data?.page ?? null;
   const [rowVisible, setRowVisible] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -91,9 +93,10 @@ export function FindMyTeam({
       setRowVisible(false);
       return;
     }
+    // The sticky header (taller with the join-league strip) and the tab bar cover the top / bottom edges.
+    const top = Math.round(document.querySelector('header')?.getBoundingClientRect().height ?? 64);
     const io = new IntersectionObserver((entries) => setRowVisible(entries.some((e) => e.isIntersecting)), {
-      // The sticky header and the tab bar cover the top / bottom edges.
-      rootMargin: '-64px 0px -96px 0px',
+      rootMargin: `-${top}px 0px -96px 0px`,
     });
     io.observe(el);
     return () => io.disconnect();
@@ -105,6 +108,25 @@ export function FindMyTeam({
     },
     [],
   );
+
+  // Not in the league (or a guest): the same spot invites them to join instead (JoinLeague.tsx).
+  if (join) {
+    return (
+      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20">
+        <FabSpace />
+        <div className="mx-auto flex max-w-xl justify-end px-4">
+          <JoinLink
+            join={join}
+            data-testid="join-league"
+            className="join-pulse pointer-events-auto inline-flex min-h-11 max-w-full items-center gap-2 rounded-full bg-primary px-4 text-sm font-extrabold text-on-primary shadow-card transition-transform active:scale-95"
+          >
+            <TableIcon width={20} height={20} className="shrink-0" />
+            <span className="truncate">{t.join.button}</span>
+          </JoinLink>
+        </div>
+      </div>
+    );
+  }
 
   if (!enabled || entryId === null || position.isError || page === null || rowVisible) {
     return <Announcer text={announce} />;
@@ -136,6 +158,7 @@ export function FindMyTeam({
     <>
       <Announcer text={announce} />
       <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20">
+        <FabSpace />
         <div className="mx-auto flex max-w-xl justify-end px-4">
           <button
             type="button"
@@ -161,4 +184,13 @@ function Announcer({ text }: { text: string }) {
       {text}
     </p>
   );
+}
+
+/** While a floating button is up, toasts move above it (`--fab-space`, globals.css) instead of covering it. */
+function FabSpace() {
+  useEffect(() => {
+    document.documentElement.setAttribute('data-fab', '');
+    return () => document.documentElement.removeAttribute('data-fab');
+  }, []);
+  return null;
 }

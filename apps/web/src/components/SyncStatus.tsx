@@ -46,7 +46,7 @@ export function SyncStatus() {
     <>
       {showWaking ? (
         <div
-          className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+4.25rem)] z-40 flex justify-center px-4"
+          className="pointer-events-none fixed inset-x-0 top-[calc(var(--app-top)+4.25rem)] z-40 flex justify-center px-4"
           data-testid="waking-notice"
         >
           <div

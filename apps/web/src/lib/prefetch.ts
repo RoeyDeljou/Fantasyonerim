@@ -2,6 +2,7 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 import { whenIdle } from './idle';
+import { isGuest } from './guest';
 import { readNewsFilter } from './localState';
 import {
   bootstrapQuery,
@@ -95,11 +96,13 @@ const NEIGHBOURS: Record<Tab, readonly Tab[]> = {
 
 /** Starts the tab's queries now and its neighbours' when idle. Returns a cancel for the idle part. */
 export function prefetchTab(qc: QueryClient, tab: Tab): () => void {
+  // Guests: only public data (no account → no me, no My Team).
+  const guest = isGuest();
   // Every screen shows the profile button (me); ensure* never refetches what is cached.
-  void qc.prefetchQuery(meQuery()).catch(swallow);
-  for (const p of FULL[tab](qc)) void p.catch(swallow);
+  if (!guest) void qc.prefetchQuery(meQuery()).catch(swallow);
+  if (!(guest && tab === 'myTeam')) for (const p of FULL[tab](qc)) void p.catch(swallow);
   return whenIdle(() => {
-    for (const n of NEIGHBOURS[tab]) void MAIN[n](qc).catch(swallow);
+    for (const n of NEIGHBOURS[tab]) if (!(guest && n === 'myTeam')) void MAIN[n](qc).catch(swallow);
   });
 }
 

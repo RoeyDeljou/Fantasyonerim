@@ -71,9 +71,17 @@ export function IconButton({
 
 // ---------- layout ----------
 
-export function Card({ children, className }: { children: ReactNode; className?: string }) {
+export function Card({
+  children,
+  className,
+  ...data
+}: {
+  children: ReactNode;
+  className?: string;
+  'data-testid'?: string;
+}) {
   return (
-    <section className={cx('rounded-2xl border border-line bg-surface p-4 shadow-card', className)}>
+    <section className={cx('rounded-2xl border border-line bg-surface p-4 shadow-card', className)} {...data}>
       {children}
     </section>
   );
@@ -465,7 +473,7 @@ export function Toast({
   return (
     <div
       role={tone === 'error' ? 'alert' : 'status'}
-      className="pointer-events-none fixed inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-50 flex justify-center px-4"
+      className="pointer-events-none fixed inset-x-0 bottom-[calc(5.5rem+var(--fab-space)+env(safe-area-inset-bottom))] z-50 flex justify-center px-4"
     >
       <p
         className={cx(

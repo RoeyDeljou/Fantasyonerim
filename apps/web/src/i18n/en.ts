@@ -69,6 +69,10 @@ export const en: Messages = {
     profile: 'Profile & settings',
   },
   onboarding: {
+    notFoundTitle: "We couldn't find a team with that Team ID",
+    tryAgain: 'Try again',
+    createTeam: 'Create your FPL team',
+    createTeamHint: 'After you create a team, come back and enter the Team ID',
     welcomeTitle: 'Welcome to Fantasyonerim',
     welcomeBody: "Your team, the podcast's league, live points and the Captain Battle — all in one place.",
     start: "Let's go",
@@ -218,6 +222,24 @@ export const en: Messages = {
     freehit: 'Free Hit',
     bboost: 'Bench Boost',
     '3xc': 'Triple Captain',
+  },
+  join: {
+    bar: 'Join our league now — code {code}',
+    barLabel: 'Join the Fantasyonerim league on FPL',
+    copyCode: 'Copy code',
+    copied: 'Code copied',
+    button: 'Join the Fantasyonerim league now!',
+  },
+  guest: {
+    continue: 'Continue as guest',
+    signUp: 'Sign up',
+    promptTitle: 'You need an account for this',
+    promptBody:
+      'Signing up is free — a name and your FPL Team ID — and then you can like, comment, post and get notifications.',
+    myTeamTitle: 'Your team will show here',
+    myTeamBody: 'Sign up with your FPL Team ID to see your team and its live points.',
+    profileTitle: "You're browsing as a guest",
+    profileBody: 'Sign up to see your team, write in Community and get notifications.',
   },
   table: {
     title: 'Table',

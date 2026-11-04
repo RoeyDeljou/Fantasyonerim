@@ -12,6 +12,8 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { BanIcon, FlagIcon, MoreIcon, TrashIcon } from '@/components/icons';
 import { Button, IconButton, InlineError, Spinner, cx, errorMessage } from '@/components/ui';
 import { useNotify } from './parts';
+import { useSignUpGate } from '@/components/SignUpPrompt';
+import { useIsGuest } from '@/lib/guest';
 
 const REASONS: readonly ReportReason[] = ReportReasonSchema.options;
 const NOTE_MAX = 300;
@@ -51,6 +53,8 @@ export function ContentMenu({
   const c = t.community;
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>('menu');
+  // Guests: reporting / blocking needs an account — the menu asks them to sign up instead.
+  const signUp = useSignUpGate(useIsGuest());
   if (!canDelete && !canReport && !blockAuthor) return null;
 
   const show = (m: Mode) => {
@@ -73,12 +77,13 @@ export function ContentMenu({
     <>
       <IconButton
         label={c.more}
-        onClick={() => show('menu')}
+        onClick={signUp.gate(() => show('menu'))}
         className="-me-2 text-muted"
         data-testid="content-menu"
       >
         <MoreIcon size={20} />
       </IconButton>
+      {signUp.sheet}
       <BottomSheet open={open} onClose={close} title={title}>
         {mode === 'menu' && (
           <ul className="flex flex-col gap-1 pb-1">

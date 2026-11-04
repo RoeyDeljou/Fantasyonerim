@@ -15,6 +15,8 @@ import { ComposerSheet, Thread } from '@/components/lazySheets';
 import { PostCard, PostCardSkeleton } from '@/components/community/PostCard';
 import { AuthorAvatar, BannedNotice, CommunityToastProvider } from '@/components/community/parts';
 import { MediaPriority } from '@/components/news/parts';
+import { SignUpPrompt } from '@/components/SignUpPrompt';
+import { useIsGuest } from '@/lib/guest';
 import {
   Button,
   EmptyState,
@@ -66,10 +68,13 @@ function CommunityInner() {
 function FeedView() {
   const me = useMe();
   const banned = useBanned();
+  const guest = useIsGuest();
   const [composing, setComposing] = useState(false);
   return (
     <div className="flex flex-col gap-4">
       {banned && <BannedNotice />}
+      {/* Guests read the feed; posting needs an account. */}
+      {guest && <SignUpPrompt />}
       {me.data && (
         <>
           <ComposerEntry me={me.data} disabled={banned} onOpen={() => setComposing(true)} />
@@ -179,7 +184,7 @@ function Feed() {
   return (
     <>
       {hasNewer && (
-        <div className="pointer-events-none sticky top-[calc(4rem+env(safe-area-inset-top))] z-20 -mb-12 flex justify-center">
+        <div className="pointer-events-none sticky top-[calc(4rem+var(--app-top))] z-20 -mb-12 flex justify-center">
           <button
             type="button"
             data-testid="new-posts"

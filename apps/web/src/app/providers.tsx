@@ -68,7 +68,7 @@ export function Providers({ children }: { children: ReactNode }) {
 function PushSync() {
   const { status } = useSession();
   useEffect(() => {
-    if (status === 'signedOut') void shareWithWorker();
+    if (status === 'signedOut' || status === 'guest') void shareWithWorker();
     if (status !== 'signedIn') return;
     void resyncPush();
     return onResume(() => void resyncPush());

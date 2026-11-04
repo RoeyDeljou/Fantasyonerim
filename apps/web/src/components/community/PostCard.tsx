@@ -11,6 +11,8 @@ import { ExpandableText, LinkifiedText, MediaImage, SIZES, srcSetOf } from '@/co
 import { Num, cx } from '@/components/ui';
 import { ContentMenu } from './ContentMenu';
 import { ImageViewer } from '../lazySheets';
+import { useSignUpGate } from '@/components/SignUpPrompt';
+import { useIsGuest } from '@/lib/guest';
 import { AuthorAvatar, AuthorLine, canBlock, useNotify } from './parts';
 import { SnapshotSheet, TeamPreview } from './TeamSnapshot';
 
@@ -127,6 +129,8 @@ function PostActions({ post, inThread }: { post: CommunityPost; inThread: boolea
   const banned = useBanned();
   const like = useLikePost();
   const [pop, setPop] = useState(0);
+  // Guests can read; a like asks them to sign up.
+  const signUp = useSignUpGate(useIsGuest());
 
   const toggle = () => {
     const next = !post.likedByMe;
@@ -154,7 +158,7 @@ function PostActions({ post, inThread }: { post: CommunityPost; inThread: boolea
     <footer className="-mx-2 -mb-1 flex items-center gap-1 border-t border-line pt-1">
       <button
         type="button"
-        onClick={toggle}
+        onClick={signUp.gate(toggle)}
         disabled={banned}
         aria-pressed={post.likedByMe}
         aria-label={`${post.likedByMe ? c.unlike : c.like} · ${plural(post.likeCount, c.likeCountOne, c.likeCount)}`}
@@ -186,6 +190,7 @@ function PostActions({ post, inThread }: { post: CommunityPost; inThread: boolea
           {comments}
         </Link>
       )}
+      {signUp.sheet}
     </footer>
   );
 }

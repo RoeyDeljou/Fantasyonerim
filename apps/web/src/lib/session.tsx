@@ -10,8 +10,10 @@ import { tokenStore } from './tokenStore';
 import { qk } from './queries';
 import { clearPersistedQueries } from './persist';
 import { useI18n } from '@/i18n';
+import { clearSignUpDraft, isGuest, setGuest } from './guest';
 
-export type SessionStatus = 'loading' | 'signedIn' | 'signedOut';
+/** `guest`: browsing without an account (lib/guest.ts) — public screens work, account actions prompt sign-up. */
+export type SessionStatus = 'loading' | 'signedIn' | 'signedOut' | 'guest';
 
 interface SessionValue {
   status: SessionStatus;
@@ -20,6 +22,8 @@ interface SessionValue {
   signOut(): Promise<void>;
   /** Ends the session on this device only (the token is already dead, e.g. the account was deleted). */
   forget(): Promise<void>;
+  /** "Continue as guest": into the app without an account (kept on this device). */
+  continueAsGuest(): void;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -40,7 +44,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let alive = true;
     void tokenStore.get().then((t) => {
-      if (alive) setStatus(t ? 'signedIn' : 'signedOut');
+      if (alive) setStatus(t ? 'signedIn' : isGuest() ? 'guest' : 'signedOut');
     });
     return () => {
       alive = false;
@@ -51,6 +55,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const afterSessionEnded = useCallback(async () => {
     qc.clear();
     clearPersistedQueries(); // nothing of the old session stays on the device
+    clearSignUpDraft(); // nor what a guest once typed (a shared phone's next user starts blank)
     const fan = await tokenStore.get('fan');
     if (fan) {
       await tokenStore.set(fan);
@@ -59,6 +64,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       router.replace(ROUTES.home);
       return;
     }
+    setGuest(false);
     setStatus('signedOut');
     router.replace(ROUTES.onboarding);
   }, [qc, router]);
@@ -77,6 +83,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await tokenStore.set(previous, 'fan');
       }
       await tokenStore.set(auth.token);
+      setGuest(false);
+      clearSignUpDraft(); // the guest's prefill has done its job
       qc.removeQueries({ queryKey: qk.me });
       qc.setQueryData(qk.me, auth.user);
       if (opts.adoptLocale !== false) setLocale(auth.user.locale);
@@ -100,7 +108,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await afterSessionEnded();
   }, [afterSessionEnded]);
 
-  const value = useMemo(() => ({ status, signIn, signOut, forget }), [status, signIn, signOut, forget]);
+  const continueAsGuest = useCallback(() => {
+    setGuest(true);
+    setStatus('guest');
+    router.replace(ROUTES.home);
+  }, [router]);
+
+  const value = useMemo(
+    () => ({ status, signIn, signOut, forget, continueAsGuest }),
+    [status, signIn, signOut, forget, continueAsGuest],
+  );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

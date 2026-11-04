@@ -26,6 +26,7 @@ import { ArrowUpIcon, BellIcon, CloseIcon, MicIcon, RefreshIcon } from '@/compon
 import { FilterChips } from '@/components/news/FilterChips';
 import { NewsCard, NewsCardSkeleton } from '@/components/news/NewsCards';
 import { MediaPriority } from '@/components/news/parts';
+import { useIsGuest } from '@/lib/guest';
 import { SourceBadge, filterKind } from '@/components/news/SourceBadge';
 import { ProfileHeader } from '@/components/news/ProfileHeader';
 import {
@@ -138,6 +139,7 @@ function PushPrompt() {
   const push = usePushState();
   const [snoozed, setSnoozed] = useState(true);
   const [guess, setGuess] = useState<PushState>('loading');
+  const guest = useIsGuest();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<PushError | null>(null);
   const [guide, setGuide] = useState(false);
@@ -149,7 +151,7 @@ function PushPrompt() {
   }, []);
 
   const state = push.state === 'loading' ? guess : push.state;
-  if (snoozed) return null;
+  if (snoozed || guest) return null; // notifications need an account
   if (state !== 'disabled' && state !== 'needs-install') return null;
 
   const dismiss = () => {
@@ -308,7 +310,7 @@ function Feed({
   return (
     <>
       {hasNewer && (
-        <div className="pointer-events-none sticky top-[calc(4rem+env(safe-area-inset-top))] z-20 -mb-12 flex justify-center">
+        <div className="pointer-events-none sticky top-[calc(4rem+var(--app-top))] z-20 -mb-12 flex justify-center">
           <button
             type="button"
             data-testid="new-posts"

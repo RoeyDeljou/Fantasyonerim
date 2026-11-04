@@ -57,6 +57,7 @@ import type { InfiniteData, QueryClient as QC } from '@tanstack/react-query';
 import { api, isApiError, isBannedError } from './api';
 import type { CreateAdminBody, ResolveAction } from './api';
 import { PERSIST_MAX_AGE } from './persist';
+import { isGuest } from './guest';
 
 export const LIVE_POLL_MS = 30_000;
 export const IDLE_POLL_MS = 5 * 60_000;
@@ -372,7 +373,10 @@ export function useLiveLeague(refetchInterval: number, enabled: boolean) {
 export function useLeaguePosition(enabled: boolean) {
   return useQuery({
     queryKey: qk.leaguePosition,
-    queryFn: enabled ? ({ signal }) => api.leaguePosition({ signal }) : skipToken,
+    // `enabled`, not skipToken: several screens observe this one query with different conditions (find-my-team,
+    // the join-league strip), and a refetch must never pick up a disabled observer's skipToken.
+    queryFn: ({ signal }) => api.leaguePosition({ signal }),
+    enabled: enabled && !isGuest(),
     staleTime: 2 * 60_000,
   });
 }
@@ -390,7 +394,8 @@ export function useCaptainBattle(refetchInterval: number) {
 // ---------- me ----------
 
 export function useMe(enabled = true) {
-  return useQuery({ ...meQuery(), enabled });
+  // Guests have no account: never ask (lib/guest.ts).
+  return useQuery({ ...meQuery(), enabled: enabled && !isGuest() });
 }
 
 export function useRecoveryCode(enabled: boolean) {
@@ -546,7 +551,7 @@ export function useNotificationPrefs(enabled: boolean) {
   return useQuery({
     queryKey: qk.notificationPrefs,
     queryFn: ({ signal }) => api.notificationPrefs({ signal }),
-    enabled,
+    enabled: enabled && !isGuest(),
     staleTime: 5 * 60_000,
   });
 }
@@ -938,7 +943,7 @@ export function useBlocks(enabled: boolean) {
   return useQuery({
     queryKey: qk.blocks,
     queryFn: ({ signal }) => api.community.blocks({ signal }),
-    enabled,
+    enabled: enabled && !isGuest(),
   });
 }
 

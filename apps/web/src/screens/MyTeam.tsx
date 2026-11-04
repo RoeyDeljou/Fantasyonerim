@@ -30,6 +30,8 @@ import {
 } from '@/components/team/TeamParts';
 import { LiveTeamView } from '@/components/team/LiveTeamView';
 import { EmptyState, ErrorState, Segmented, Skeleton } from '@/components/ui';
+import { SignUpPrompt } from '@/components/SignUpPrompt';
+import { useIsGuest } from '@/lib/guest';
 
 type View = 'team' | 'live';
 
@@ -53,6 +55,7 @@ function MyTeamInner() {
   const gwParam = GameweekSchema.safeParse(params.get('gw') ?? undefined);
   const me = useMe();
   const fpl = useFplIndex();
+  const guest = useIsGuest();
 
   const setParams = (next: { view?: View; gw?: Gameweek | null }) => {
     const sp = new URLSearchParams(params.toString());
@@ -78,6 +81,9 @@ function MyTeamInner() {
       ]}
     />
   );
+
+  // A guest has no team to show: invite them to sign up with their Team ID.
+  if (guest) return <SignUpPrompt title={t.guest.myTeamTitle} body={t.guest.myTeamBody} />;
 
   if (me.isPending || fpl.isPending) {
     return (

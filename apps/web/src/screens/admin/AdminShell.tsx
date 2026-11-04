@@ -51,7 +51,7 @@ export function AdminGuard({ children }: { children: ReactNode }) {
   const isAdmin = me.data?.role === 'admin';
 
   useEffect(() => {
-    if (status === 'signedOut') router.replace(ROUTES.adminLogin);
+    if (status === 'signedOut' || status === 'guest') router.replace(ROUTES.adminLogin);
     else if (status === 'signedIn' && me.data && me.data.role !== 'admin')
       router.replace(`${ROUTES.adminLogin}?denied=1`);
   }, [status, me.data, router]);

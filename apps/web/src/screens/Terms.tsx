@@ -23,13 +23,14 @@ export function TermsScreen() {
 
   const back = () => {
     if (window.history.length > 1) router.back();
-    else router.replace(status === 'signedIn' ? ROUTES.home : ROUTES.onboarding);
+    else router.replace(status === 'signedIn' || status === 'guest' ? ROUTES.home : ROUTES.onboarding);
   };
 
   return (
     <div className="min-h-dvh">
       <TopBar
         title={tm.title}
+        joinBar
         end={
           <>
             <IconButton

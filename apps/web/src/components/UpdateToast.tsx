@@ -14,7 +14,7 @@ export function UpdateToast() {
   const show = useUpdatePrompt();
   if (!show) return null;
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[calc(4rem+env(safe-area-inset-top))] z-40 flex justify-center px-4">
+    <div className="pointer-events-none fixed inset-x-0 top-[calc(4rem+var(--app-top))] z-40 flex justify-center px-4">
       <button
         type="button"
         onClick={applyUpdateNow}

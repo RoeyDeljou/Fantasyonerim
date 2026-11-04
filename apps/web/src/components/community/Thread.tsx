@@ -5,6 +5,8 @@ import type { Comment, PostId } from '@fant/shared';
 import { useI18n } from '@/i18n';
 import { isApiError } from '@/lib/api';
 import { isBannedError, useBanned } from '@/lib/banned';
+import { useIsGuest } from '@/lib/guest';
+import { SignUpPrompt } from '@/components/SignUpPrompt';
 import { useDraft } from '@/lib/drafts';
 import { useComments, useCreateComment, useDeleteComment, useMe, usePost } from '@/lib/queries';
 import { ChatIcon, ChevronStartIcon, RefreshIcon, SendIcon } from '@/components/icons';
@@ -30,6 +32,7 @@ export function Thread({ postId, onBack }: { postId: PostId; onBack(): void }) {
   const { t } = useI18n();
   const c = t.community;
   const banned = useBanned();
+  const guest = useIsGuest();
   const post = usePost(postId);
 
   useEffect(() => {
@@ -59,7 +62,8 @@ export function Thread({ postId, onBack }: { postId: PostId; onBack(): void }) {
         <>
           <PostCard post={post.data} inThread onDeleted={onBack} />
           <Comments postId={postId} />
-          <CommentBar postId={postId} disabled={banned} />
+          {/* Guests read the conversation; commenting needs an account. */}
+          {guest ? <SignUpPrompt /> : <CommentBar postId={postId} disabled={banned} />}
         </>
       )}
     </div>

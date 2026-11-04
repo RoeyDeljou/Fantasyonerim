@@ -11,7 +11,7 @@ export default function RootRedirect() {
   const { status } = useSession();
   const router = useRouter();
   useEffect(() => {
-    if (status === 'signedIn') router.replace(ROUTES.home);
+    if (status === 'signedIn' || status === 'guest') router.replace(ROUTES.home);
     if (status === 'signedOut') router.replace(ROUTES.onboarding);
   }, [status, router]);
   return (

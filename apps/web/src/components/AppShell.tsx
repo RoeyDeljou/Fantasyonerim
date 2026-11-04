@@ -12,6 +12,7 @@ import { useRefresh } from '@/lib/refresh';
 import { prefetchTab, tabOf } from '@/lib/prefetch';
 import type { RefreshScope } from '@/lib/refresh';
 import { PullToRefresh, RefreshButton, RefreshDone } from './RefreshControl';
+import { JoinLeagueBar } from './JoinLeague';
 import { CommunityIcon, LiveIcon, NewsIcon, ShirtIcon, TableIcon } from './icons';
 import { initials } from '@/lib/text';
 import { Skeleton, cx } from './ui';
@@ -42,10 +43,20 @@ export function Logo({ size = 36 }: { size?: number }) {
   );
 }
 
-export function TopBar({ title, end }: { title?: string | undefined; end?: ReactNode }) {
+export function TopBar({
+  title,
+  end,
+  joinBar = false,
+}: {
+  title?: string | undefined;
+  end?: ReactNode;
+  /** The app's tabs: the "Join our league" strip sits on top of the header (JoinLeague.tsx). */
+  joinBar?: boolean;
+}) {
   const t = useT();
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/90 pt-[env(safe-area-inset-top)] backdrop-blur supports-[backdrop-filter]:bg-canvas/80">
+      {joinBar && <JoinLeagueBar />}
       <div className="mx-auto flex h-14 max-w-xl items-center gap-3 ps-4 pe-2">
         <Link href={ROUTES.home} className="flex min-w-0 items-center gap-2.5" aria-label={t.app.name}>
           <Logo />
@@ -123,14 +134,17 @@ function TabBar() {
   );
 }
 
-/** Redirects to onboarding when there is no session. Renders nothing meaningful until resolved. */
+/**
+ * Redirects to onboarding when there is no session. Renders nothing meaningful until resolved. Guests count as
+ * ready: the tabs are public (account-only actions inside them prompt sign-up).
+ */
 export function useRequireSession(): boolean {
   const { status } = useSession();
   const router = useRouter();
   useEffect(() => {
     if (status === 'signedOut') router.replace(ROUTES.onboarding);
   }, [status, router]);
-  return status === 'signedIn';
+  return status === 'signedIn' || status === 'guest';
 }
 
 const NO_SCOPE: RefreshScope = [];
@@ -170,6 +184,7 @@ export function AppShell({
     <div className="min-h-dvh">
       <TopBar
         title={title}
+        joinBar={ready}
         end={
           ready ? (
             <>

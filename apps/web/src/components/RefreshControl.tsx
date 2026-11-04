@@ -143,7 +143,7 @@ export function PullToRefresh({ refreshing, onRefresh }: { refreshing: boolean; 
       data-testid="pull-indicator"
       data-state={refreshing ? 'refreshing' : armed ? 'armed' : pull > 0 ? 'pulling' : 'idle'}
       className={cx(
-        'pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+3.5rem)] z-20 flex justify-center',
+        'pointer-events-none fixed inset-x-0 top-[calc(var(--app-top)+3.5rem)] z-20 flex justify-center',
         !visible && 'invisible',
       )}
       style={{
