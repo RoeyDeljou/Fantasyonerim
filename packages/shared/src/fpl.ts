@@ -261,6 +261,11 @@ export const LeaguePositionSchema = z.object({
   page: z.nullable(z.number().check(z.int(), z.gte(1))),
   /** Official league rank (null when not in the league). */
   rank: z.nullable(z.number().check(z.int(), z.gte(1))),
+  /**
+   * The viewer's team is in the league: in the standings, or a "new entry" FPL hasn't ranked yet (new joiners only
+   * get a page/rank after the next GW update). Drives the "Join our league" bar. Defaults to false.
+   */
+  member: z._default(z.boolean(), false),
 });
 export type LeaguePosition = z.infer<typeof LeaguePositionSchema>;
 

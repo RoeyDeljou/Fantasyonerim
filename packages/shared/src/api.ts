@@ -114,8 +114,22 @@ export const HttpsUrlSchema = z.string().check(
 );
 
 /** GET /v1/config — public, unauthenticated; what the client needs to render tabs. */
+/** An FPL classic-league invite code, e.g. "KJJGKB" (6 letters/digits). */
+export const LeagueCodeSchema = z
+  .string()
+  .check(z.trim(), z.regex(/^[A-Za-z0-9]{6}$/, 'must be a 6-character league code'));
+
+/**
+ * How a fan joins the podcast league: the code plus FPL's official invite link
+ * (https://fantasy.premierleague.com/leagues/auto-join/<code>), which opens the FPL app or site and asks to join.
+ */
+export const LeagueJoinSchema = z.object({ code: z.string(), url: HttpsUrlSchema });
+export type LeagueJoin = z.infer<typeof LeagueJoinSchema>;
+
 export const PublicConfigSchema = z.object({
   league: z.nullable(z.object({ id: FplLeagueIdSchema, name: z.nullable(z.string()) })),
+  /** null until an admin sets the league code. Optional on input so older responses still parse. */
+  leagueJoin: z._default(z.nullable(LeagueJoinSchema), null),
   captainBattleEvent: z.nullable(GameweekSchema),
   socials: z.object({
     spotifyUrl: z.nullable(HttpsUrlSchema),
@@ -192,6 +206,8 @@ export const AdminSettingsSchema = z.object({
   /** Minutes before each FPL deadline to send a reminder push, e.g. [1440, 120]. */
   deadlineReminderMinutes: z.array(z.number().check(z.int(), z.gte(5), z.lte(4320))).check(z.maxLength(5)),
   socials: PublicConfigSchema.shape.socials,
+  /** The league's invite code (shown in the "Join our league" bar). Optional on PUT: omitted keeps the stored one. */
+  leagueCode: z.optional(z.nullable(LeagueCodeSchema)),
 });
 export type AdminSettings = z.infer<typeof AdminSettingsSchema>;
 
