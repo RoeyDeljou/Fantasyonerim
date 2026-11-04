@@ -1,0 +1,29 @@
+[loadtest 21:47:12] building apps/api (tsc -p)…
+[loadtest 21:47:14] migrating + truncating postgresql://***@localhost:5432/fantasyonerim_loadtest
+[loadtest 21:47:17] seeded 300 users, 206 news items, 120 posts
+[loadtest 21:47:17] mix: booting API (jobs on, 0.1 CPU, 512 MB)…
+[loadtest 21:47:44] pre-mix cron tick: 200 in 10988 ms {"ran":["podcast","youtube","cleanup","image_variants"]}
+[loadtest 21:47:49] mix: 300 users, 60s (ramp 30s)
+[loadtest 21:48:19]   1892 requests, RSS 208.7 MB, lag p99 84.1 ms
+# Load test: q300 (2026-11-04T21:47:14.847Z)
+
+Limits: cgroup v1 cpu.cfs_quota_us=10000/100000 (0.1 CPU); cgroup v1 memory.limit_in_bytes=512 MB
+
+## Peak mix: 300 users, 60s
+
+requests 2629 (43.7/s), browser-cache hits 0, errors 0, CPU 1.66 ms/req, avg CPU 7.2% of a core (peak second 10.3%), RSS max 216.1 MB (end 216.1), heap max 77.7 MB, event-loop p50 5.2 / p99 95.3 / max 327.9 ms, FPL upstream calls 316
+
+| endpoint | requests | errors | notModifiedPct | p50 | p95 | p99 | max | avgKb | statuses |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| GET /v1/fpl/fixtures?event | 599 | 0 | 49.9 | 1.5 | 100.4 | 202.7 | 529.3 | 0.1 | {"200":300,"304":299} |
+| GET /v1/league/live | 439 | 0 | 0 | 1.7 | 101.7 | 203.1 | 529.3 | 1.6 | {"200":439} |
+| GET /v1/me | 300 | 0 | 0 | 84.8 | 891.5 | 991.4 | 993.1 | 0.2 | {"200":300} |
+| GET /v1/fpl/bootstrap | 300 | 0 | 0 | 86 | 891.4 | 991.4 | 994.4 | 10.3 | {"200":300} |
+| GET /v1/config | 300 | 0 | 0 | 86.3 | 891.3 | 991.4 | 992.8 | 0.3 | {"200":300} |
+| GET /v1/fpl/entries/:id/live | 239 | 0 | 0 | 3.6 | 200.7 | 402.5 | 528.7 | 0.6 | {"200":239} |
+| GET /v1/fpl/entries/:id | 120 | 0 | 0 | 1.6 | 102.8 | 203 | 397 | 0.2 | {"200":120} |
+| GET /v1/fpl/entries/:id/picks | 120 | 0 | 0 | 2.9 | 104.1 | 298.8 | 398.6 | 0.3 | {"200":120} |
+| GET /v1/fpl/fixtures/:id | 119 | 0 | 3.4 | 2.7 | 101.2 | 205 | 529.1 | 0.4 | {"200":115,"304":4} |
+| GET /v1/captain-battle | 93 | 0 | 0 | 2.8 | 115.2 | 302 | 302 | 0.3 | {"200":93} |
+
+[loadtest 21:48:50] wrote /home/user/Fantasyonerim/scripts/loadtest/results/q300-2026-11-04T21-48-50.json / .md

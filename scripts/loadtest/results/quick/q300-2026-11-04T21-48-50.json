@@ -1,0 +1,654 @@
+{
+  "label": "q300",
+  "at": "2026-11-04T21:47:14.847Z",
+  "node": "v22.22.0",
+  "cpuLimit": 0.1,
+  "memoryLimitMb": 512,
+  "limits": [
+    "cgroup v1 cpu.cfs_quota_us=10000/100000 (0.1 CPU)",
+    "cgroup v1 memory.limit_in_bytes=512 MB"
+  ],
+  "bootRssMbLimited": 179.3,
+  "mix": {
+    "users": 300,
+    "durationS": 60,
+    "requests": 2629,
+    "rps": 43.7,
+    "browserCacheHits": 0,
+    "errors": 0,
+    "cpuMsTotal": 4355,
+    "cpuMsPerRequest": 1.66,
+    "avgCpuPctOfCore": 7.2,
+    "peakCpuPctOfCore": 10.3,
+    "rssMbMax": 216.1,
+    "rssMbEnd": 216.1,
+    "heapMbMax": 77.7,
+    "eventLoop": {
+      "p50": 5.2,
+      "p99": 95.3,
+      "max": 327.9,
+      "mean": 8.2
+    },
+    "eventLoopWorstSecondP99": 306.4,
+    "fplUpstreamCalls": 316,
+    "endpoints": [
+      {
+        "endpoint": "GET /v1/fpl/fixtures?event",
+        "requests": 599,
+        "errors": 0,
+        "statuses": {
+          "200": 300,
+          "304": 299
+        },
+        "notModifiedPct": 49.9,
+        "p50": 1.5,
+        "p95": 100.4,
+        "p99": 202.7,
+        "max": 529.3,
+        "avgKb": 0.1
+      },
+      {
+        "endpoint": "GET /v1/league/live",
+        "requests": 439,
+        "errors": 0,
+        "statuses": {
+          "200": 439
+        },
+        "notModifiedPct": 0,
+        "p50": 1.7,
+        "p95": 101.7,
+        "p99": 203.1,
+        "max": 529.3,
+        "avgKb": 1.6
+      },
+      {
+        "endpoint": "GET /v1/me",
+        "requests": 300,
+        "errors": 0,
+        "statuses": {
+          "200": 300
+        },
+        "notModifiedPct": 0,
+        "p50": 84.8,
+        "p95": 891.5,
+        "p99": 991.4,
+        "max": 993.1,
+        "avgKb": 0.2
+      },
+      {
+        "endpoint": "GET /v1/fpl/bootstrap",
+        "requests": 300,
+        "errors": 0,
+        "statuses": {
+          "200": 300
+        },
+        "notModifiedPct": 0,
+        "p50": 86,
+        "p95": 891.4,
+        "p99": 991.4,
+        "max": 994.4,
+        "avgKb": 10.3
+      },
+      {
+        "endpoint": "GET /v1/config",
+        "requests": 300,
+        "errors": 0,
+        "statuses": {
+          "200": 300
+        },
+        "notModifiedPct": 0,
+        "p50": 86.3,
+        "p95": 891.3,
+        "p99": 991.4,
+        "max": 992.8,
+        "avgKb": 0.3
+      },
+      {
+        "endpoint": "GET /v1/fpl/entries/:id/live",
+        "requests": 239,
+        "errors": 0,
+        "statuses": {
+          "200": 239
+        },
+        "notModifiedPct": 0,
+        "p50": 3.6,
+        "p95": 200.7,
+        "p99": 402.5,
+        "max": 528.7,
+        "avgKb": 0.6
+      },
+      {
+        "endpoint": "GET /v1/fpl/entries/:id",
+        "requests": 120,
+        "errors": 0,
+        "statuses": {
+          "200": 120
+        },
+        "notModifiedPct": 0,
+        "p50": 1.6,
+        "p95": 102.8,
+        "p99": 203,
+        "max": 397,
+        "avgKb": 0.2
+      },
+      {
+        "endpoint": "GET /v1/fpl/entries/:id/picks",
+        "requests": 120,
+        "errors": 0,
+        "statuses": {
+          "200": 120
+        },
+        "notModifiedPct": 0,
+        "p50": 2.9,
+        "p95": 104.1,
+        "p99": 298.8,
+        "max": 398.6,
+        "avgKb": 0.3
+      },
+      {
+        "endpoint": "GET /v1/fpl/fixtures/:id",
+        "requests": 119,
+        "errors": 0,
+        "statuses": {
+          "200": 115,
+          "304": 4
+        },
+        "notModifiedPct": 3.4,
+        "p50": 2.7,
+        "p95": 101.2,
+        "p99": 205,
+        "max": 529.1,
+        "avgKb": 0.4
+      },
+      {
+        "endpoint": "GET /v1/captain-battle",
+        "requests": 93,
+        "errors": 0,
+        "statuses": {
+          "200": 93
+        },
+        "notModifiedPct": 0,
+        "p50": 2.8,
+        "p95": 115.2,
+        "p99": 302,
+        "max": 302,
+        "avgKb": 0.3
+      }
+    ],
+    "timeline": [
+      {
+        "t": 1793828870524,
+        "rssMb": 197.2,
+        "heapMb": 63.1,
+        "cpuMs": 2906.204,
+        "lagP99": 178.9,
+        "lagMax": 327.9
+      },
+      {
+        "t": 1793828871599,
+        "rssMb": 201.5,
+        "heapMb": 56.8,
+        "cpuMs": 3016.265,
+        "lagP99": 306.4,
+        "lagMax": 306.4
+      },
+      {
+        "t": 1793828872599,
+        "rssMb": 201.5,
+        "heapMb": 62.2,
+        "cpuMs": 3115.193,
+        "lagP99": 102.1,
+        "lagMax": 102.1
+      },
+      {
+        "t": 1793828873696,
+        "rssMb": 201.6,
+        "heapMb": 66.8,
+        "cpuMs": 3227.834,
+        "lagP99": 205.1,
+        "lagMax": 205.1
+      },
+      {
+        "t": 1793828874796,
+        "rssMb": 201.6,
+        "heapMb": 59,
+        "cpuMs": 3322.818,
+        "lagP99": 198.2,
+        "lagMax": 198.2
+      },
+      {
+        "t": 1793828875796,
+        "rssMb": 201.6,
+        "heapMb": 64.4,
+        "cpuMs": 3424.068,
+        "lagP99": 196.5,
+        "lagMax": 196.5
+      },
+      {
+        "t": 1793828876798,
+        "rssMb": 201.8,
+        "heapMb": 57.2,
+        "cpuMs": 3523.348,
+        "lagP99": 201.5,
+        "lagMax": 201.5
+      },
+      {
+        "t": 1793828877799,
+        "rssMb": 201.8,
+        "heapMb": 62.5,
+        "cpuMs": 3621.786,
+        "lagP99": 102.3,
+        "lagMax": 102.3
+      },
+      {
+        "t": 1793828878799,
+        "rssMb": 201.9,
+        "heapMb": 66.1,
+        "cpuMs": 3719.06,
+        "lagP99": 96.5,
+        "lagMax": 96.5
+      },
+      {
+        "t": 1793828879799,
+        "rssMb": 202.6,
+        "heapMb": 58.6,
+        "cpuMs": 3812.592,
+        "lagP99": 78.4,
+        "lagMax": 83.9
+      },
+      {
+        "t": 1793828880799,
+        "rssMb": 202.6,
+        "heapMb": 62.1,
+        "cpuMs": 3896.567,
+        "lagP99": 62.3,
+        "lagMax": 78.6
+      },
+      {
+        "t": 1793828881799,
+        "rssMb": 202.6,
+        "heapMb": 66.5,
+        "cpuMs": 3998.724,
+        "lagP99": 85.2,
+        "lagMax": 86.6
+      },
+      {
+        "t": 1793828882799,
+        "rssMb": 203.4,
+        "heapMb": 58.4,
+        "cpuMs": 4101.311,
+        "lagP99": 90.1,
+        "lagMax": 93.5
+      },
+      {
+        "t": 1793828883800,
+        "rssMb": 203.4,
+        "heapMb": 62.5,
+        "cpuMs": 4195.141,
+        "lagP99": 95.1,
+        "lagMax": 95.1
+      },
+      {
+        "t": 1793828884896,
+        "rssMb": 203.4,
+        "heapMb": 67.4,
+        "cpuMs": 4303.639,
+        "lagP99": 95.3,
+        "lagMax": 96.1
+      },
+      {
+        "t": 1793828885896,
+        "rssMb": 204.1,
+        "heapMb": 59.3,
+        "cpuMs": 4402.047,
+        "lagP99": 97.3,
+        "lagMax": 97.3
+      },
+      {
+        "t": 1793828886896,
+        "rssMb": 204.4,
+        "heapMb": 63.8,
+        "cpuMs": 4500.209,
+        "lagP99": 115.2,
+        "lagMax": 115.2
+      },
+      {
+        "t": 1793828887896,
+        "rssMb": 204.4,
+        "heapMb": 67.7,
+        "cpuMs": 4596.303,
+        "lagP99": 81.9,
+        "lagMax": 84.1
+      },
+      {
+        "t": 1793828888897,
+        "rssMb": 205.3,
+        "heapMb": 62.5,
+        "cpuMs": 4695.843,
+        "lagP99": 86.8,
+        "lagMax": 96
+      },
+      {
+        "t": 1793828889899,
+        "rssMb": 205.3,
+        "heapMb": 67.1,
+        "cpuMs": 4788.387,
+        "lagP99": 80.7,
+        "lagMax": 81
+      },
+      {
+        "t": 1793828890899,
+        "rssMb": 205.3,
+        "heapMb": 71.2,
+        "cpuMs": 4876.671,
+        "lagP99": 83,
+        "lagMax": 83.4
+      },
+      {
+        "t": 1793828891900,
+        "rssMb": 206.5,
+        "heapMb": 64.4,
+        "cpuMs": 4976.168,
+        "lagP99": 80.9,
+        "lagMax": 82.6
+      },
+      {
+        "t": 1793828892900,
+        "rssMb": 206.5,
+        "heapMb": 68.1,
+        "cpuMs": 5058.197,
+        "lagP99": 79,
+        "lagMax": 79.2
+      },
+      {
+        "t": 1793828893997,
+        "rssMb": 206.8,
+        "heapMb": 71.7,
+        "cpuMs": 5168.352,
+        "lagP99": 95.6,
+        "lagMax": 99.7
+      },
+      {
+        "t": 1793828894998,
+        "rssMb": 208.1,
+        "heapMb": 68.7,
+        "cpuMs": 5266.104,
+        "lagP99": 99.6,
+        "lagMax": 99.6
+      },
+      {
+        "t": 1793828895998,
+        "rssMb": 208.1,
+        "heapMb": 72.8,
+        "cpuMs": 5361.241,
+        "lagP99": 84,
+        "lagMax": 86.8
+      },
+      {
+        "t": 1793828896998,
+        "rssMb": 208.7,
+        "heapMb": 65.5,
+        "cpuMs": 5456.96,
+        "lagP99": 79.6,
+        "lagMax": 80
+      },
+      {
+        "t": 1793828897999,
+        "rssMb": 208.7,
+        "heapMb": 69.4,
+        "cpuMs": 5554.612,
+        "lagP99": 80.2,
+        "lagMax": 81.4
+      },
+      {
+        "t": 1793828898999,
+        "rssMb": 208.7,
+        "heapMb": 74.3,
+        "cpuMs": 5657.125,
+        "lagP99": 84.1,
+        "lagMax": 84.4
+      },
+      {
+        "t": 1793828899999,
+        "rssMb": 209.5,
+        "heapMb": 66.4,
+        "cpuMs": 5740.145,
+        "lagP99": 84.5,
+        "lagMax": 101.8
+      },
+      {
+        "t": 1793828900999,
+        "rssMb": 209.5,
+        "heapMb": 66.8,
+        "cpuMs": 5761.969,
+        "lagP99": 5.4,
+        "lagMax": 5.7
+      },
+      {
+        "t": 1793828901999,
+        "rssMb": 209.5,
+        "heapMb": 67.7,
+        "cpuMs": 5795.082,
+        "lagP99": 6.1,
+        "lagMax": 8
+      },
+      {
+        "t": 1793828902999,
+        "rssMb": 209.5,
+        "heapMb": 69.6,
+        "cpuMs": 5845.901,
+        "lagP99": 35,
+        "lagMax": 74.8
+      },
+      {
+        "t": 1793828903999,
+        "rssMb": 209.6,
+        "heapMb": 70.8,
+        "cpuMs": 5890.941,
+        "lagP99": 5.7,
+        "lagMax": 6.1
+      },
+      {
+        "t": 1793828904999,
+        "rssMb": 209.6,
+        "heapMb": 72.8,
+        "cpuMs": 5936.3,
+        "lagP99": 6.6,
+        "lagMax": 7.6
+      },
+      {
+        "t": 1793828906000,
+        "rssMb": 210.3,
+        "heapMb": 64.6,
+        "cpuMs": 5997.681,
+        "lagP99": 26.8,
+        "lagMax": 76.8
+      },
+      {
+        "t": 1793828907000,
+        "rssMb": 211.2,
+        "heapMb": 67.3,
+        "cpuMs": 6082.154,
+        "lagP99": 95.7,
+        "lagMax": 100.2
+      },
+      {
+        "t": 1793828908000,
+        "rssMb": 211.2,
+        "heapMb": 68.6,
+        "cpuMs": 6118.126,
+        "lagP99": 5.6,
+        "lagMax": 6.4
+      },
+      {
+        "t": 1793828909000,
+        "rssMb": 211.2,
+        "heapMb": 69.9,
+        "cpuMs": 6159.725,
+        "lagP99": 5.9,
+        "lagMax": 6.8
+      },
+      {
+        "t": 1793828910000,
+        "rssMb": 212,
+        "heapMb": 72.4,
+        "cpuMs": 6211.295,
+        "lagP99": 5.9,
+        "lagMax": 30.7
+      },
+      {
+        "t": 1793828911000,
+        "rssMb": 212,
+        "heapMb": 75.2,
+        "cpuMs": 6257.223,
+        "lagP99": 5.5,
+        "lagMax": 17.8
+      },
+      {
+        "t": 1793828912000,
+        "rssMb": 212.8,
+        "heapMb": 65.7,
+        "cpuMs": 6307.641,
+        "lagP99": 6.9,
+        "lagMax": 13.2
+      },
+      {
+        "t": 1793828913000,
+        "rssMb": 212.8,
+        "heapMb": 66.9,
+        "cpuMs": 6361.289,
+        "lagP99": 9.4,
+        "lagMax": 58.4
+      },
+      {
+        "t": 1793828914195,
+        "rssMb": 214.1,
+        "heapMb": 68.8,
+        "cpuMs": 6472.589,
+        "lagP99": 84.5,
+        "lagMax": 297
+      },
+      {
+        "t": 1793828915103,
+        "rssMb": 214.3,
+        "heapMb": 71.1,
+        "cpuMs": 6520.664,
+        "lagP99": 5.9,
+        "lagMax": 6.3
+      },
+      {
+        "t": 1793828916103,
+        "rssMb": 214.3,
+        "heapMb": 72.8,
+        "cpuMs": 6554.846,
+        "lagP99": 6.5,
+        "lagMax": 7.1
+      },
+      {
+        "t": 1793828917103,
+        "rssMb": 214.3,
+        "heapMb": 74.1,
+        "cpuMs": 6590.497,
+        "lagP99": 5.6,
+        "lagMax": 7.2
+      },
+      {
+        "t": 1793828918104,
+        "rssMb": 214.3,
+        "heapMb": 76.2,
+        "cpuMs": 6638.289,
+        "lagP99": 6.1,
+        "lagMax": 8
+      },
+      {
+        "t": 1793828919104,
+        "rssMb": 214.3,
+        "heapMb": 77.7,
+        "cpuMs": 6678.053,
+        "lagP99": 5.7,
+        "lagMax": 9.5
+      },
+      {
+        "t": 1793828920196,
+        "rssMb": 215.4,
+        "heapMb": 67.8,
+        "cpuMs": 6734.058,
+        "lagP99": 44.4,
+        "lagMax": 102.6
+      },
+      {
+        "t": 1793828921196,
+        "rssMb": 215.4,
+        "heapMb": 69.3,
+        "cpuMs": 6772.926,
+        "lagP99": 6.2,
+        "lagMax": 89.2
+      },
+      {
+        "t": 1793828922196,
+        "rssMb": 215.4,
+        "heapMb": 70.7,
+        "cpuMs": 6807.72,
+        "lagP99": 6,
+        "lagMax": 7.1
+      },
+      {
+        "t": 1793828923196,
+        "rssMb": 215.4,
+        "heapMb": 72.8,
+        "cpuMs": 6846.694,
+        "lagP99": 5.9,
+        "lagMax": 6.4
+      },
+      {
+        "t": 1793828924197,
+        "rssMb": 215.4,
+        "heapMb": 74.7,
+        "cpuMs": 6888.996,
+        "lagP99": 5.9,
+        "lagMax": 29.3
+      },
+      {
+        "t": 1793828925197,
+        "rssMb": 216,
+        "heapMb": 68.3,
+        "cpuMs": 6938.384,
+        "lagP99": 6,
+        "lagMax": 44.3
+      },
+      {
+        "t": 1793828926197,
+        "rssMb": 216.1,
+        "heapMb": 71.1,
+        "cpuMs": 7002.377,
+        "lagP99": 28.3,
+        "lagMax": 83.4
+      },
+      {
+        "t": 1793828927198,
+        "rssMb": 216.1,
+        "heapMb": 72.7,
+        "cpuMs": 7048.988,
+        "lagP99": 5.9,
+        "lagMax": 7.9
+      },
+      {
+        "t": 1793828928198,
+        "rssMb": 216.1,
+        "heapMb": 73.9,
+        "cpuMs": 7077.092,
+        "lagP99": 5.6,
+        "lagMax": 6.6
+      },
+      {
+        "t": 1793828929198,
+        "rssMb": 216.1,
+        "heapMb": 76.5,
+        "cpuMs": 7124.037,
+        "lagP99": 5.9,
+        "lagMax": 17.9
+      }
+    ],
+    "serverErrorLog": []
+  }
+}

@@ -1,0 +1,485 @@
+{
+  "label": "spike500",
+  "at": "2026-11-04T21:51:03.703Z",
+  "node": "v22.22.0",
+  "cpuLimit": 0.1,
+  "memoryLimitMb": 512,
+  "limits": [
+    "cgroup v1 cpu.cfs_quota_us=10000/100000 (0.1 CPU)",
+    "cgroup v1 memory.limit_in_bytes=512 MB"
+  ],
+  "bootRssMbLimited": 177.6,
+  "mix": {
+    "users": 500,
+    "durationS": 30,
+    "requests": 3164,
+    "rps": 80.3,
+    "browserCacheHits": 0,
+    "errors": 0,
+    "cpuMsTotal": 3883,
+    "cpuMsPerRequest": 1.23,
+    "avgCpuPctOfCore": 9.9,
+    "peakCpuPctOfCore": 11.1,
+    "rssMbMax": 222.6,
+    "rssMbEnd": 222.6,
+    "heapMbMax": 81.3,
+    "eventLoop": {
+      "p50": 95.5,
+      "p99": 299.4,
+      "max": 705.7,
+      "mean": 79.9
+    },
+    "eventLoopWorstSecondP99": 705.7,
+    "fplUpstreamCalls": 478,
+    "endpoints": [
+      {
+        "endpoint": "GET /v1/fpl/fixtures?event",
+        "requests": 505,
+        "errors": 0,
+        "statuses": {
+          "200": 500,
+          "304": 5
+        },
+        "notModifiedPct": 1,
+        "p50": 4.1,
+        "p95": 295.4,
+        "p99": 393.9,
+        "max": 397.5,
+        "avgKb": 0.2
+      },
+      {
+        "endpoint": "GET /v1/me",
+        "requests": 500,
+        "errors": 0,
+        "statuses": {
+          "200": 500
+        },
+        "notModifiedPct": 0,
+        "p50": 11947.1,
+        "p95": 24343.6,
+        "p99": 28940,
+        "max": 30150.6,
+        "avgKb": 0.2
+      },
+      {
+        "endpoint": "GET /v1/fpl/bootstrap",
+        "requests": 500,
+        "errors": 0,
+        "statuses": {
+          "200": 500
+        },
+        "notModifiedPct": 0,
+        "p50": 11947,
+        "p95": 24061.4,
+        "p99": 29552.4,
+        "max": 30170.9,
+        "avgKb": 10.3
+      },
+      {
+        "endpoint": "GET /v1/config",
+        "requests": 500,
+        "errors": 0,
+        "statuses": {
+          "200": 500
+        },
+        "notModifiedPct": 0,
+        "p50": 11917.3,
+        "p95": 23979.7,
+        "p99": 28940,
+        "max": 30150.6,
+        "avgKb": 0.3
+      },
+      {
+        "endpoint": "GET /v1/league/live",
+        "requests": 381,
+        "errors": 0,
+        "statuses": {
+          "200": 381
+        },
+        "notModifiedPct": 0,
+        "p50": 5.7,
+        "p95": 202,
+        "p99": 395.4,
+        "max": 399.2,
+        "avgKb": 1.4
+      },
+      {
+        "endpoint": "GET /v1/fpl/entries/:id/live",
+        "requests": 201,
+        "errors": 0,
+        "statuses": {
+          "200": 201
+        },
+        "notModifiedPct": 0,
+        "p50": 101.9,
+        "p95": 406.3,
+        "p99": 498,
+        "max": 503.4,
+        "avgKb": 0.6
+      },
+      {
+        "endpoint": "GET /v1/fpl/entries/:id",
+        "requests": 200,
+        "errors": 0,
+        "statuses": {
+          "200": 200
+        },
+        "notModifiedPct": 0,
+        "p50": 6.6,
+        "p95": 195,
+        "p99": 295.9,
+        "max": 493.8,
+        "avgKb": 0.2
+      },
+      {
+        "endpoint": "GET /v1/fpl/entries/:id/picks",
+        "requests": 200,
+        "errors": 0,
+        "statuses": {
+          "200": 200
+        },
+        "notModifiedPct": 0,
+        "p50": 95,
+        "p95": 197.5,
+        "p99": 299,
+        "max": 496.6,
+        "avgKb": 0.3
+      },
+      {
+        "endpoint": "GET /v1/fpl/fixtures/:id",
+        "requests": 102,
+        "errors": 0,
+        "statuses": {
+          "200": 102
+        },
+        "notModifiedPct": 0,
+        "p50": 94.8,
+        "p95": 296.7,
+        "p99": 395.2,
+        "max": 398.5,
+        "avgKb": 0.4
+      },
+      {
+        "endpoint": "GET /v1/captain-battle",
+        "requests": 75,
+        "errors": 0,
+        "statuses": {
+          "200": 75
+        },
+        "notModifiedPct": 0,
+        "p50": 95.9,
+        "p95": 296.5,
+        "p99": 400,
+        "max": 400,
+        "avgKb": 0.3
+      }
+    ],
+    "timeline": [
+      {
+        "t": 1793829101023,
+        "rssMb": 200.8,
+        "heapMb": 70.7,
+        "cpuMs": 3083.763,
+        "lagP99": 104.7,
+        "lagMax": 202.9
+      },
+      {
+        "t": 1793829102120,
+        "rssMb": 201.1,
+        "heapMb": 64.6,
+        "cpuMs": 3184.646,
+        "lagP99": 195.2,
+        "lagMax": 195.2
+      },
+      {
+        "t": 1793829103024,
+        "rssMb": 201.2,
+        "heapMb": 68.9,
+        "cpuMs": 3279.156,
+        "lagP99": 197.4,
+        "lagMax": 197.4
+      },
+      {
+        "t": 1793829104120,
+        "rssMb": 202,
+        "heapMb": 63.3,
+        "cpuMs": 3385.163,
+        "lagP99": 205.8,
+        "lagMax": 205.8
+      },
+      {
+        "t": 1793829105121,
+        "rssMb": 202,
+        "heapMb": 69.5,
+        "cpuMs": 3482.926,
+        "lagP99": 194.5,
+        "lagMax": 194.5
+      },
+      {
+        "t": 1793829106220,
+        "rssMb": 202.8,
+        "heapMb": 63.3,
+        "cpuMs": 3590.027,
+        "lagP99": 199.9,
+        "lagMax": 199.9
+      },
+      {
+        "t": 1793829107127,
+        "rssMb": 202.8,
+        "heapMb": 69.2,
+        "cpuMs": 3683.937,
+        "lagP99": 102.1,
+        "lagMax": 102.1
+      },
+      {
+        "t": 1793829108221,
+        "rssMb": 202.8,
+        "heapMb": 74,
+        "cpuMs": 3787.012,
+        "lagP99": 197.9,
+        "lagMax": 197.9
+      },
+      {
+        "t": 1793829109320,
+        "rssMb": 203.6,
+        "heapMb": 67.5,
+        "cpuMs": 3890.462,
+        "lagP99": 102,
+        "lagMax": 102
+      },
+      {
+        "t": 1793829110226,
+        "rssMb": 203.6,
+        "heapMb": 71.8,
+        "cpuMs": 3990.702,
+        "lagP99": 196.5,
+        "lagMax": 196.5
+      },
+      {
+        "t": 1793829111320,
+        "rssMb": 204.2,
+        "heapMb": 65.9,
+        "cpuMs": 4091.107,
+        "lagP99": 105.3,
+        "lagMax": 105.3
+      },
+      {
+        "t": 1793829112420,
+        "rssMb": 204.3,
+        "heapMb": 71.6,
+        "cpuMs": 4198.717,
+        "lagP99": 104.1,
+        "lagMax": 104.1
+      },
+      {
+        "t": 1793829113321,
+        "rssMb": 204.3,
+        "heapMb": 76.1,
+        "cpuMs": 4293.189,
+        "lagP99": 100.5,
+        "lagMax": 100.5
+      },
+      {
+        "t": 1793829114526,
+        "rssMb": 206.2,
+        "heapMb": 75.2,
+        "cpuMs": 4417.163,
+        "lagP99": 193.7,
+        "lagMax": 193.7
+      },
+      {
+        "t": 1793829115620,
+        "rssMb": 208.2,
+        "heapMb": 68.8,
+        "cpuMs": 4514.419,
+        "lagP99": 190.7,
+        "lagMax": 190.7
+      },
+      {
+        "t": 1793829116621,
+        "rssMb": 208.2,
+        "heapMb": 74.2,
+        "cpuMs": 4613.606,
+        "lagP99": 103.1,
+        "lagMax": 103.1
+      },
+      {
+        "t": 1793829117629,
+        "rssMb": 208.8,
+        "heapMb": 68.8,
+        "cpuMs": 4712.181,
+        "lagP99": 199.5,
+        "lagMax": 199.5
+      },
+      {
+        "t": 1793829118921,
+        "rssMb": 210.8,
+        "heapMb": 67.3,
+        "cpuMs": 4846.16,
+        "lagP99": 299.4,
+        "lagMax": 299.4
+      },
+      {
+        "t": 1793829120020,
+        "rssMb": 212,
+        "heapMb": 72.4,
+        "cpuMs": 4953.78,
+        "lagP99": 208.3,
+        "lagMax": 208.3
+      },
+      {
+        "t": 1793829121022,
+        "rssMb": 213.6,
+        "heapMb": 68.2,
+        "cpuMs": 5051.607,
+        "lagP99": 200.4,
+        "lagMax": 200.4
+      },
+      {
+        "t": 1793829122022,
+        "rssMb": 213.8,
+        "heapMb": 74.1,
+        "cpuMs": 5153.513,
+        "lagP99": 194.5,
+        "lagMax": 194.5
+      },
+      {
+        "t": 1793829123021,
+        "rssMb": 213.8,
+        "heapMb": 78.7,
+        "cpuMs": 5249.797,
+        "lagP99": 197.5,
+        "lagMax": 197.5
+      },
+      {
+        "t": 1793829124024,
+        "rssMb": 214.6,
+        "heapMb": 73.1,
+        "cpuMs": 5347.634,
+        "lagP99": 100.6,
+        "lagMax": 100.6
+      },
+      {
+        "t": 1793829125025,
+        "rssMb": 214.8,
+        "heapMb": 80.4,
+        "cpuMs": 5450.646,
+        "lagP99": 195,
+        "lagMax": 195
+      },
+      {
+        "t": 1793829126122,
+        "rssMb": 215.5,
+        "heapMb": 73.7,
+        "cpuMs": 5544.526,
+        "lagP99": 203,
+        "lagMax": 203
+      },
+      {
+        "t": 1793829127126,
+        "rssMb": 215.5,
+        "heapMb": 78.6,
+        "cpuMs": 5653.028,
+        "lagP99": 168.8,
+        "lagMax": 168.8
+      },
+      {
+        "t": 1793829128220,
+        "rssMb": 216.3,
+        "heapMb": 74.1,
+        "cpuMs": 5755.038,
+        "lagP99": 102.2,
+        "lagMax": 102.2
+      },
+      {
+        "t": 1793829129221,
+        "rssMb": 216.6,
+        "heapMb": 80.1,
+        "cpuMs": 5853.7,
+        "lagP99": 200.1,
+        "lagMax": 200.1
+      },
+      {
+        "t": 1793829130221,
+        "rssMb": 217.6,
+        "heapMb": 74.5,
+        "cpuMs": 5957.395,
+        "lagP99": 106.8,
+        "lagMax": 106.8
+      },
+      {
+        "t": 1793829131225,
+        "rssMb": 217.8,
+        "heapMb": 79.4,
+        "cpuMs": 6058.428,
+        "lagP99": 705.7,
+        "lagMax": 705.7
+      },
+      {
+        "t": 1793829132320,
+        "rssMb": 218.3,
+        "heapMb": 73.9,
+        "cpuMs": 6158.842,
+        "lagP99": 200.1,
+        "lagMax": 200.1
+      },
+      {
+        "t": 1793829133325,
+        "rssMb": 218.3,
+        "heapMb": 80.8,
+        "cpuMs": 6263.567,
+        "lagP99": 102.5,
+        "lagMax": 102.5
+      },
+      {
+        "t": 1793829134324,
+        "rssMb": 219,
+        "heapMb": 73.7,
+        "cpuMs": 6362.476,
+        "lagP99": 296.2,
+        "lagMax": 296.2
+      },
+      {
+        "t": 1793829135420,
+        "rssMb": 219,
+        "heapMb": 78.8,
+        "cpuMs": 6462.737,
+        "lagP99": 103.5,
+        "lagMax": 103.5
+      },
+      {
+        "t": 1793829136327,
+        "rssMb": 219.8,
+        "heapMb": 73.3,
+        "cpuMs": 6557.741,
+        "lagP99": 103.8,
+        "lagMax": 103.8
+      },
+      {
+        "t": 1793829137620,
+        "rssMb": 221.4,
+        "heapMb": 77.6,
+        "cpuMs": 6687.796,
+        "lagP99": 403.2,
+        "lagMax": 403.2
+      },
+      {
+        "t": 1793829138620,
+        "rssMb": 221.6,
+        "heapMb": 81.3,
+        "cpuMs": 6776.033,
+        "lagP99": 101.8,
+        "lagMax": 101.8
+      },
+      {
+        "t": 1793829139525,
+        "rssMb": 222.6,
+        "heapMb": 74.1,
+        "cpuMs": 6867.436,
+        "lagP99": 103.9,
+        "lagMax": 103.9
+      }
+    ],
+    "serverErrorLog": []
+  }
+}

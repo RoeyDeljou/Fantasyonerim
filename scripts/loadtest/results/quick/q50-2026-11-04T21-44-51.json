@@ -1,0 +1,421 @@
+{
+  "label": "q50",
+  "at": "2026-11-04T21:43:27.149Z",
+  "node": "v22.22.0",
+  "cpuLimit": 0.1,
+  "memoryLimitMb": 512,
+  "limits": [
+    "cgroup v1 cpu.cfs_quota_us=10000/100000 (0.1 CPU)",
+    "cgroup v1 memory.limit_in_bytes=512 MB"
+  ],
+  "bootRssMbLimited": 168.3,
+  "mix": {
+    "users": 50,
+    "durationS": 30,
+    "requests": 316,
+    "rps": 10.5,
+    "browserCacheHits": 0,
+    "errors": 0,
+    "cpuMsTotal": 1004,
+    "cpuMsPerRequest": 3.18,
+    "avgCpuPctOfCore": 3.3,
+    "peakCpuPctOfCore": 9.6,
+    "rssMbMax": 196.9,
+    "rssMbEnd": 196.9,
+    "heapMbMax": 69,
+    "eventLoop": {
+      "p50": 5.2,
+      "p99": 7,
+      "max": 203,
+      "mean": 5.8
+    },
+    "eventLoopWorstSecondP99": 177.6,
+    "fplUpstreamCalls": 50,
+    "endpoints": [
+      {
+        "endpoint": "GET /v1/fpl/fixtures?event",
+        "requests": 52,
+        "errors": 0,
+        "statuses": {
+          "200": 50,
+          "304": 2
+        },
+        "notModifiedPct": 3.8,
+        "p50": 1.5,
+        "p95": 100.1,
+        "p99": 497.2,
+        "max": 497.2,
+        "avgKb": 0.2
+      },
+      {
+        "endpoint": "GET /v1/me",
+        "requests": 50,
+        "errors": 0,
+        "statuses": {
+          "200": 50
+        },
+        "notModifiedPct": 0,
+        "p50": 7,
+        "p95": 286.7,
+        "p99": 387,
+        "max": 387,
+        "avgKb": 0.2
+      },
+      {
+        "endpoint": "GET /v1/fpl/bootstrap",
+        "requests": 50,
+        "errors": 0,
+        "statuses": {
+          "200": 50
+        },
+        "notModifiedPct": 0,
+        "p50": 6.6,
+        "p95": 287.2,
+        "p99": 388.8,
+        "max": 388.8,
+        "avgKb": 10.3
+      },
+      {
+        "endpoint": "GET /v1/config",
+        "requests": 50,
+        "errors": 0,
+        "statuses": {
+          "200": 50
+        },
+        "notModifiedPct": 0,
+        "p50": 6.5,
+        "p95": 288,
+        "p99": 387,
+        "max": 387,
+        "avgKb": 0.3
+      },
+      {
+        "endpoint": "GET /v1/league/live",
+        "requests": 37,
+        "errors": 0,
+        "statuses": {
+          "200": 37
+        },
+        "notModifiedPct": 0,
+        "p50": 1.7,
+        "p95": 100.5,
+        "p99": 494.4,
+        "max": 494.4,
+        "avgKb": 1.3
+      },
+      {
+        "endpoint": "GET /v1/fpl/entries/:id/live",
+        "requests": 20,
+        "errors": 0,
+        "statuses": {
+          "200": 20
+        },
+        "notModifiedPct": 0,
+        "p50": 4.1,
+        "p95": 203.7,
+        "p99": 400.6,
+        "max": 400.6,
+        "avgKb": 0.6
+      },
+      {
+        "endpoint": "GET /v1/fpl/entries/:id",
+        "requests": 19,
+        "errors": 0,
+        "statuses": {
+          "200": 19
+        },
+        "notModifiedPct": 0,
+        "p50": 2,
+        "p95": 98.5,
+        "p99": 98.5,
+        "max": 98.5,
+        "avgKb": 0.2
+      },
+      {
+        "endpoint": "GET /v1/fpl/entries/:id/picks",
+        "requests": 19,
+        "errors": 0,
+        "statuses": {
+          "200": 19
+        },
+        "notModifiedPct": 0,
+        "p50": 3.3,
+        "p95": 193.3,
+        "p99": 193.3,
+        "max": 193.3,
+        "avgKb": 0.3
+      },
+      {
+        "endpoint": "GET /v1/fpl/fixtures/:id",
+        "requests": 10,
+        "errors": 0,
+        "statuses": {
+          "200": 10
+        },
+        "notModifiedPct": 0,
+        "p50": 3.9,
+        "p95": 593.1,
+        "p99": 593.1,
+        "max": 593.1,
+        "avgKb": 0.4
+      },
+      {
+        "endpoint": "GET /v1/captain-battle",
+        "requests": 9,
+        "errors": 0,
+        "statuses": {
+          "200": 9
+        },
+        "notModifiedPct": 0,
+        "p50": 3,
+        "p95": 200.2,
+        "p99": 200.2,
+        "max": 200.2,
+        "avgKb": 0.3
+      }
+    ],
+    "timeline": [
+      {
+        "t": 1793828661817,
+        "rssMb": 192.7,
+        "heapMb": 64.2,
+        "cpuMs": 3176.812,
+        "lagP99": 177.6,
+        "lagMax": 203
+      },
+      {
+        "t": 1793828662723,
+        "rssMb": 194,
+        "heapMb": 68.2,
+        "cpuMs": 3263.477,
+        "lagP99": 104.1,
+        "lagMax": 104.1
+      },
+      {
+        "t": 1793828663723,
+        "rssMb": 194.7,
+        "heapMb": 58.5,
+        "cpuMs": 3335.397,
+        "lagP99": 80.5,
+        "lagMax": 98.6
+      },
+      {
+        "t": 1793828664723,
+        "rssMb": 194.7,
+        "heapMb": 60.7,
+        "cpuMs": 3395.266,
+        "lagP99": 6.7,
+        "lagMax": 70.8
+      },
+      {
+        "t": 1793828665723,
+        "rssMb": 195,
+        "heapMb": 62.8,
+        "cpuMs": 3460.877,
+        "lagP99": 71.2,
+        "lagMax": 74.1
+      },
+      {
+        "t": 1793828666723,
+        "rssMb": 195,
+        "heapMb": 64.7,
+        "cpuMs": 3524.735,
+        "lagP99": 18.3,
+        "lagMax": 71.2
+      },
+      {
+        "t": 1793828667723,
+        "rssMb": 195,
+        "heapMb": 66.9,
+        "cpuMs": 3586.557,
+        "lagP99": 6.6,
+        "lagMax": 76.2
+      },
+      {
+        "t": 1793828668723,
+        "rssMb": 195,
+        "heapMb": 69,
+        "cpuMs": 3660.973,
+        "lagP99": 68.4,
+        "lagMax": 79.6
+      },
+      {
+        "t": 1793828669723,
+        "rssMb": 195.9,
+        "heapMb": 59.4,
+        "cpuMs": 3727.637,
+        "lagP99": 77.9,
+        "lagMax": 79.2
+      },
+      {
+        "t": 1793828670723,
+        "rssMb": 195.9,
+        "heapMb": 61.1,
+        "cpuMs": 3792.235,
+        "lagP99": 27.2,
+        "lagMax": 71.6
+      },
+      {
+        "t": 1793828671723,
+        "rssMb": 195.9,
+        "heapMb": 61.3,
+        "cpuMs": 3814.01,
+        "lagP99": 6.7,
+        "lagMax": 7.7
+      },
+      {
+        "t": 1793828672724,
+        "rssMb": 195.9,
+        "heapMb": 61.3,
+        "cpuMs": 3826.663,
+        "lagP99": 5.4,
+        "lagMax": 5.6
+      },
+      {
+        "t": 1793828673724,
+        "rssMb": 195.9,
+        "heapMb": 61.3,
+        "cpuMs": 3839.9,
+        "lagP99": 5.5,
+        "lagMax": 7.7
+      },
+      {
+        "t": 1793828674725,
+        "rssMb": 195.9,
+        "heapMb": 61.4,
+        "cpuMs": 3852.804,
+        "lagP99": 6.5,
+        "lagMax": 10.4
+      },
+      {
+        "t": 1793828675725,
+        "rssMb": 195.9,
+        "heapMb": 61.4,
+        "cpuMs": 3865.057,
+        "lagP99": 5.4,
+        "lagMax": 5.4
+      },
+      {
+        "t": 1793828676725,
+        "rssMb": 195.9,
+        "heapMb": 61.4,
+        "cpuMs": 3877.401,
+        "lagP99": 5.4,
+        "lagMax": 43.7
+      },
+      {
+        "t": 1793828677726,
+        "rssMb": 195.9,
+        "heapMb": 61.6,
+        "cpuMs": 3897.019,
+        "lagP99": 5.8,
+        "lagMax": 11.6
+      },
+      {
+        "t": 1793828678725,
+        "rssMb": 195.9,
+        "heapMb": 61.6,
+        "cpuMs": 3910.322,
+        "lagP99": 6.5,
+        "lagMax": 7.1
+      },
+      {
+        "t": 1793828679725,
+        "rssMb": 195.9,
+        "heapMb": 61.6,
+        "cpuMs": 3923.228,
+        "lagP99": 5.6,
+        "lagMax": 5.8
+      },
+      {
+        "t": 1793828680726,
+        "rssMb": 195.9,
+        "heapMb": 61.6,
+        "cpuMs": 3936.345,
+        "lagP99": 5.9,
+        "lagMax": 7
+      },
+      {
+        "t": 1793828681726,
+        "rssMb": 195.9,
+        "heapMb": 61.6,
+        "cpuMs": 3949.978,
+        "lagP99": 5.4,
+        "lagMax": 7.9
+      },
+      {
+        "t": 1793828682731,
+        "rssMb": 195.9,
+        "heapMb": 61.6,
+        "cpuMs": 3963.172,
+        "lagP99": 5.4,
+        "lagMax": 6.8
+      },
+      {
+        "t": 1793828683732,
+        "rssMb": 195.9,
+        "heapMb": 61.6,
+        "cpuMs": 3976.13,
+        "lagP99": 5.9,
+        "lagMax": 8.3
+      },
+      {
+        "t": 1793828684732,
+        "rssMb": 195.9,
+        "heapMb": 61.7,
+        "cpuMs": 3990.368,
+        "lagP99": 5.4,
+        "lagMax": 6.6
+      },
+      {
+        "t": 1793828685732,
+        "rssMb": 195.9,
+        "heapMb": 61.7,
+        "cpuMs": 4002.984,
+        "lagP99": 5.8,
+        "lagMax": 7.1
+      },
+      {
+        "t": 1793828686732,
+        "rssMb": 195.9,
+        "heapMb": 61.7,
+        "cpuMs": 4015.079,
+        "lagP99": 5.4,
+        "lagMax": 5.4
+      },
+      {
+        "t": 1793828687732,
+        "rssMb": 195.9,
+        "heapMb": 61.7,
+        "cpuMs": 4027.504,
+        "lagP99": 5.4,
+        "lagMax": 5.8
+      },
+      {
+        "t": 1793828688732,
+        "rssMb": 195.9,
+        "heapMb": 61.7,
+        "cpuMs": 4039.379,
+        "lagP99": 5.4,
+        "lagMax": 6.2
+      },
+      {
+        "t": 1793828689732,
+        "rssMb": 196.9,
+        "heapMb": 67.7,
+        "cpuMs": 4079.022,
+        "lagP99": 101.3,
+        "lagMax": 102
+      },
+      {
+        "t": 1793828690732,
+        "rssMb": 196.9,
+        "heapMb": 67.8,
+        "cpuMs": 4091.663,
+        "lagP99": 5.7,
+        "lagMax": 5.9
+      }
+    ],
+    "serverErrorLog": []
+  }
+}

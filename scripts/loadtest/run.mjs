@@ -36,6 +36,7 @@ const { values: args } = parseArgs({
     memory: { type: 'string', default: '512' },
     duration: { type: 'string', default: '240' },
     users: { type: 'string', default: '150' },
+    ramp: { type: 'string', default: '30' },
     label: { type: 'string', default: 'run' },
     phases: { type: 'string', default: 'profile,mix' },
     port: { type: 'string', default: '4100' },
@@ -627,7 +628,7 @@ function maxAge(res) {
 
 async function runMix(api, users, postIds) {
   const rec = new Recorder();
-  const rampMs = 30_000;
+  const rampMs = Number(args.ramp) * 1000;
   const endAt = Date.now() + DURATION_S * 1000;
   // IPs: a third of the users share 3 carrier CGNAT addresses (+ one pub Wi-Fi), the rest are distinct.
   const ipOf = (i) =>
