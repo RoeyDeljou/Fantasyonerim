@@ -54,6 +54,22 @@ team, at most 40 pages) and rebuilt after the standings TTL (2 min) or an admin 
 asking cost one scan. A user without a team gets all three null; a team not in the league gets `page`/`rank` null.
 Per user: `private, no-cache` with an ETag.
 
+**Membership** (`member` on `/v1/league/position`): true when the team is in the standings **or** among the
+league's _new entries_ (joined since FPL's last update; FPL ranks them only after the next GW update, so those have
+`page`/`rank` null). One shared, cached read of the new entries per league (2 min). FPL failing there gives `false`
+for an unranked team, not an error. No team → `false`.
+
+**Join our league** (`PublicConfig.leagueJoin`, `AdminSettings.leagueCode`): `{ code, url }` with FPL's invite link
+`https://fantasy.premierleague.com/leagues/auto-join/<code>`, or `null` without a league or a code. The stored code
+wins; when none is stored, the league's default from `apps/api/src/league/config.ts` applies (the client league
+4611 → `KJJGKB`). `PUT /v1/admin/settings`: `leagueCode` omitted keeps the stored code, `null` clears it (back to the
+default), a 6-character code is stored upper-cased. Registration never checks membership: any FPL team can sign up.
+
+**Guests** (no account): every public read works without a token — config, news (+ item, stories, filters), league
+standings and live table, captain battle (no "mine" row), fixtures and match sheet, bootstrap, an entry and its
+picks/live, community posts, a post and its comments (nothing `mine`/`likedByMe`). Per-user routes (`/v1/me*`,
+`/v1/league/position`, writes) answer 401.
+
 ## Phase 2 — News feed, push, integrations
 
 Schemas: `packages/shared/src/news.ts`.

@@ -44,14 +44,20 @@ export function leagueRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth):
     const { user } = await auth.requireUser(request);
     reply.header('cache-control', CACHE_CONTROL.private);
     if (user.entryId === null) {
-      return serialize(LeaguePositionSchema, { entryId: null, page: null, rank: null }, 'LeaguePosition');
+      return serialize(
+        LeaguePositionSchema,
+        { entryId: null, page: null, rank: null, member: false },
+        'LeaguePosition',
+      );
     }
     const entryId = FplEntryIdSchema.parse(user.entryId);
     const leagueId = await configuredLeague();
     const position = await ctx.hot.leaguePosition(leagueId, entryId);
+    // Ranked → a member; otherwise maybe a new entry FPL hasn't ranked yet (page/rank stay null).
+    const member = position !== null || (await ctx.hot.isNewLeagueEntry(leagueId, entryId));
     return serialize(
       LeaguePositionSchema,
-      { entryId, page: position?.page ?? null, rank: position?.rank ?? null },
+      { entryId, page: position?.page ?? null, rank: position?.rank ?? null, member },
       'LeaguePosition',
     );
   });

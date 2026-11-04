@@ -21,6 +21,7 @@ import {
   toAdminSettings,
   toBattleConfig,
 } from '../settings.js';
+import { normalizeLeagueCode } from '../league/config.js';
 import { parseInput, serialize } from '../validate.js';
 
 export class AdminUsernameTakenError extends Error {
@@ -93,6 +94,10 @@ export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, p
           instagramUrl: body.socials.instagramUrl,
           xUrl: body.socials.xUrl,
           whatsappUrl: body.socials.whatsappUrl,
+          // Omitted keeps the stored code; null clears it (the league's default code applies again).
+          ...(body.leagueCode === undefined
+            ? {}
+            : { leagueCode: body.leagueCode === null ? null : normalizeLeagueCode(body.leagueCode) }),
         },
       });
       return toAdminSettings(updated, await derivedSocials(prisma));

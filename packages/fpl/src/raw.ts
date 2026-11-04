@@ -196,6 +196,16 @@ export const RawStandingRowSchema = z.object({
 });
 export type RawStandingRow = z.infer<typeof RawStandingRowSchema>;
 
+/** A manager who joined since FPL's last standings update (not ranked yet). We only read `entry`. */
+export const RawNewEntrySchema = z.object({
+  entry: int,
+  entry_name: z.string().optional(),
+  player_first_name: z.string().optional(),
+  player_last_name: z.string().optional(),
+  joined_time: z.string().optional(),
+});
+export type RawNewEntry = z.infer<typeof RawNewEntrySchema>;
+
 export const RawStandingsSchema = z.object({
   league: z.object({ id: int, name: z.string() }),
   standings: z.object({
@@ -203,5 +213,13 @@ export const RawStandingsSchema = z.object({
     page: int,
     results: z.array(RawStandingRowSchema),
   }),
+  /** Paged by `page_new_entries`; may be absent (older responses) or empty. */
+  new_entries: z
+    .object({
+      has_next: z.boolean(),
+      page: int,
+      results: z.array(RawNewEntrySchema).default([]),
+    })
+    .optional(),
 });
 export type RawStandings = z.infer<typeof RawStandingsSchema>;

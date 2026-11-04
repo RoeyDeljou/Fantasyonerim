@@ -10,6 +10,7 @@ import { serialize } from './validate.js';
 import type { AppSettings, CaptainBattle, CaptainBattleEntry, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { EXPECTED_INSTAGRAM_USERNAME, INTEGRATIONS } from './integrations/config.js';
+import { effectiveLeagueCode, leagueJoinUrl } from './league/config.js';
 
 const SETTINGS_ID = 1;
 
@@ -94,6 +95,7 @@ export function toAdminSettings(s: AppSettings, defaults: Socials = NO_SOCIALS):
       leagueName: s.leagueName,
       deadlineReminderMinutes: s.deadlineReminderMinutes,
       socials: socialsOf(s, defaults),
+      leagueCode: effectiveLeagueCode(s.leagueId, s.leagueCode),
     },
     'settings',
   );
@@ -126,6 +128,15 @@ export function toBattleConfig(battle: BattleWithEntries): CaptainBattleConfig {
   );
 }
 
+/** "Join our league": the code + FPL's invite link, or null without a league or a code. */
+export function leagueJoinOf(
+  s: Pick<AppSettings, 'leagueId' | 'leagueCode'>,
+): { code: string; url: string } | null {
+  if (s.leagueId === null) return null;
+  const code = effectiveLeagueCode(s.leagueId, s.leagueCode);
+  return code === null ? null : { code, url: leagueJoinUrl(code) };
+}
+
 export function toPublicConfig(
   s: AppSettings,
   battle: CaptainBattle | null,
@@ -135,6 +146,7 @@ export function toPublicConfig(
     PublicConfigSchema,
     {
       league: s.leagueId === null ? null : { id: s.leagueId, name: s.leagueName },
+      leagueJoin: leagueJoinOf(s),
       captainBattleEvent: battle?.event ?? null,
       socials: socialsOf(s, defaults),
     },

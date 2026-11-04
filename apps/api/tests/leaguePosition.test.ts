@@ -87,7 +87,12 @@ describe('GET /v1/league/position', () => {
     fpl.calls = [];
     const res = await position(fan.token);
     expect(res.statusCode).toBe(200);
-    expect(LeaguePositionSchema.parse(res.json())).toEqual({ entryId: entryAt(123), page: 3, rank: 123 });
+    expect(LeaguePositionSchema.parse(res.json())).toEqual({
+      entryId: entryAt(123),
+      page: 3,
+      rank: 123,
+      member: true,
+    });
     expect(standingsCalls()).toEqual([
       `getLeagueStandings:${LEAGUE}:1`,
       `getLeagueStandings:${LEAGUE}:2`,
@@ -103,7 +108,12 @@ describe('GET /v1/league/position', () => {
     await configureLeague();
     const fan = await registerUser(app, fpl, entryAt(7));
     fpl.calls = [];
-    expect((await position(fan.token)).json()).toEqual({ entryId: entryAt(7), page: 1, rank: 7 });
+    expect((await position(fan.token)).json()).toEqual({
+      entryId: entryAt(7),
+      page: 1,
+      rank: 7,
+      member: true,
+    });
     expect(standingsCalls()).toEqual([`getLeagueStandings:${LEAGUE}:1`]);
   });
 
@@ -111,11 +121,21 @@ describe('GET /v1/league/position', () => {
     await configureLeague();
     const outsider = await registerUser(app, fpl, 9_999_999);
     fpl.calls = [];
-    expect((await position(outsider.token)).json()).toEqual({ entryId: 9_999_999, page: null, rank: null });
+    expect((await position(outsider.token)).json()).toEqual({
+      entryId: 9_999_999,
+      page: null,
+      rank: null,
+      member: false,
+    });
     expect(standingsCalls()).toHaveLength(3);
     // Answered from the index afterwards.
     fpl.calls = [];
-    expect((await position(outsider.token)).json()).toEqual({ entryId: 9_999_999, page: null, rank: null });
+    expect((await position(outsider.token)).json()).toEqual({
+      entryId: 9_999_999,
+      page: null,
+      rank: null,
+      member: false,
+    });
     expect(standingsCalls()).toEqual([]);
   });
 
@@ -124,7 +144,7 @@ describe('GET /v1/league/position', () => {
     const token = await adminToken(app, prisma, 'second-admin');
     const res = await position(token);
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ entryId: null, page: null, rank: null });
+    expect(res.json()).toEqual({ entryId: null, page: null, rank: null, member: false });
   });
 
   it('the index is built once for many concurrent users, and rebuilt after the standings TTL', async () => {
@@ -135,8 +155,13 @@ describe('GET /v1/league/position', () => {
     fpl.calls = [];
     const results = await Promise.all([...fans, outsider].map((f) => position(f.token)));
     expect(results.map((r) => r.json())).toEqual([
-      ...ranks.map((rank) => ({ entryId: entryAt(rank), page: Math.ceil(rank / PAGE_SIZE), rank })),
-      { entryId: 8_888_888, page: null, rank: null },
+      ...ranks.map((rank) => ({
+        entryId: entryAt(rank),
+        page: Math.ceil(rank / PAGE_SIZE),
+        rank,
+        member: true,
+      })),
+      { entryId: 8_888_888, page: null, rank: null, member: false },
     ]);
     // Three pages read once each, for thirteen users.
     expect(standingsCalls()).toEqual([

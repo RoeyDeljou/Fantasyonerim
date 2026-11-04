@@ -93,6 +93,8 @@ model AppSettings {
   id                      Int      @id @default(1)
   leagueId                Int?
   leagueName              String?
+  /// The league's FPL invite code ("Join our league"). null = the default from league/config.ts, if any.
+  leagueCode              String?
   deadlineReminderMinutes Int[]    @default([1440, 120])
   spotifyUrl              String?
   appleUrl                String?

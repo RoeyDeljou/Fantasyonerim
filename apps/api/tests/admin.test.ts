@@ -98,6 +98,8 @@ describe('admin settings', () => {
         xUrl: null,
         whatsappUrl: null,
       },
+      // No league yet → no invite code (the client league's default applies once it's set).
+      leagueCode: null,
     });
 
     // Unknown league → 404, nothing saved.

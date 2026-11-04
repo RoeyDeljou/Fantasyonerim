@@ -7,6 +7,7 @@ import {
   FixtureDetailSchema,
   FixtureSchema,
   FixtureStatIdSchema,
+  FplEntryIdSchema,
   LeagueStandingsSchema,
   PlayerLiveSchema,
   PlayerStatusSchema,
@@ -18,6 +19,7 @@ import {
   type Fixture,
   type FixtureDetail,
   type FixtureStatus,
+  type FplEntryId,
   type LeagueStandings,
   type PlayerLive,
   type Position,
@@ -342,6 +344,13 @@ export function mapStandings(raw: RawStandings, page: number, nowMs: number): Le
     })),
     updatedAt: new Date(nowMs).toISOString(),
   });
+}
+
+/** `new_entries` of one standings response (absent → none). */
+export function mapNewEntries(raw: RawStandings): { hasNext: boolean; ids: FplEntryId[] } {
+  const ne = raw.new_entries;
+  if (!ne) return { hasNext: false, ids: [] };
+  return { hasNext: ne.has_next, ids: ne.results.map((r) => FplEntryIdSchema.parse(r.entry)) };
 }
 
 // ---------- raw → engine ----------

@@ -44,6 +44,7 @@ import {
   mapEntryLive,
   mapFixtureDetail,
   mapFixtures,
+  mapNewEntries,
   mapPicks,
   mapPlayerLive,
   mapStandings,
@@ -128,6 +129,8 @@ export const FPL_CACHE_LIMITS = {
 export const LIVE_LEAGUE_CONCURRENCY = 6;
 /** FPL classic standings page size. */
 export const STANDINGS_PAGE_SIZE = 50;
+/** Safety cap on `new_entries` pages swept by getLeagueNewEntries (FPL pages hold 50 entries). */
+export const NEW_ENTRIES_MAX_PAGES = 20;
 /** A 404 for picks (manager joined after this GW / before the deadline) is remembered this long. */
 const PICKS_NOT_FOUND_TTL = 1 * MINUTE;
 
@@ -180,6 +183,11 @@ interface PicksBundle {
   chip: Chip | null;
   totalBefore: number;
   captainId: number | null;
+}
+
+interface StandingsBundle {
+  dto: LeagueStandings;
+  newEntries: { hasNext: boolean; ids: FplEntryId[] };
 }
 
 interface HistoryBundle {
@@ -323,11 +331,42 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
     }));
   };
 
-  const standingsFor = (leagueId: number, page: number): Promise<LeagueStandings> => {
-    const path = `leagues-classic/${leagueId}/standings/?page_standings=${page}`;
-    return shared.get(path, policy('standings'), async () =>
-      mapStandings(await getJson(path, RawStandingsSchema), page, now()),
-    );
+  /**
+   * One standings response = one standings page + one `new_entries` page. Page 1 of new entries rides on
+   * every standings page fetch (FPL's default), so the member check usually costs no extra request.
+   */
+  const standingsPage = (
+    leagueId: number,
+    page: number,
+    newEntriesPage: number,
+  ): Promise<StandingsBundle> => {
+    const query =
+      newEntriesPage === 1
+        ? `page_standings=${page}`
+        : `page_new_entries=${newEntriesPage}&page_standings=${page}`;
+    const path = `leagues-classic/${leagueId}/standings/?${query}`;
+    return shared.get(path, policy('standings'), async () => {
+      const raw = await getJson(path, RawStandingsSchema);
+      return { dto: mapStandings(raw, page, now()), newEntries: mapNewEntries(raw) };
+    });
+  };
+  const standingsFor = async (leagueId: number, page: number): Promise<LeagueStandings> =>
+    (await standingsPage(leagueId, page, 1)).dto;
+
+  const newEntriesInflight = new Map<number, Promise<FplEntryId[]>>();
+  const leagueNewEntries = async (leagueId: number): Promise<FplEntryId[]> => {
+    const ids: FplEntryId[] = [];
+    const seen = new Set<number>();
+    for (let page = 1; page <= NEW_ENTRIES_MAX_PAGES; page++) {
+      const { newEntries } = await standingsPage(leagueId, 1, page);
+      for (const id of newEntries.ids) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        ids.push(id);
+      }
+      if (!newEntries.hasNext || newEntries.ids.length === 0) break;
+    }
+    return ids;
   };
 
   // ---------- per-GW snapshot (shared by every manager) ----------
@@ -561,6 +600,19 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
 
     async getLeagueStandings(leagueId: FplLeagueId, page: number): Promise<LeagueStandings> {
       return standingsFor(leagueId, Math.max(1, Math.trunc(page)));
+    },
+
+    /**
+     * Entry ids in the league's `new_entries` (joined since FPL's last standings update, not ranked yet),
+     * all pages (≤ NEW_ENTRIES_MAX_PAGES), de-duplicated, in FPL's order. Same cache/TTL/stale-on-error as
+     * standings. Throws FplNotFoundError for an unknown league.
+     */
+    getLeagueNewEntries(leagueId: FplLeagueId): Promise<FplEntryId[]> {
+      const pending = newEntriesInflight.get(leagueId);
+      if (pending) return pending;
+      const promise = leagueNewEntries(leagueId).finally(() => newEntriesInflight.delete(leagueId));
+      newEntriesInflight.set(leagueId, promise);
+      return promise;
     },
 
     /**

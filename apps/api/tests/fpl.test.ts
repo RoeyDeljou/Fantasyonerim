@@ -175,6 +175,7 @@ describe('public misc', () => {
     const config = PublicConfigSchema.parse((await get('/v1/config')).json());
     expect(config).toEqual({
       league: null,
+      leagueJoin: null,
       captainBattleEvent: null,
       // Derived from the integrations' defaults (tests/socials.test.ts covers the rules).
       socials: {

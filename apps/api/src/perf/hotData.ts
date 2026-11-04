@@ -31,6 +31,7 @@ import type { AppSettings, PrismaClient } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
 import type { Clock } from '../context.js';
+import { leagueNewEntryIds } from '../league/newEntries.js';
 import { fetchAllPages, LEAGUE_MAX_PAGES } from '../league/pages.js';
 import { derivedSocials, getLatestBattle, getSettings, toPublicConfig } from '../settings.js';
 import { serialize } from '../validate.js';
@@ -142,6 +143,7 @@ export class HotData {
   private timer: NodeJS.Timeout | null = null;
   private warming: Promise<string> | null = null;
   private positionIndex: PositionIndex | null = null;
+  private newEntries: { leagueId: FplLeagueId; at: number; ids: Promise<ReadonlySet<number>> } | null = null;
 
   constructor(private readonly deps: HotDataDeps) {
     this.cache = new HotCache({
@@ -180,6 +182,7 @@ export class HotData {
   invalidateConfig(): void {
     this.settingsMemo = null;
     this.positionIndex = null;
+    this.newEntries = null;
     this.cache.invalidate('config');
     this.cache.invalidate('battle');
     this.cache.invalidate('league:');
@@ -298,6 +301,31 @@ export class HotData {
       if (index.done) return null;
       index.next ??= this.scanNextPage(index);
       await index.next;
+    }
+  }
+
+  /**
+   * Whether `entryId` is one of the league's new entries (joined, not ranked yet). One read per league per
+   * LEAGUE_POSITION_TTL_MS, shared by every caller (in flight included). FPL failing → false, not cached: the
+   * worst case is a new joiner seeing the "Join our league" bar until the next read.
+   */
+  async isNewLeagueEntry(leagueId: FplLeagueId, entryId: FplEntryId): Promise<boolean> {
+    const now = this.deps.clock.now().getTime();
+    let memo = this.newEntries;
+    if (memo === null || memo.leagueId !== leagueId || now - memo.at >= LEAGUE_POSITION_TTL_MS) {
+      const ids = leagueNewEntryIds(this.deps.fpl, leagueId);
+      memo = { leagueId, at: now, ids };
+      this.newEntries = memo;
+      const mine = memo;
+      ids.catch((err: unknown) => {
+        if (this.newEntries === mine) this.newEntries = null;
+        this.log?.info({ err, leagueId }, 'league new entries unavailable');
+      });
+    }
+    try {
+      return (await memo.ids).has(entryId);
+    } catch {
+      return false;
     }
   }
 

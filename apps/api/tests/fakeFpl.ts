@@ -15,6 +15,7 @@ import {
   type EntrySummary,
   type Fixture,
   type FixtureDetail,
+  FplEntryIdSchema,
   type FplEntryId,
   type FplFixtureId,
   type FplLeagueId,
@@ -171,6 +172,8 @@ export class FakeFplService implements FplService {
   /** getFixtureDetail data by fixture id (unknown id → FplNotFoundError). */
   fixtureDetails = new Map<number, FixtureDetail>();
   calls: string[] = [];
+  /** getLeagueNewEntries by league id (joined, not ranked yet); a league in `leagues` defaults to none. */
+  newEntries = new Map<number, number[]>();
 
   addEntry(entryId: number, teamName?: string): this {
     this.entries.set(entryId, makeEntry(entryId, teamName));
@@ -298,6 +301,12 @@ export class FakeFplService implements FplService {
       ],
       updatedAt: ISO,
     });
+  }
+
+  async getLeagueNewEntries(leagueId: FplLeagueId): Promise<FplEntryId[]> {
+    this.check(`getLeagueNewEntries:${leagueId}`);
+    if (!this.leagues.has(leagueId)) throw new FplNotFoundError(`league ${leagueId}`);
+    return (this.newEntries.get(leagueId) ?? []).map((id) => FplEntryIdSchema.parse(id));
   }
 
   async getPlayersLive(playerIds: readonly FplPlayerId[], event: Gameweek): Promise<PlayerLive[]> {

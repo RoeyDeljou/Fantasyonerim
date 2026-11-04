@@ -33,6 +33,12 @@ export interface FplService {
   getLeagueStandings(leagueId: FplLeagueId, page: number): Promise<LeagueStandings>;
   /** Live table for one standings page (50 managers): each manager's live GW points, re-ranked. */
   getLiveLeague(leagueId: FplLeagueId, event: Gameweek, page: number): Promise<LiveLeague>;
+  /**
+   * Managers who joined the league since FPL's last standings update and aren't ranked yet (`new_entries`,
+   * every page, capped at 20). Use with the standings rows for a "member of the league" check. Optional so
+   * existing fakes still compile; createFplService always implements it.
+   */
+  getLeagueNewEntries?(leagueId: FplLeagueId): Promise<FplEntryId[]>;
   getPlayersLive(playerIds: readonly FplPlayerId[], event: Gameweek): Promise<PlayerLive[]>;
   /**
    * The FPL match sheet ("Match Details" stat blocks + per-player FPL points from this fixture only).
