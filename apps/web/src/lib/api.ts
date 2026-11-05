@@ -116,6 +116,7 @@ import type {
 } from '@fant/shared';
 import { tokenStore } from './tokenStore';
 import { takeEarlyResponse } from './earlyFetch';
+import { cdnUrl } from './cdn';
 
 /** `@fant/shared` exports these schemas but not their inferred types. */
 export type AdminAccount = ReturnType<typeof AdminAccountSchema.parse>;
@@ -197,16 +198,19 @@ async function request<T>(
     if (v !== undefined) url.searchParams.set(k, String(v));
   }
   const token = await tokenStore.get();
+  const key = url.pathname + url.search;
+  // Public JSON from the same-origin CDN on the Vercel web build (lib/cdn.ts) — shared, so never authenticated.
+  const cdn = method === 'GET' ? cdnUrl(key) : null;
   const headers: Record<string, string> = { accept: 'application/json' };
   if (opts.body !== undefined) headers['content-type'] = 'application/json';
-  if (token) headers.authorization = `Bearer ${token}`;
+  if (token && !cdn) headers.authorization = `Bearer ${token}`;
 
   let res: Response | null = null;
   // Already requested by the inline <head> script while the bundle was downloading (lib/earlyFetch.ts)?
-  const early = method === 'GET' ? takeEarlyResponse(url.pathname + url.search, token) : null;
+  const early = method === 'GET' ? takeEarlyResponse(key, token) : null;
   if (early) res = await early.catch(() => null); // failed early → fetched normally below
   try {
-    res ??= await fetch(url, {
+    res ??= await fetch(cdn ?? url, {
       method,
       headers,
       body: opts.body === undefined ? null : JSON.stringify(opts.body),

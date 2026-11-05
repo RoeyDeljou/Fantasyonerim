@@ -8,6 +8,7 @@ import { openExternal } from '@/lib/external';
 import { flash } from '@/lib/flash';
 import { useConfig, useLeaguePosition, useMe } from '@/lib/queries';
 import { onResume } from '@/lib/resume';
+import { resumeDelay } from '@/lib/jitter';
 import { useSession } from '@/lib/session';
 import { CopyIcon, TableIcon } from './icons';
 import { cx } from './ui';
@@ -30,7 +31,7 @@ export function useJoinLeague(): LeagueJoin | null {
 
   useEffect(() => {
     if (!fan || !notMember) return;
-    return onResume(() => void refetch());
+    return onResume(() => window.setTimeout(() => void refetch(), resumeDelay()));
   }, [fan, notMember, refetch]);
 
   if (!join) return null;

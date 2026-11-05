@@ -8,7 +8,8 @@ import { ThemeProvider } from '@/lib/theme';
 import { SessionProvider, useSession } from '@/lib/session';
 import { resyncPush, shareWithWorker } from '@/lib/push';
 import { onResume } from '@/lib/resume';
-import { makeQueryClient } from '@/lib/queries';
+import { makeQueryClient, qk } from '@/lib/queries';
+import { scheduleMeRevalidation } from '@/lib/meRevalidate';
 import { isPersistedKey, persistOptions, wirePersistFlush } from '@/lib/persist';
 import { wireWarmUp } from '@/lib/warmup';
 import { registerServiceWorker, wireInstallPrompt } from '@/lib/pwa';
@@ -44,7 +45,14 @@ export function Providers({ children }: { children: ReactNode }) {
       persistOptions={persistOptions}
       // Restored data is shown at once but never trusted as fresh: everything that came from the device is
       // revalidated (on mount for inactive queries), whatever its staleTime says.
-      onSuccess={() => void queryClient.invalidateQueries({ predicate: (q) => isPersistedKey(q.queryKey) })}
+      onSuccess={() => {
+        // `me` is the exception: revalidated off the critical path (lib/meRevalidate.ts).
+        void queryClient.invalidateQueries({
+          predicate: (q) =>
+            isPersistedKey(q.queryKey) && !(q.queryKey.length === 1 && q.queryKey[0] === 'me'),
+        });
+        if (queryClient.getQueryData(qk.me) !== undefined) scheduleMeRevalidation(queryClient);
+      }}
     >
       <I18nProvider>
         <ThemeProvider>

@@ -16,6 +16,7 @@ function fakeBrowser(pathname: string, store: Record<string, string> = {}, searc
       removeItem: (k: string) => void delete store[k],
     },
     location: { pathname, search },
+    document: { documentElement: { getAttribute: (n: string) => (n === 'data-build' ? 'b1' : null) } },
   };
   const fetchFn = vi.fn(async (url: string | URL, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
@@ -26,6 +27,7 @@ function fakeBrowser(pathname: string, store: Record<string, string> = {}, searc
   vi.stubGlobal('window', win);
   vi.stubGlobal('localStorage', win.localStorage);
   vi.stubGlobal('location', win.location);
+  vi.stubGlobal('document', win.document);
   vi.stubGlobal('fetch', fetchFn);
   return { calls, win };
 }
@@ -197,5 +199,65 @@ describe('LCP image preload', () => {
         srcSetOf(m.url, m.width, m.variants),
       );
     }
+  });
+});
+
+describe('warm start and CDN paths', () => {
+  it('uses lib/persist.ts’s cache key', async () => {
+    const early = await import('./earlyFetch');
+    const persist = await import('./persist');
+    expect(early.PERSIST_KEY).toBe(persist.PERSIST_KEY);
+  });
+
+  it('a warm start (this build’s cache holds `me`) skips the early /v1/me; a cold one asks', () => {
+    const cache = JSON.stringify({
+      buster: 'b1', // = <html data-build> in fakeBrowser
+      timestamp: 1,
+      clientState: { mutations: [], queries: [{ queryKey: ['me'], state: {} }] },
+    });
+    const warm = fakeBrowser('/news/', { 'fant.token': TOKEN, 'fant.queryCache': cache });
+    new Function(EARLY_FETCH_SCRIPT)();
+    expect(warm.calls.map((c) => c.url)).not.toContain(`${API}/v1/me`);
+    expect(warm.calls.length).toBeGreaterThan(0);
+    vi.unstubAllGlobals();
+    const stale = fakeBrowser('/news/', {
+      'fant.token': TOKEN,
+      'fant.queryCache': cache.replace('"buster"', '"x"'),
+    });
+    new Function(EARLY_FETCH_SCRIPT)();
+    expect(stale.calls.map((c) => c.url)).toContain(`${API}/v1/me`);
+  });
+
+  it('off the Vercel build, config and bootstrap go to the API (with the token, as before)', async () => {
+    const { calls } = fakeBrowser('/live/', { 'fant.token': TOKEN });
+    const { api } = await import('./api');
+    await api.config().catch(() => undefined);
+    await api.bootstrap().catch(() => undefined);
+    expect(calls.map((c) => c.url)).toEqual([`${API}/v1/config`, `${API}/v1/fpl/bootstrap`]);
+  });
+
+  it('on the Vercel build they come from the same-origin /cdn/ path, never with the Authorization header', async () => {
+    vi.stubEnv('NEXT_PUBLIC_CDN_JSON', '1');
+    const { calls, win } = fakeBrowser('/live/', { 'fant.token': TOKEN });
+    (win.location as { origin?: string }).origin = 'https://app.test';
+    const { api } = await import('./api');
+    await api.config().catch(() => undefined);
+    await api.bootstrap().catch(() => undefined);
+    await api.me().catch(() => undefined);
+    expect(calls).toEqual([
+      { url: 'https://app.test/cdn/v1/config/', auth: undefined },
+      { url: 'https://app.test/cdn/v1/fpl/bootstrap/', auth: undefined },
+      { url: `${API}/v1/me`, auth: `Bearer ${TOKEN}` },
+    ]);
+    vi.unstubAllEnvs();
+  });
+});
+
+describe('CDN paths in the head script', () => {
+  it('match lib/cdn.ts (trailing slash, no 308 hop)', async () => {
+    const { cdnPath } = await import('./cdn');
+    expect(EARLY_FETCH_SCRIPT).toContain("'/cdn'+paths[i]+'/'");
+    expect(cdnPath('/v1/config')).toBe('/cdn/v1/config/');
+    expect(cdnPath('/v1/fpl/bootstrap')).toBe('/cdn/v1/fpl/bootstrap/');
   });
 });

@@ -42,6 +42,9 @@ const { values: args } = parseArgs({
     port: { type: 'string', default: '4100' },
     'no-build': { type: 'boolean', default: false },
     'no-seed': { type: 'boolean', default: false },
+    // Model the Vercel CDN in front of /v1/config and /v1/fpl/bootstrap (the web app's /cdn/... rewrites):
+    // those requests are answered by the CDN and never reach the API (counted as CDN hits).
+    cdn: { type: 'boolean', default: false },
   },
 });
 
@@ -55,6 +58,8 @@ const DB_URL = process.env.LT_DATABASE_URL ?? 'postgresql://fant:fant@localhost:
 const OUT_DIR = resolve(HERE, 'results');
 const BASE = `http://127.0.0.1:${PORT}`;
 const LIVE_FIXTURE = 87;
+/** Served by the Vercel CDN under --cdn (vercel.json /cdn/v1/config, /cdn/v1/fpl/bootstrap; s-maxage 30 / 60 s). */
+const CDN_PATHS = new Set(['/v1/config', '/v1/fpl/bootstrap']);
 const EVENT = 9;
 
 const log = (...m) => console.warn(`[loadtest ${new Date().toISOString().slice(11, 19)}]`, ...m);
@@ -327,6 +332,7 @@ class Recorder {
   constructor() {
     this.byLabel = new Map();
     this.browserHits = 0;
+    this.cdnHits = 0;
   }
   add(label, result) {
     let s = this.byLabel.get(label);
@@ -498,6 +504,10 @@ class VirtualUser {
   }
 
   async get(path, { staleMs = 0 } = {}) {
+    if (args.cdn && CDN_PATHS.has(path)) {
+      this.rec.cdnHits += 1;
+      return null;
+    }
     const now = Date.now();
     const last = this.lastFetch.get(path);
     if (staleMs > 0 && last !== undefined && now - last < staleMs) return null; // react-query: still fresh
@@ -661,6 +671,7 @@ async function runMix(api, users, postIds) {
     requests: total,
     rps: r1(total / (wallMs / 1000)),
     browserCacheHits: rec.browserHits,
+    cdnHits: rec.cdnHits,
     errors,
     cpuMsTotal: Math.round(cpuMs),
     cpuMsPerRequest: Math.round((cpuMs / Math.max(1, total)) * 100) / 100,
@@ -785,7 +796,7 @@ async function main() {
     const m = result.mix;
     md.push(`## Peak mix: ${m.users} users, ${m.durationS}s`, '');
     md.push(
-      `requests ${m.requests} (${m.rps}/s), browser-cache hits ${m.browserCacheHits}, errors ${m.errors}, CPU ${m.cpuMsPerRequest} ms/req, ` +
+      `requests ${m.requests} (${m.rps}/s), browser-cache hits ${m.browserCacheHits}, CDN hits ${m.cdnHits ?? 0}, errors ${m.errors}, CPU ${m.cpuMsPerRequest} ms/req, ` +
         `avg CPU ${m.avgCpuPctOfCore}% of a core (peak second ${m.peakCpuPctOfCore}%), RSS max ${m.rssMbMax} MB (end ${m.rssMbEnd}), ` +
         `heap max ${m.heapMbMax} MB, event-loop p50 ${m.eventLoop.p50} / p99 ${m.eventLoop.p99} / max ${m.eventLoop.max} ms, FPL upstream calls ${m.fplUpstreamCalls}`,
       '',

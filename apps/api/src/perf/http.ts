@@ -3,19 +3,21 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Encoding, HotBody } from './hotCache.js';
 
 /**
- * Cache-Control per kind of data. There is no CDN in front of the API (Render passes responses through), so these
- * only steer browsers / the PWA's HTTP cache: within max-age the poll never leaves the phone, after it the browser
- * revalidates with If-None-Match and usually gets a bodiless 304.
+ * Cache-Control per kind of data. Render passes responses through, so most of these only steer browsers / the
+ * PWA's HTTP cache: within max-age the poll never leaves the phone, after it the browser revalidates with
+ * If-None-Match and usually gets a bodiless 304. Config and bootstrap also carry `s-maxage`: the web app reads them
+ * through the Vercel CDN (`/cdn/v1/config/`, `/cdn/v1/fpl/bootstrap/` rewrites in vercel.json), so an app-open spike
+ * is answered by the CDN instead of the 0.1-CPU API. They must never vary by user (asserted in tests).
  */
 export const CACHE_CONTROL = {
   /** Moves while a match is on: live league, live fixtures, a live match sheet, a manager's live points. */
   live: 'public, max-age=10, stale-while-revalidate=20',
   /** Bootstrap: FplService refreshes it every 5 minutes. */
-  bootstrap: 'public, max-age=60, stale-while-revalidate=300',
+  bootstrap: 'public, max-age=60, s-maxage=60, stale-while-revalidate=300',
   /** Standings / an entry / picks: minutes. */
   fpl: 'public, max-age=30, stale-while-revalidate=60',
   /** Public config (league, socials): admin edits show within a minute. */
-  config: 'public, max-age=30, stale-while-revalidate=60',
+  config: 'public, max-age=30, s-maxage=30, stale-while-revalidate=60',
   /** News feed pages / stories (an admin hide shows within ~15 s). */
   news: 'public, max-age=15, stale-while-revalidate=45',
   /** Per-viewer responses: the browser may keep them, never a shared cache; always revalidated (ETag). */

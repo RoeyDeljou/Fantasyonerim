@@ -11,6 +11,18 @@ export async function requireWriter(auth: Auth, request: FastifyRequest): Promis
   return result;
 }
 
+/**
+ * The global rate limit's key, without any database work (it runs on every request, public ones included): a
+ * request whose session is already cached counts against its user, anything else (no token, an unknown or not yet
+ * resolved token) against its IP. A made-up token therefore never escapes the per-IP limit.
+ */
+export function cachedUserRateLimitKey(auth: Auth) {
+  return (request: FastifyRequest): string => {
+    const userId = auth.cachedUserId(request);
+    return userId === null ? `ip:${request.ip}` : `user:${userId}`;
+  };
+}
+
 /** Rate-limit key: the signed-in user (so limits follow the account, not the IP), else the IP. */
 export function userRateLimitKey(auth: Auth) {
   return async (request: FastifyRequest): Promise<string> => {

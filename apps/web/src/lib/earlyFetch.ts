@@ -9,6 +9,15 @@
  * same token within EARLY_MAX_AGE_MS — anything else is ignored and fetched normally.
  */
 import { MEDIA_LAYOUT, firstImageOf } from './images';
+import { CDN_JSON, CDN_PATHS } from './cdn';
+
+/**
+ * A warm start (this build's persisted cache holds `me`) skips the early `/v1/me`: lib/meRevalidate.ts asks later.
+ * lib/persist.ts's key, repeated here because the root layout (a server component) inlines this script and can't
+ * read a client module's values (earlyFetch.test.ts keeps them equal). The buster — the build id — is read from
+ * `<html data-build>` at run time, so the script text is the same for every build.
+ */
+export const PERSIST_KEY = 'fant.queryCache';
 import type { FirstImage } from './images';
 
 const API = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
@@ -86,10 +95,16 @@ export const EARLY_FETCH_SCRIPT = `(function(){try{
 var tok=localStorage.getItem('fant.token');if(!tok)return;
 if(/[?&]post=/.test(location.search))return;
 var paths=(${earlyPaths.toString()})(location.pathname,localStorage.getItem('fant.news.filter'));
+var pc=localStorage.getItem('${PERSIST_KEY}');
+var bid=document.documentElement.getAttribute('data-build');
+if(pc&&bid&&pc.indexOf('{"buster":'+JSON.stringify(bid))===0&&pc.indexOf('"queryKey":["me"]')>0)paths=paths.filter(function(p){return p!=='/v1/me'});
+var cdn=${JSON.stringify(CDN_JSON)}&&!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());
+var CDN=${JSON.stringify(CDN_PATHS)};
 var e={};window.${EARLY_KEY}=e;
-for(var i=0;i<paths.length;i++){e[paths[i]]={at:Date.now(),token:tok,res:fetch(${JSON.stringify(API)}+paths[i],{headers:{accept:'application/json',authorization:'Bearer '+tok}})};e[paths[i]].res.catch(function(){});}
-var feed=paths[1]&&paths[1].indexOf('/v1/news?')===0?'news':paths[1]&&paths[1].indexOf('/v1/community/posts?')===0?'community':null;
-if(feed)e[paths[1]].res.then(function(r){return r.ok?r.clone().json():null}).then(function(b){
+for(var i=0;i<paths.length;i++){var pub=cdn&&CDN.indexOf(paths[i])>=0;e[paths[i]]={at:Date.now(),token:tok,res:fetch(pub?location.origin+'/cdn'+paths[i]+'/':${JSON.stringify(API)}+paths[i],{headers:pub?{accept:'application/json'}:{accept:'application/json',authorization:'Bearer '+tok}})};e[paths[i]].res.catch(function(){});}
+var fp=paths.filter(function(p){return p.indexOf('/v1/news?')===0||p.indexOf('/v1/community/posts?')===0})[0];
+var feed=fp?(fp.indexOf('/v1/news?')===0?'news':'community'):null;
+if(feed)e[fp].res.then(function(r){return r.ok?r.clone().json():null}).then(function(b){
 var img=(${lcpImageOf.toString()})(b,feed,${firstImageOf.toString()},${JSON.stringify(MEDIA_LAYOUT)});if(!img)return;
 var l=document.createElement('link');l.rel='preload';l.as='image';l.href=img.src;l.setAttribute('fetchpriority','high');
 if(img.srcSet){l.setAttribute('imagesrcset',img.srcSet);l.setAttribute('imagesizes',img.sizes);}
