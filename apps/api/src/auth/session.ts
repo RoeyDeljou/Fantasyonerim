@@ -15,6 +15,13 @@ export const SESSION_TOUCH_INTERVAL_MS = 60 * 60 * 1000;
  */
 export const SESSION_CACHE_TTL_MS = 5 * 60 * 1000;
 export const SESSION_CACHE_MAX = 5000;
+/**
+ * First-time read lookups are coalesced: every token asked for within this window (or until the batch is full)
+ * is read with ONE query. On a 0.1-CPU host each Prisma query costs ~0.3–1.2 ms of CPU (its engine threads count
+ * against the quota); a batch of 50 costs ~0.06 ms per session. A 500-user app-open spike is ~500 lookups.
+ */
+export const SESSION_BATCH_WINDOW_MS = 10;
+export const SESSION_BATCH_MAX = 50;
 
 export interface AuthContext {
   user: User;
@@ -29,6 +36,11 @@ export interface Auth {
   issueSession(userId: string, request: FastifyRequest): Promise<string>;
   /** Evicts every cached session of a user (after a change to the user or their sessions). */
   forgetUser(userId: string): void;
+  /**
+   * The user id of an already-cached session for this request's token, else null. Never touches the database:
+   * the global rate limiter keys on it, so public routes don't pay for a session lookup.
+   */
+  cachedUserId(request: FastifyRequest): string | null;
 }
 
 function bearerToken(request: FastifyRequest): string | null {
@@ -67,7 +79,8 @@ export function createAuth(ctx: AppContext): Auth {
     const startedAt = generation;
     let pending = cacheable ? loading.get(tokenHash) : undefined;
     if (pending === undefined) {
-      const load = loadSession(tokenHash);
+      // Reads go through the batch (one query for many tokens); writes/admin read their own row right away.
+      const load = cacheable ? batchedLoad(tokenHash) : loadSession(tokenHash);
       pending = load;
       if (cacheable) {
         loading.set(tokenHash, load);
@@ -95,7 +108,56 @@ export function createAuth(ctx: AppContext): Auth {
       where: { tokenHash },
       include: { user: true },
     });
-    if (!session) return null;
+    return session === null ? null : finish(session);
+  }
+
+  // ---- coalesced first-time lookups (reads) ----
+  let batch: Map<
+    string,
+    { resolve: (v: AuthContext | null) => void; reject: (e: unknown) => void }[]
+  > | null = null;
+  let batchTimer: NodeJS.Timeout | null = null;
+
+  function batchedLoad(tokenHash: string): Promise<AuthContext | null> {
+    return new Promise((resolve, reject) => {
+      batch ??= new Map();
+      const waiters = batch.get(tokenHash);
+      if (waiters) waiters.push({ resolve, reject });
+      else batch.set(tokenHash, [{ resolve, reject }]);
+      if (batch.size >= SESSION_BATCH_MAX) flushBatch();
+      else batchTimer ??= setTimeout(flushBatch, SESSION_BATCH_WINDOW_MS);
+    });
+  }
+
+  function flushBatch(): void {
+    if (batchTimer !== null) clearTimeout(batchTimer);
+    batchTimer = null;
+    const current = batch;
+    batch = null;
+    if (current === null || current.size === 0) return;
+    void (async () => {
+      try {
+        const rows = await ctx.prisma.session.findMany({
+          where: { tokenHash: { in: [...current.keys()] } },
+          include: { user: true },
+        });
+        const byHash = new Map(rows.map((r) => [r.tokenHash, r]));
+        for (const [tokenHash, waiters] of current) {
+          const row = byHash.get(tokenHash);
+          const result = row === undefined ? Promise.resolve(null) : finish(row);
+          result.then(
+            (v) => waiters.forEach((w) => w.resolve(v)),
+            (e: unknown) => waiters.forEach((w) => w.reject(e)),
+          );
+        }
+      } catch (err) {
+        for (const waiters of current.values()) waiters.forEach((w) => w.reject(err));
+      }
+    })();
+  }
+
+  /** Expiry (expired → deleted, null) and the hourly sliding-expiry touch of a session row read with its user. */
+  async function finish(session: Session & { user: User }): Promise<AuthContext | null> {
     const now = ctx.clock.now();
     if (session.expiresAt.getTime() <= now.getTime()) {
       await ctx.prisma.session.deleteMany({ where: { id: session.id } });
@@ -137,6 +199,15 @@ export function createAuth(ctx: AppContext): Auth {
       cache.set(request, Promise.resolve(result));
       if (result.user.role !== 'ADMIN') throw forbidden();
       return result;
+    },
+    cachedUserId(request) {
+      const token = bearerToken(request);
+      if (!token) return null;
+      const hit = sessions.get(hashToken(token));
+      const nowMs = ctx.clock.now().getTime();
+      if (hit === undefined || nowMs - hit.at >= SESSION_CACHE_TTL_MS) return null;
+      if (hit.value.session.expiresAt.getTime() <= nowMs) return null;
+      return hit.value.user.id;
     },
     forgetUser(userId) {
       generation += 1;

@@ -6,11 +6,13 @@
 // What it does (see apps/web/README.md):
 //   1. recreates a dedicated Postgres database (fantasyonerim_e2e) and runs `prisma migrate deploy`
 //   2. builds the static export into apps/web/out/.e2e with NEXT_PUBLIC_API_URL pointing at the e2e API
+//      (+ a production-like copy in out/.e2e-cdn with the Vercel `/cdn/` JSON paths on, served one port up)
 //   3. boots apps/api on :4100 in demo mode (offline, deterministic FPL data) and serves the export on :5100
 //   4. runs the user journeys below at a 390×844 phone viewport and fails on any unexpected console error
 //
 // Env overrides: E2E_DB_NAME, E2E_DATABASE_URL, E2E_API_PORT, E2E_WEB_PORT, E2E_SKIP_BUILD=1, E2E_SKIP_DB_RESET=1, E2E_HEADED=1,
-// E2E_ONLY_UPDATES=1 (register, then only the app-update journeys).
+// E2E_ONLY_UPDATES=1 (register, then only the app-update journeys), E2E_DEBUG_DIR=<dir> (screenshot + text of every
+// open page when a journey fails).
 import { spawn, spawnSync } from 'node:child_process';
 import { createECDH, randomBytes } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
@@ -36,6 +38,11 @@ const API_PORT = Number(process.env.E2E_API_PORT ?? 4100);
 const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 5100);
 const API = `http://localhost:${API_PORT}`;
 const WEB = `http://localhost:${WEB_PORT}`;
+// A second, production-like copy of the export (built with the Vercel CDN paths on: FANT_CDN_JSON=1) served one
+// port up, with `/cdn/*` proxied to the API like vercel.json's rewrite.
+const CDN_DIST = 'out/.e2e-cdn';
+const WEB_CDN_PORT = WEB_PORT + 1;
+const WEB_CDN = `http://localhost:${WEB_CDN_PORT}`;
 // Parallel runs (several agents / CI jobs on one Postgres) each pick their own: E2E_DB_NAME=fantasyonerim_e2e_web
 const DB_NAME = process.env.E2E_DB_NAME ?? 'fantasyonerim_e2e';
 const DATABASE_URL = process.env.E2E_DATABASE_URL ?? `postgresql://fant:fant@localhost:5432/${DB_NAME}`;
@@ -182,18 +189,26 @@ function vapidKeys() {
 }
 
 // ---------- 2. static build ----------
-function buildWeb() {
-  if (process.env.E2E_SKIP_BUILD && existsSync(path.join(WEB_DIR, DIST, 'index.html'))) return;
-  log('building static export for e2e');
+function buildWeb(dist = DIST, extraEnv = {}) {
+  if (process.env.E2E_SKIP_BUILD && existsSync(path.join(WEB_DIR, dist, 'index.html'))) return;
+  log(`building static export for e2e (${dist})`);
   const envFile = path.join(WEB_DIR, 'next-env.d.ts');
   const envBackup = existsSync(envFile) ? readFileSync(envFile, 'utf8') : null;
   try {
     run('npx', ['next', 'build'], {
       cwd: WEB_DIR,
-      env: { ...process.env, NEXT_PUBLIC_API_URL: API, FANT_E2E_DIST: DIST, NEXT_TELEMETRY_DISABLED: '1' },
+      env: {
+        ...process.env,
+        NEXT_PUBLIC_API_URL: API,
+        FANT_E2E_DIST: dist,
+        NEXT_TELEMETRY_DISABLED: '1',
+        FANT_CDN_JSON: '0',
+        VERCEL: '',
+        ...extraEnv,
+      },
     });
     // the same post-build step as `npm run build` (version.json + build-stamped sw.js)
-    run('node', ['scripts/stamp-build.mjs', DIST], { cwd: WEB_DIR });
+    run('node', ['scripts/stamp-build.mjs', dist], { cwd: WEB_DIR });
   } finally {
     if (envBackup !== null) writeFileSync(envFile, envBackup);
   }
@@ -273,7 +288,7 @@ function startApi() {
       PORT: String(API_PORT),
       HOST: '127.0.0.1',
       FPL_MODE: 'demo',
-      CORS_ORIGINS: WEB,
+      CORS_ORIGINS: `${WEB},${WEB_CDN}`,
       ADMIN_BOOTSTRAP_USERNAME: ADMIN.username,
       ADMIN_BOOTSTRAP_PASSWORD: ADMIN.password,
       SECRETS_KEY: randomBytes(32).toString('base64'),
@@ -309,11 +324,32 @@ const TYPES = {
  * like to an installed app, without a second `next build`.
  */
 const deploy = { from: null, to: null };
+/** Requests the production-like copy sent to its `/cdn/*` proxy. */
+const cdnHits = [];
 const SWAPPED = new Set(['.html', '.js', '.txt', '.json']);
 
-function startStatic() {
-  const root = path.join(WEB_DIR, DIST);
+function startStatic(dist = DIST, port = WEB_PORT, cdnProxy = false) {
+  const root = path.join(WEB_DIR, dist);
   const server = createServer(async (req, res) => {
+    // vercel.json's `/cdn/*` rewrite: the API's public JSON, fetched server-side (no browser headers forwarded).
+    if (cdnProxy && (req.url ?? '').startsWith('/cdn/')) {
+      cdnHits.push({ path: req.url, authorization: req.headers.authorization ?? null });
+      try {
+        // like vercel.json: `/cdn/v1/config/` → API `/v1/config`
+        const upstream = await globalThis.fetch(
+          API + (req.url ?? '').slice('/cdn'.length).replace(/\/(?=$|\?)/, ''),
+        );
+        res.writeHead(upstream.status, {
+          'content-type': upstream.headers.get('content-type') ?? 'application/json',
+          'cache-control': 'public, max-age=0, s-maxage=30',
+        });
+        res.end(Buffer.from(await upstream.arrayBuffer()));
+      } catch {
+        res.writeHead(502);
+        res.end();
+      }
+      return;
+    }
     let file = path.join(root, decodeURIComponent(new URL(req.url ?? '/', WEB).pathname));
     try {
       if ((await stat(file)).isDirectory()) file = path.join(file, 'index.html');
@@ -338,7 +374,7 @@ function startStatic() {
       res.end(await readFile(path.join(root, '404.html')).catch(() => 'not found'));
     }
   });
-  return new Promise((resolve) => server.listen(WEB_PORT, '127.0.0.1', () => resolve(server)));
+  return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server)));
 }
 
 // ---------- 4. journeys ----------
@@ -357,6 +393,18 @@ async function step(name, fn) {
     // Where it failed (the journey line in this file), for a quick look at the log.
     const at = e instanceof Error ? (e.stack ?? '').split('\n').find((l) => l.includes('run.mjs')) : null;
     if (at) log(`    ${at.trim()}`);
+    if (process.env.E2E_DEBUG_DIR && globalThis.__browser) {
+      let n = 0;
+      for (const c of globalThis.__browser.contexts())
+        for (const pg of c.pages()) {
+          n++;
+          await pg.screenshot({ path: `${process.env.E2E_DEBUG_DIR}/fail-${n}.png` }).catch(() => {});
+          log(`    page ${n}: ${pg.url()}`);
+          log(
+            `    ${(await pg.evaluate(() => document.body.innerText.slice(0, 300)).catch(() => '?')).replace(/\n/g, ' | ')}`,
+          );
+        }
+    }
     throw e;
   }
 }
@@ -1507,6 +1555,118 @@ async function journeys(browser) {
     assert((await ap.getByTestId('join-bar').count()) === 0, 'admin: no bar');
     assert((await ap.getByTestId('join-league').count()) === 0, 'admin: no join button');
     await actx.close();
+  });
+
+  // ---------- app open under a spike: warm start, CDN JSON, jitter ----------
+  await step(
+    'warm start: content renders from the device copy before /v1/me answers (delayed 5 s)',
+    async () => {
+      const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+      const ctx = await newContext(browser);
+      await ctx.addInitScript((tok) => globalThis.localStorage.setItem('fant.token', tok), token);
+      const first = await ctx.newPage();
+      watch(first, 'warm-1');
+      await first.goto(`${WEB}/news/`);
+      await first.locator('[data-testid=news-card]').first().waitFor();
+      await first.waitForFunction(() => {
+        const raw = globalThis.localStorage.getItem('fant.queryCache');
+        return !!raw && raw.includes('"queryKey":["me"]');
+      });
+      await first.close();
+      // Reopen with a slow session lookup.
+      const meCalls = [];
+      await ctx.route(`${API}/v1/me`, async (r) => {
+        meCalls.push(Date.now());
+        await sleep(5_000);
+        await r.continue().catch(() => {});
+      });
+      const p = await ctx.newPage();
+      watch(p, 'warm-2');
+      const t0 = Date.now();
+      await p.goto(`${WEB}/news/`);
+      await p.locator('[data-testid=news-card]').first().waitFor({ timeout: 4_000 });
+      const shownAt = Date.now() - t0;
+      assert(shownAt < 4_000, `content after ${shownAt} ms`);
+      // /v1/me is still revalidated — later, in the background (not by the head script, not on mount).
+      await waitUntil(() => meCalls.length > 0, 'the background /v1/me revalidation', 8_000);
+      assert(meCalls[0] - t0 >= 1_000, `/v1/me asked ${meCalls[0] - t0} ms after opening (expected ≥ 1 s)`);
+      await ctx.close();
+    },
+  );
+
+  await step(
+    'production-like build: config and bootstrap come from same-origin /cdn/, never with Authorization',
+    async () => {
+      const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+      const ctx = await newContext(browser);
+      await ctx.addInitScript((tok) => globalThis.localStorage.setItem('fant.token', tok), token);
+      const direct = [];
+      ctx.on('request', (r) => {
+        const u = new URL(r.url());
+        if (u.origin === API && (u.pathname === '/v1/config' || u.pathname === '/v1/fpl/bootstrap'))
+          direct.push(r.url());
+      });
+      const browserCdn = [];
+      ctx.on('request', (r) => {
+        if (r.url().startsWith(`${WEB_CDN}/cdn/`))
+          browserCdn.push({ url: r.url(), auth: r.headers().authorization });
+      });
+      const before = cdnHits.length;
+      const p = await ctx.newPage();
+      watch(p, 'cdn');
+      await p.goto(`${WEB_CDN}/live/`);
+      await p.locator('main ol li button').first().waitFor();
+      const paths = new Set(browserCdn.map((c) => new URL(c.url).pathname));
+      assert(
+        paths.has('/cdn/v1/config/') && paths.has('/cdn/v1/fpl/bootstrap/'),
+        `cdn paths: ${[...paths].join(', ')}`,
+      );
+      assert(
+        browserCdn.every((c) => !c.auth),
+        'no Authorization header on /cdn/ requests',
+      );
+      assert(
+        cdnHits.slice(before).every((h) => h.authorization === null),
+        'the CDN never received a token',
+      );
+      assert(direct.length === 0, `config/bootstrap still went to the API: ${direct.join(', ')}`);
+      await ctx.close();
+    },
+  );
+
+  await step('jitter: the live table polls ~30 s ± 15 %, and consecutive intervals differ', async () => {
+    const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+    const ctx = await newContext(browser);
+    await ctx.addInitScript((tok) => globalThis.localStorage.setItem('fant.token', tok), token);
+    let polls = 0;
+    ctx.on('request', (r) => {
+      if (r.url().startsWith(`${API}/v1/league/live`)) polls++;
+    });
+    const p = await ctx.newPage();
+    watch(p, 'jitter');
+    await p.clock.install();
+    await p.goto(`${WEB}/live/`);
+    await p.locator('main ol li button').first().waitFor();
+    await sleep(1_000);
+    // Fast-forward the page's clock in 250 ms steps and note when each poll goes out.
+    const at = [];
+    let t = 0;
+    let seen = polls;
+    while (at.length < 4 && t < 160_000) {
+      await p.clock.runFor(250);
+      t += 250;
+      await sleep(5);
+      if (polls > seen) {
+        seen = polls;
+        at.push(t);
+      }
+    }
+    assert(at.length >= 3, `polls seen at ${at.join(', ')}`);
+    const gaps = at.slice(1).map((x, i) => x - (at[i] ?? 0));
+    for (const g of gaps)
+      assert(g >= 25_500 - 500 && g <= 34_500 + 500, `poll gap ${g} ms outside 30 s ± 15 %`);
+    assert(new Set(gaps).size > 1, `poll gaps all equal: ${gaps.join(', ')}`);
+    await ctx.close();
   });
 
   await step('Captain Battle lists the configured rows plus "my captain"', async () => {
@@ -3138,16 +3298,20 @@ async function updateJourneys(ctx) {
 // ---------- main ----------
 let api = null;
 let web = null;
+let webCdn = null;
 let browser = null;
 let failed = false;
 try {
   resetDatabase();
   if (!process.env.E2E_SKIP_DB_RESET) seedNews();
   buildWeb();
+  buildWeb(CDN_DIST, { FANT_CDN_JSON: '1' });
   api = startApi();
   web = await startStatic();
+  webCdn = await startStatic(CDN_DIST, WEB_CDN_PORT, true);
   await waitFor(`${API}/health`, 60_000);
   browser = await chromium.launch({ headless: !process.env.E2E_HEADED });
+  globalThis.__browser = browser;
   await journeys(browser);
 } catch (e) {
   failed = true;
@@ -3155,6 +3319,7 @@ try {
 } finally {
   await browser?.close();
   web?.close();
+  webCdn?.close();
   rmSync(MEDIA_DIR, { recursive: true, force: true });
   if (api?.pid) {
     try {

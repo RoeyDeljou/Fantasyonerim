@@ -1,6 +1,7 @@
 'use client';
 
 import { focusManager } from '@tanstack/react-query';
+import { resumeDelay } from './jitter';
 
 /**
  * "The app was reopened." A standalone PWA on iOS can sit frozen in memory for days and does not fire
@@ -75,7 +76,8 @@ export function onHidden(cb: Listener): () => void {
 export function wireQueryFocus(): void {
   if (typeof window === 'undefined') return;
   focusManager.setEventListener((handleFocus) => {
-    const offResume = onResume(() => handleFocus());
+    // Spread over 0–3 s (lib/jitter.ts) so a crowd unlocking phones together doesn't refetch in the same instant.
+    const offResume = onResume(() => window.setTimeout(() => handleFocus(), resumeDelay()));
     const offHidden = onHidden(() => handleFocus());
     return () => {
       offResume();

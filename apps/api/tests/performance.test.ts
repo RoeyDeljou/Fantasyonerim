@@ -147,10 +147,10 @@ describe('shared hot responses', () => {
       expect((await get(url, { 'if-none-match': String(res.headers.etag) })).statusCode, url).toBe(304);
     }
     expect((await get('/v1/fpl/bootstrap')).headers['cache-control']).toBe(
-      'public, max-age=60, stale-while-revalidate=300',
+      'public, max-age=60, s-maxage=60, stale-while-revalidate=300',
     );
     expect((await get('/v1/config')).headers['cache-control']).toBe(
-      'public, max-age=30, stale-while-revalidate=60',
+      'public, max-age=30, s-maxage=30, stale-while-revalidate=60',
     );
     expect((await get('/v1/news')).headers['cache-control']).toBe(
       'public, max-age=15, stale-while-revalidate=45',
@@ -364,7 +364,9 @@ describe('sessions + rate limits under polling', () => {
         expect((await get('/v1/me', { ...ip, ...bearer(u.token) })).statusCode).toBe(200);
       }
     }
-    // The sixth request of one user is throttled; the others are unaffected.
+    // A user's first request (session not cached yet) counts against the IP — the key never queries the DB —
+    // so user 0 has used 3 of its 5 per-user requests: two more pass, the next one is throttled.
+    expect((await get('/v1/me', bearer(users[0]!.token))).statusCode).toBe(200);
     expect((await get('/v1/me', bearer(users[0]!.token))).statusCode).toBe(200);
     expect((await get('/v1/me', bearer(users[0]!.token))).statusCode).toBe(429);
     expect((await get('/v1/me', bearer(users[1]!.token))).statusCode).toBe(200);

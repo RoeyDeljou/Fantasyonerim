@@ -15,6 +15,12 @@ function computeBuildId(): string {
 const BUILD_ID = (process.env.NEXT_PUBLIC_BUILD_ID ||= computeBuildId());
 
 /**
+ * Public JSON (config, bootstrap) through the same-origin Vercel CDN rewrite `/cdn/*` (src/lib/cdn.ts): on when
+ * building on Vercel, or with FANT_CDN_JSON=1 (the e2e suite's production-like build). Off in dev and plain e2e.
+ */
+const CDN_JSON = process.env.FANT_CDN_JSON === '1' || process.env.VERCEL === '1' ? '1' : '0';
+
+/**
  * Static export: the same `out/` folder is served by any static host (Vercel/Netlify/S3) and is
  * wrapped by Capacitor for the app stores. No server features, no API routes, no image optimizer.
  */
@@ -26,7 +32,7 @@ const nextConfig: NextConfig = {
   images: { unoptimized: true },
   reactStrictMode: true,
   poweredByHeader: false,
-  env: { NEXT_PUBLIC_BUILD_ID: BUILD_ID },
+  env: { NEXT_PUBLIC_BUILD_ID: BUILD_ID, NEXT_PUBLIC_CDN_JSON: CDN_JSON },
   generateBuildId: () => BUILD_ID,
 };
 

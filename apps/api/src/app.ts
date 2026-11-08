@@ -30,7 +30,7 @@ import { HotData } from './perf/hotData.js';
 import { registerConditionalGet } from './perf/http.js';
 import { COMPRESS_THRESHOLD_BYTES } from './perf/hotCache.js';
 import { MAX_UPLOAD_BYTES } from './community/images.js';
-import { userRateLimitKey } from './community/guard.js';
+import { cachedUserRateLimitKey, userRateLimitKey } from './community/guard.js';
 import { adminBroadcastRoutes } from './routes/adminBroadcast.js';
 import { adminCommunityRoutes } from './routes/adminCommunity.js';
 import { adminInviteRoutes } from './routes/adminInvites.js';
@@ -221,11 +221,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const auth = createAuth(ctx);
   ctx.forgetUser = (userId) => auth.forgetUser(userId);
   // Polling from 150 phones must never trip the global limit: a signed-in request counts against its user (CGNAT
-  // puts whole carriers / a pub's Wi-Fi behind one IP); only requests without a valid token count per IP.
+  // puts whole carriers / a pub's Wi-Fi behind one IP). The key never costs a DB query: it uses the session cache
+  // only, so public routes (config, bootstrap, fixtures, news, league…) don't resolve the session at all; a token
+  // not cached yet counts per IP until a route that needs the user resolves it.
   await app.register(rateLimit, {
     global: true,
     max: async (_request, key) => (key.startsWith('user:') ? limits.globalMax : limits.anonymousMax),
-    keyGenerator: userRateLimitKey(auth),
+    keyGenerator: cachedUserRateLimitKey(auth),
     timeWindow: limits.timeWindowMs,
     errorResponseBuilder: (_request, context) =>
       new ApiHttpError(429, 'rate_limited', `Too many requests — try again in ${context.after}`),

@@ -99,7 +99,9 @@ export function prefetchTab(qc: QueryClient, tab: Tab): () => void {
   // Guests: only public data (no account → no me, no My Team).
   const guest = isGuest();
   // Every screen shows the profile button (me); ensure* never refetches what is cached.
-  if (!guest) void qc.prefetchQuery(meQuery()).catch(swallow);
+  // Only when there's no copy yet (a warm start's `me` is revalidated later, off the critical path).
+  if (!guest && qc.getQueryData(meQuery().queryKey) === undefined)
+    void qc.prefetchQuery(meQuery()).catch(swallow);
   if (!(guest && tab === 'myTeam')) for (const p of FULL[tab](qc)) void p.catch(swallow);
   return whenIdle(() => {
     for (const n of NEIGHBOURS[tab]) if (!(guest && n === 'myTeam')) void MAIN[n](qc).catch(swallow);

@@ -9,6 +9,16 @@
     {
       "source": "/media/:path*",
       "destination": "https://f003.backblazeb2.com/file/fantasyonerim-media/:path*"
+    },
+    { "source": "/cdn/v1/config", "destination": "https://fantasyonerim-api.onrender.com/v1/config" },
+    { "source": "/cdn/v1/config/", "destination": "https://fantasyonerim-api.onrender.com/v1/config" },
+    {
+      "source": "/cdn/v1/fpl/bootstrap",
+      "destination": "https://fantasyonerim-api.onrender.com/v1/fpl/bootstrap"
+    },
+    {
+      "source": "/cdn/v1/fpl/bootstrap/",
+      "destination": "https://fantasyonerim-api.onrender.com/v1/fpl/bootstrap"
     }
   ],
   "headers": [
@@ -48,6 +58,20 @@
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=31536000, s-maxage=2592000, immutable" },
         { "key": "CDN-Cache-Control", "value": "public, max-age=2592000, immutable" },
+        { "key": "x-vercel-enable-rewrite-caching", "value": "1" }
+      ]
+    },
+    {
+      "source": "/cdn/v1/config/?",
+      "headers": [
+        { "key": "CDN-Cache-Control", "value": "public, max-age=30, stale-while-revalidate=60" },
+        { "key": "x-vercel-enable-rewrite-caching", "value": "1" }
+      ]
+    },
+    {
+      "source": "/cdn/v1/fpl/bootstrap/?",
+      "headers": [
+        { "key": "CDN-Cache-Control", "value": "public, max-age=60, stale-while-revalidate=300" },
         { "key": "x-vercel-enable-rewrite-caching", "value": "1" }
       ]
     },

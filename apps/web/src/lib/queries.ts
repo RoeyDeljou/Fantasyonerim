@@ -58,6 +58,12 @@ import { api, isApiError, isBannedError } from './api';
 import type { CreateAdminBody, ResolveAction } from './api';
 import { PERSIST_MAX_AGE } from './persist';
 import { isGuest } from './guest';
+import { jittered } from './jitter';
+
+/** A poll interval (or none) with fresh ±15 % jitter on every cycle (lib/jitter.ts). */
+function everyJittered(ms: number | false): false | (() => number) {
+  return ms === false ? false : () => jittered(ms);
+}
 
 export const LIVE_POLL_MS = 30_000;
 export const IDLE_POLL_MS = 5 * 60_000;
@@ -286,7 +292,7 @@ export function useFixtures(event: Gameweek | null) {
   return useQuery({
     queryKey: qk.fixtures(event),
     queryFn: event === null ? skipToken : ({ signal }) => api.fixtures(event, { signal }),
-    refetchInterval: (q) => (anyLive(q.state.data) ? LIVE_POLL_MS : IDLE_POLL_MS),
+    refetchInterval: (q) => jittered(anyLive(q.state.data) ? LIVE_POLL_MS : IDLE_POLL_MS),
     refetchIntervalInBackground: false,
   });
 }
@@ -309,7 +315,7 @@ export function useFixtureDetail(id: FplFixtureId | null, liveHint = false) {
     queryKey: id ? qk.fixtureDetail(id) : ['fpl', 'fixture', 'none'],
     queryFn: id ? ({ signal }) => api.fixtureDetail(id, { signal }) : skipToken,
     refetchInterval: (q) =>
-      liveHint || fixtureInPlay(q.state.data?.fixture.status) ? FIXTURE_DETAIL_LIVE_POLL_MS : false,
+      liveHint || fixtureInPlay(q.state.data?.fixture.status) ? jittered(FIXTURE_DETAIL_LIVE_POLL_MS) : false,
     refetchIntervalInBackground: false,
     staleTime: 30_000,
   });
@@ -348,7 +354,7 @@ export function useEntryLive(id: FplEntryId | null, event: Gameweek | null, refe
   return useQuery({
     queryKey: id ? qk.entryLive(id, event) : ['fpl', 'live', 'none'],
     queryFn: id ? ({ signal }) => api.entryLive(id, event ?? undefined, { signal }) : skipToken,
-    refetchInterval,
+    refetchInterval: everyJittered(refetchInterval),
     refetchIntervalInBackground: false,
     staleTime: 15_000,
   });
@@ -364,7 +370,7 @@ export function useLiveLeague(refetchInterval: number, enabled: boolean) {
   const o = liveLeagueQuery();
   return useInfiniteQuery({
     ...(enabled ? o : { ...o, queryFn: skipToken }),
-    refetchInterval,
+    refetchInterval: everyJittered(refetchInterval),
     refetchIntervalInBackground: false,
   });
 }
@@ -385,7 +391,7 @@ export function useCaptainBattle(refetchInterval: number) {
   return useQuery({
     queryKey: qk.captainBattle,
     queryFn: ({ signal }) => api.captainBattle({ signal }),
-    refetchInterval,
+    refetchInterval: everyJittered(refetchInterval),
     refetchIntervalInBackground: false,
     staleTime: 15_000,
   });
@@ -394,8 +400,9 @@ export function useCaptainBattle(refetchInterval: number) {
 // ---------- me ----------
 
 export function useMe(enabled = true) {
-  // Guests have no account: never ask (lib/guest.ts).
-  return useQuery({ ...meQuery(), enabled: enabled && !isGuest() });
+  // Guests have no account: never ask (lib/guest.ts). A copy restored from the device (warm start) is shown as is:
+  // no refetch on mount — lib/meRevalidate.ts checks it in the background once the app has painted.
+  return useQuery({ ...meQuery(), enabled: enabled && !isGuest(), refetchOnMount: false });
 }
 
 export function useRecoveryCode(enabled: boolean) {
@@ -482,7 +489,7 @@ export function useNewsHead(enabled: boolean, filter: NewsFilter | null = null) 
     queryKey: qk.newsHead(filter),
     queryFn: ({ signal }) => api.news(undefined, 5, { signal }, filter),
     enabled,
-    refetchInterval: NEWS_HEAD_POLL_MS,
+    refetchInterval: () => jittered(NEWS_HEAD_POLL_MS),
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     staleTime: 0,
@@ -497,7 +504,7 @@ export function useNewsFilters() {
 export function useStories() {
   return useQuery({
     ...storiesQuery(),
-    refetchInterval: STORIES_POLL_MS,
+    refetchInterval: () => jittered(STORIES_POLL_MS),
     refetchIntervalInBackground: false,
   });
 }
@@ -634,7 +641,7 @@ export function useCommunityHead(enabled: boolean) {
     queryKey: qk.communityHead,
     queryFn: ({ signal }) => api.community.posts({ limit: 5 }, { signal }),
     enabled,
-    refetchInterval: COMMUNITY_HEAD_POLL_MS,
+    refetchInterval: () => jittered(COMMUNITY_HEAD_POLL_MS),
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     staleTime: 0,
