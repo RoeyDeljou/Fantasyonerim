@@ -44,7 +44,8 @@ export const instagramStoriesJob: Job = {
 
 export const xJob: Job = {
   name: 'x',
-  everyMs: 10 * MINUTE,
+  // X API is pay-per-use: poll every 30 min to keep credit usage low (owner decision).
+  everyMs: 30 * MINUTE,
   async run(ctx) {
     const { app } = ctx;
     let x = await loadIntegration(app.prisma, app.config.secretsKey, 'x');
