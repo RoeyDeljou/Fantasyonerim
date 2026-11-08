@@ -71,6 +71,7 @@ describe('admin-only enforcement', () => {
       ['GET', '/v1/admin/users'],
       ['POST', `/v1/admin/users/${fan.user.id}/ban`],
       ['DELETE', `/v1/admin/users/${fan.user.id}/ban`],
+      ['POST', `/v1/admin/users/${fan.user.id}/recovery-code`],
       ['GET', '/v1/admin/news/hidden'],
       ['POST', '/v1/admin/news/abc/restore'],
     ];
@@ -86,6 +87,37 @@ describe('admin-only enforcement', () => {
     expect((await call('GET', '/v1/admin/users', admin)).statusCode).toBe(200);
     await prisma.user.updateMany({ where: { role: 'ADMIN' }, data: { role: 'USER' } });
     expect((await call('GET', '/v1/admin/users', admin)).statusCode).toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------
+describe('admin: new recovery code for a user who lost theirs', () => {
+  it('issues a new code once: it signs in, the old one stops working, existing sessions stay', async () => {
+    const admin = await adminToken(app, prisma);
+    const dor = await registerUser(app, fpl, 1201, 'Dor');
+    const oldCode = (await call('GET', '/v1/me/recovery-code', dor.token)).json().recoveryCode as string;
+    const res = await call('POST', `/v1/admin/users/${dor.user.id}/recovery-code`, admin);
+    expect(res.statusCode).toBe(200);
+    const { recoveryCode } = res.json() as { recoveryCode: string };
+    expect(recoveryCode).not.toBe(oldCode);
+    const recover = (code: string) =>
+      call('POST', '/v1/auth/recover', null, { entryId: 1201, recoveryCode: code });
+    expect((await recover(oldCode)).statusCode).toBe(401);
+    expect((await recover(recoveryCode)).statusCode).toBe(200);
+    // Their own Profile shows the new code, and the phone that was signed in stays signed in.
+    const mine = await call('GET', '/v1/me/recovery-code', dor.token);
+    expect(mine.statusCode).toBe(200);
+    expect(mine.json().recoveryCode).toBe(recoveryCode);
+  });
+
+  it('404 for an unknown user, 400 for an account without a Team ID', async () => {
+    const admin = await adminToken(app, prisma);
+    const unknown = await call('POST', '/v1/admin/users/nope/recovery-code', admin);
+    expect(unknown.statusCode).toBe(404);
+    const adminUser = await prisma.user.findFirstOrThrow({ where: { role: 'ADMIN', entryId: null } });
+    const noTeam = await call('POST', `/v1/admin/users/${adminUser.id}/recovery-code`, admin);
+    expect(noTeam.statusCode).toBe(400);
+    expect(errorOf(noTeam).code).toBe('bad_request');
   });
 });
 

@@ -421,6 +421,12 @@ export const api = {
       }).then((r) => r.items),
     ban: (id: UserId, reason: string): Promise<void> =>
       request('POST', `/v1/admin/users/${encodeURIComponent(id)}/ban`, noContent, { body: { reason } }),
+    newRecoveryCode: (id: UserId): Promise<string> =>
+      request(
+        'POST',
+        `/v1/admin/users/${encodeURIComponent(id)}/recovery-code`,
+        RecoveryCodeResponseSchema,
+      ).then((r) => r.recoveryCode),
     unban: (id: UserId): Promise<void> =>
       request('DELETE', `/v1/admin/users/${encodeURIComponent(id)}/ban`, noContent),
     hiddenNews: (o: Signal = {}): Promise<HiddenNewsList> =>

@@ -868,6 +868,10 @@ export function useAdminUsers(query: string, enabled: boolean) {
   });
 }
 
+export function useNewRecoveryCode() {
+  return useMutation({ mutationFn: (id: UserId) => api.admin.newRecoveryCode(id) });
+}
+
 export function useBanUser() {
   const qc = useQueryClient();
   return useMutation({

@@ -798,6 +798,13 @@ export const en: Messages = {
     openPost: 'Open post',
   },
   moderation: {
+    newCode: 'New sign-in code',
+    newCodeFor: 'New sign-in code for {name}',
+    newCodeBody:
+      'For a user who lost their recovery code. A new code is created and the old one stops working. Devices already signed in stay signed in.',
+    newCodeReady:
+      'Send this code to the user. In the app: "Sign in with recovery code", then their Team ID and the code.',
+    newCodeTeamId: 'Team ID:',
     view: 'Community',
     reportsTitle: 'Open reports',
     reportsBody: 'Grouped by content. "Remove" deletes it for everyone, "Dismiss" closes the reports.',

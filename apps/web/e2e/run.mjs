@@ -674,6 +674,49 @@ async function journeys(browser) {
     return;
   }
 
+  await step(
+    'home-screen install keeps the account (iOS copies the cookie jar, not localStorage)',
+    async () => {
+      const jar = await user.cookies(`${WEB}/handoff/`);
+      const handoff = jar.find((c) => c.name === 'fant_handoff');
+      assert(handoff !== undefined, `no hand-off cookie: ${jar.map((c) => c.name).join(',')}`);
+      assert(handoff.path === '/handoff/', `hand-off cookie must stay on /handoff/, got ${handoff.path}`);
+      const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+      assert(decodeURIComponent(handoff.value) === token, 'hand-off cookie mirrors the session');
+      // The "home-screen app": empty storage, Safari's cookies copied in.
+      const installed = await newContext(browser);
+      await installed.addCookies([handoff]);
+      const p = await installed.newPage();
+      watch(p, 'installed');
+      // App, API and /cdn requests never carry it.
+      const leaked = [];
+      p.on('request', (r) => {
+        const cookie = r.headers()['cookie'] ?? '';
+        if (cookie.includes('fant_handoff') && !new URL(r.url()).pathname.startsWith('/handoff/'))
+          leaked.push(r.url());
+      });
+      await p.goto(`${WEB}/`);
+      await p.waitForURL('**/news/');
+      await p.getByRole('link', { name: 'פרופיל והגדרות' }).waitFor();
+      assert(
+        (await p.evaluate(() => globalThis.localStorage.getItem('fant.token'))) === token,
+        'adopted the session',
+      );
+      assert(leaked.length === 0, `hand-off cookie sent to: ${leaked.join(', ')}`);
+      // A fresh device with no hand-off still lands on onboarding (tried once, then never again).
+      const fresh = await newContext(browser);
+      const f = await fresh.newPage();
+      await f.goto(`${WEB}/`);
+      await f.waitForURL('**/onboarding/');
+      assert(
+        (await f.evaluate(() => globalThis.localStorage.getItem('fant.handoff.checked'))) === '1',
+        'checked once',
+      );
+      await fresh.close();
+      await installed.close();
+    },
+  );
+
   await step('reload keeps the session', async () => {
     await page.reload();
     await page.waitForURL('**/news/');
@@ -2315,6 +2358,33 @@ async function journeys(browser) {
     await fan2.getByTestId('composer-submit').click();
     await feedCard(fan2, 'חזרתי לפרסם e2e').waitFor();
     await fan2.getByTestId('banned-notice').waitFor({ state: 'detached' });
+  });
+
+  await step('admin issues a new sign-in code → the fan signs in with it on a new device', async () => {
+    const row = mod.locator('[data-testid=user-row]', { hasText: 'E2E Second' });
+    await row.getByRole('button', { name: 'קוד כניסה חדש לE2E Second' }).click();
+    const sheet = mod.getByTestId('new-code-sheet');
+    await sheet.getByTestId('new-code-confirm').click();
+    const value = sheet.getByTestId('new-code-value');
+    await value.waitFor();
+    const code = (await value.textContent())?.trim() ?? '';
+    assert(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code), `bad new code "${code}"`);
+    await sheet.getByText(DEMO.vice).waitFor();
+    await noHorizontalScroll(mod, 'new sign-in code sheet');
+    await sheet.getByRole('button', { name: 'סגירה' }).click();
+    const ctx = await newContext(browser);
+    const p = await ctx.newPage();
+    watch(p, 'fan2-new-device');
+    await p.goto(`${WEB}/onboarding/`);
+    await p.getByRole('button', { name: /התחברו עם קוד שחזור/ }).click();
+    await p.getByLabel('Team ID של FPL').fill(DEMO.vice);
+    await p.getByLabel('קוד שחזור').fill(code);
+    await p.getByRole('button', { name: 'התחברות', exact: true }).click();
+    await p.waitForURL('**/news/');
+    await ctx.close();
+    // Their existing device stays signed in.
+    await fan2.goto(`${WEB}/profile/`);
+    await fan2.getByRole('button', { name: 'התנתקות' }).waitFor();
   });
 
   await step('admin hides a News item, then restores it from Admin → Community', async () => {

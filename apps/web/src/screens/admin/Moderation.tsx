@@ -11,6 +11,7 @@ import {
   useAdminUsers,
   useBanUser,
   useHiddenNews,
+  useNewRecoveryCode,
   useResolveReport,
   useRestoreNews,
 } from '@/lib/queries';
@@ -22,6 +23,7 @@ import {
   EyeOffIcon,
   FlagIcon,
   ImageIcon,
+  KeyIcon,
   SearchIcon,
   ShirtIcon,
   TrashIcon,
@@ -35,6 +37,7 @@ import {
   Badge,
   Button,
   Card,
+  CopyButton,
   EmptyState,
   InlineError,
   Skeleton,
@@ -258,6 +261,7 @@ function UsersSection({ onDone }: { onDone(msg: string): void }) {
   const q = useDebounced(query.trim(), 300);
   const users = useAdminUsers(q, true);
   const [target, setTarget] = useState<AdminUser | null>(null);
+  const [codeFor, setCodeFor] = useState<AdminUser | null>(null);
 
   return (
     <Collapsible
@@ -317,6 +321,18 @@ function UsersSection({ onDone }: { onDone(msg: string): void }) {
                   </span>
                 )}
               </div>
+              {u.entryId !== null && (
+                <Button
+                  variant="secondary"
+                  className="shrink-0 px-2.5"
+                  aria-label={fmt(m.newCodeFor, { name: u.name })}
+                  title={m.newCode}
+                  onClick={() => setCodeFor(u)}
+                  data-testid="new-code"
+                >
+                  <KeyIcon size={18} />
+                </Button>
+              )}
               {u.role !== 'admin' && (
                 <Button
                   variant={u.bannedAt ? 'secondary' : 'danger'}
@@ -332,6 +348,7 @@ function UsersSection({ onDone }: { onDone(msg: string): void }) {
         </ul>
       )}
       <BanSheet user={target} onClose={() => setTarget(null)} onDone={onDone} />
+      <NewCodeSheet user={codeFor} onClose={() => setCodeFor(null)} />
     </Collapsible>
   );
 }
@@ -450,6 +467,69 @@ function BanSheet({
           </Button>
         </div>
       </form>
+    </BottomSheet>
+  );
+}
+
+/** A user lost their recovery code: issue a new one (old one stops working) for the admin to send them. */
+function NewCodeSheet({ user, onClose }: { user: AdminUser | null; onClose(): void }) {
+  const { t } = useI18n();
+  const m = t.moderation;
+  const issue = useNewRecoveryCode();
+
+  useEffect(() => {
+    issue.reset();
+  }, [user?.id]);
+
+  return (
+    <BottomSheet open={user !== null} onClose={onClose} title={fmt(m.newCodeFor, { name: user?.name ?? '' })}>
+      <div className="flex flex-col gap-3" data-testid="new-code-sheet">
+        {issue.isSuccess ? (
+          <>
+            <p className="text-sm text-muted">{m.newCodeReady}</p>
+            <div className="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-3 py-2">
+              <span
+                dir="ltr"
+                className="font-mono text-xl font-bold tracking-[0.15em] text-ink select-all"
+                data-testid="new-code-value"
+              >
+                {issue.data}
+              </span>
+              <CopyButton value={issue.data} />
+            </div>
+            {user && user.entryId !== null && (
+              <p className="text-sm text-muted">
+                {m.newCodeTeamId}{' '}
+                <bdi dir="ltr" className="tabular font-semibold text-ink">
+                  {user.entryId}
+                </bdi>
+              </p>
+            )}
+            <Button variant="secondary" onClick={onClose}>
+              {t.common.close}
+            </Button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-muted">{m.newCodeBody}</p>
+            {issue.isError && <InlineError>{errorMessage(t, issue.error)}</InlineError>}
+            <div className="flex gap-2">
+              <Button
+                className="flex-1"
+                disabled={issue.isPending || !user}
+                onClick={() => user && issue.mutate(user.id)}
+                data-testid="new-code-confirm"
+              >
+                {issue.isPending ? <Spinner /> : <KeyIcon size={18} />}
+                {m.newCode}
+              </Button>
+              <Button variant="ghost" className="flex-1" onClick={onClose}>
+                {t.common.cancel}
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
     </BottomSheet>
   );
 }

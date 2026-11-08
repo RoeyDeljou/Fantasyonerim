@@ -2,6 +2,7 @@ import {
   AdminUserListSchema,
   BanBodySchema,
   ReportListSchema,
+  RecoveryCodeResponseSchema,
   ReportReasonSchema,
   ResolveReportBodySchema,
   UserIdSchema,
@@ -10,7 +11,9 @@ import {
 import type { Prisma, Report, ReportTargetKind } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { hashSecret } from '../auth/passwords.js';
 import type { Auth } from '../auth/session.js';
+import { generateRecoveryCode } from '../auth/tokens.js';
 import {
   decodeTargetId,
   encodeTargetId,
@@ -23,6 +26,7 @@ import { COMMENT_INCLUDE, POST_INCLUDE, toComment, toPosts } from '../community/
 import { cleanPlainText } from '../community/text.js';
 import type { AppContext } from '../context.js';
 import { badRequest, notFound } from '../errors.js';
+import { encryptSecret } from '../secrets.js';
 import { parseInput, serialize } from '../validate.js';
 import { cleanQuery } from './query.js';
 
@@ -191,6 +195,31 @@ export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth
       });
       ctx.forgetUser(id);
       return reply.code(204).send();
+    });
+
+    // A user lost their recovery code (e.g. signed up in Safari, then opened the home-screen app): an admin issues a
+    // new one and sends it to them. The old code stops working; their signed-in devices stay signed in. Shown once.
+    admin.post('/v1/admin/users/:id/recovery-code', async (request) => {
+      const { user: by } = await auth.requireAdmin(request);
+      const { id } = parseInput(UserParamsSchema, request.params);
+      const target = await prisma.user.findUnique({ where: { id } });
+      if (target === null) throw notFound('This user does not exist');
+      if (target.entryId === null) {
+        throw badRequest(
+          'This account has no FPL Team ID, so it signs in with a username and password instead',
+        );
+      }
+      const recoveryCode = generateRecoveryCode();
+      await prisma.user.update({
+        where: { id },
+        data: {
+          recoveryCodeHash: await hashSecret(recoveryCode),
+          recoveryCodeEnc: encryptSecret(ctx.config.secretsKey, recoveryCode),
+        },
+      });
+      ctx.forgetUser(id);
+      request.log.info({ userId: id, by: by.id }, 'admin issued a new recovery code');
+      return serialize(RecoveryCodeResponseSchema, { recoveryCode });
     });
 
     admin.delete('/v1/admin/users/:id/ban', async (request, reply) => {

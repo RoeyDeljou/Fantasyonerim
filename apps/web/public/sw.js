@@ -141,6 +141,8 @@ self.addEventListener('fetch', (event) => {
   // Uploaded media (same-origin via the CDN rewrite): left to the CDN + HTTP cache, never kept in the SW cache,
   // so a deleted community photo isn't served from here afterwards.
   if (url.pathname.startsWith('/media/')) return;
+  // The sign-in hand-off page is read in a hidden iframe: always the tiny real page, never the app shell.
+  if (url.pathname.startsWith('/handoff/')) return;
   if (url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/fonts/')) {
     respond(event, cacheFirst); // content-hashed / versioned file names, immutable
     return;
