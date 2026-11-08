@@ -88,10 +88,10 @@ afterAll(async () => {
 describe('media URLs served through the CDN base (MEDIA_PUBLIC_BASE_URL set)', () => {
   beforeEach(() => boot(CDN));
 
-  it('news: stored bucket URLs (url + posterUrl) map to the CDN; CDN and foreign URLs pass through', async () => {
+  it('news: stored bucket URLs map to the CDN (videos stay on the bucket for iOS range requests); CDN and foreign URLs pass through', async () => {
     const id = await seedNews(prisma);
     const expected = [
-      { url: `${CDN}/instagram/1/0.mp4`, posterUrl: `${CDN}/instagram/1/0-poster.jpg` },
+      { url: `${ORIGIN}/instagram/1/0.mp4`, posterUrl: `${CDN}/instagram/1/0-poster.jpg` },
       { url: `${CDN}/instagram/1/1.jpg`, posterUrl: null },
       { url: 'https://i.scdn.co/image/cover.jpg', posterUrl: null },
     ];

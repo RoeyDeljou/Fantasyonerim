@@ -14,6 +14,13 @@ describe('createMediaUrlMapper', () => {
     expect(map(`${B2}/uploads/u1/p1.webp`)).toBe(`${CDN}/uploads/u1/p1.webp`);
   });
 
+  it('keeps videos on the bucket URL (the CDN rewrite cache breaks iOS range requests), posters still mapped', () => {
+    expect(map(`${B2}/instagram/1810/0.mp4`)).toBe(`${B2}/instagram/1810/0.mp4`);
+    expect(map(`${B2}/instagram/1810/0.MOV`)).toBe(`${B2}/instagram/1810/0.MOV`);
+    expect(map(`${B2}/instagram/1810/0.webm?x=1`)).toBe(`${B2}/instagram/1810/0.webm?x=1`);
+    expect(map(`${B2}/instagram/1810/0-poster.jpg`)).toBe(`${CDN}/instagram/1810/0-poster.jpg`);
+  });
+
   it('passes CDN URLs, foreign URLs and look-alike prefixes through unchanged', () => {
     expect(map(`${CDN}/instagram/123/0.jpg`)).toBe(`${CDN}/instagram/123/0.jpg`);
     expect(map('https://scontent.cdninstagram.com/v/abc.jpg')).toBe(

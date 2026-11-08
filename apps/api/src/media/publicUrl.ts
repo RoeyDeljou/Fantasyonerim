@@ -26,7 +26,18 @@ export function createMediaUrlMapper(
   const target = trimSlashes(publicBaseUrl);
   if (origin === target) return identityMediaUrl;
   const prefix = `${origin}/`;
-  return (url) => (url.startsWith(prefix) ? `${target}/${url.slice(prefix.length)}` : url);
+  return (url) =>
+    url.startsWith(prefix) && !isVideoUrl(url) ? `${target}/${url.slice(prefix.length)}` : url;
+}
+
+/**
+ * Videos stay on the bucket's own URL. Safari/iOS starts video playback with a `Range: bytes=0-1` request, and the
+ * Vercel rewrite cache stores that 2-byte 206 answer and then serves it for full requests too — every later
+ * viewer gets a broken 2-byte "video". The bucket handles Range natively, so videos skip the CDN rewrite.
+ */
+const VIDEO_EXTENSIONS = /\.(mp4|m4v|mov|webm)$/i;
+export function isVideoUrl(url: string): boolean {
+  return VIDEO_EXTENSIONS.test(url.split(/[?#]/, 1)[0] ?? url);
 }
 
 /** Null-preserving convenience for optional columns (posterUrl). */
