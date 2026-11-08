@@ -106,7 +106,10 @@ export async function loadIntegration(
 
 const iso = (d: Date | null) => (d === null ? null : d.toISOString());
 
-export function toIntegrationStatus(loaded: LoadedIntegration): IntegrationStatus {
+export function toIntegrationStatus(
+  loaded: LoadedIntegration,
+  extras: { nextSyncAt?: Date | null } = {},
+): IntegrationStatus {
   const { row, settings, secrets, configured } = loaded;
   const def = INTEGRATIONS[row.id];
   const shownKeys = [...Object.keys(def.editable), ...def.readOnly];
@@ -129,6 +132,7 @@ export function toIntegrationStatus(loaded: LoadedIntegration): IntegrationStatu
       itemsImported: row.itemsImported,
       tokenExpiresAt: iso(row.tokenExpiresAt),
       dataAccessExpiresAt: iso(row.dataAccessExpiresAt),
+      ...(extras.nextSyncAt !== undefined ? { nextSyncAt: iso(extras.nextSyncAt) } : {}),
     },
     'IntegrationStatus',
   );

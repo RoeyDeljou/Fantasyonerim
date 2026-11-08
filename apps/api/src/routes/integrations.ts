@@ -13,7 +13,12 @@ import { z } from 'zod';
 import type { Auth } from '../auth/session.js';
 import type { AppContext } from '../context.js';
 import { ApiHttpError, badRequest } from '../errors.js';
-import { EXPECTED_INSTAGRAM_USERNAME, INTEGRATIONS, INTEGRATION_IDS } from '../integrations/config.js';
+import {
+  EXPECTED_INSTAGRAM_USERNAME,
+  INTEGRATIONS,
+  INTEGRATION_IDS,
+  xOptions,
+} from '../integrations/config.js';
 import { createOAuthState, verifyOAuthState } from '../integrations/oauthState.js';
 import {
   describeIntegrationError,
@@ -23,8 +28,10 @@ import {
   isConfigError,
   loadIntegration,
   toIntegrationStatus,
+  type LoadedIntegration,
 } from '../integrations/store.js';
 import { SYNC_JOBS } from '../jobs/index.js';
+import { xNextFetchAt } from '../jobs/social.js';
 import type { JobRunner } from '../jobs/runner.js';
 import { parseInput, serialize } from '../validate.js';
 
@@ -60,8 +67,24 @@ export function integrationRoutes(app: FastifyInstance, ctx: AppContext, auth: A
   const { prisma } = ctx;
   const key = ctx.config.secretsKey;
 
-  const status = async (id: IntegrationId) =>
-    serialize(IntegrationStatusSchema, toIntegrationStatus(await loadIntegration(prisma, key, id)));
+  /** X: the server's own next-check time (job state + admin interval), so the console never recomputes it. */
+  const extrasFor = async (loaded: LoadedIntegration): Promise<{ nextSyncAt?: Date | null }> => {
+    if (loaded.row.id !== 'x') return {};
+    if (!loaded.row.enabled || !loaded.configured) return { nextSyncAt: null };
+    const lease = await prisma.jobLease.findUnique({ where: { name: 'x' }, select: { state: true } });
+    const state =
+      lease?.state !== null && typeof lease?.state === 'object' && !Array.isArray(lease.state)
+        ? lease.state
+        : {};
+    return {
+      nextSyncAt: xNextFetchAt(state as Record<string, unknown>, xOptions(loaded.settings).pollEveryMinutes),
+    };
+  };
+  const statusOf = async (id: IntegrationId) => {
+    const loaded = await loadIntegration(prisma, key, id);
+    return toIntegrationStatus(loaded, await extrasFor(loaded));
+  };
+  const status = async (id: IntegrationId) => serialize(IntegrationStatusSchema, await statusOf(id));
 
   void app.register(async (admin) => {
     admin.addHook('onRequest', async (request) => {
@@ -75,7 +98,7 @@ export function integrationRoutes(app: FastifyInstance, ctx: AppContext, auth: A
       const integrations = [];
       for (const id of INTEGRATION_IDS) {
         const row = byId.get(id);
-        if (row !== undefined) integrations.push(toIntegrationStatus(await loadIntegration(prisma, key, id)));
+        if (row !== undefined) integrations.push(await statusOf(id));
       }
       return serialize(IntegrationListSchema, { integrations });
     });

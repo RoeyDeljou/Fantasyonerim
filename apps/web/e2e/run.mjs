@@ -1317,6 +1317,8 @@ async function journeys(browser) {
     assert((await sw('ציוצים עם סרטונים').getAttribute('aria-checked')) === 'false', 'videos off by default');
     assert((await xo.getByTestId('x-rate').inputValue()) === '720', 'twice a day by default');
     await xo.getByTestId('x-cost-note').waitFor();
+    // X isn't connected in e2e: no automatic check is scheduled, so no next-check time (api tests cover the value).
+    assert((await xo.getByTestId('x-next-check').count()) === 0, 'no next check while X is not connected');
     await sw('ציוצים עם סרטונים').click();
     await xo.locator('[role=switch][aria-checked=true]', { hasText: 'ציוצים עם סרטונים' }).waitFor();
     await xo.getByTestId('x-rate').selectOption('60');

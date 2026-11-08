@@ -247,6 +247,8 @@ export const IntegrationStatusSchema = z.object({
   tokenExpiresAt: z.nullable(z.string().check(z.iso.datetime({ offset: true }))),
   /** Instagram only: Meta data-access expiry (re-consent date), null if not reported. */
   dataAccessExpiresAt: z.nullable(z.string().check(z.iso.datetime({ offset: true }))),
+  /** X only: when the next automatic check is due (admin interval; sooner after a failure). Null = at the next wake-up. */
+  nextSyncAt: z.optional(z.nullable(z.string().check(z.iso.datetime({ offset: true })))),
 });
 export type IntegrationStatus = z.infer<typeof IntegrationStatusSchema>;
 

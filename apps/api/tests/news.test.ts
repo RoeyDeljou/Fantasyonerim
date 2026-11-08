@@ -26,7 +26,15 @@ import {
 } from './fakes.js';
 import type { FakeFplService } from './fakeFpl.js';
 import type { TestClock } from './helpers.js';
-import { buildTestApp, createTestPrisma, migrateTestDb, registerUser, resetDb } from './helpers.js';
+import {
+  adminToken,
+  bearer,
+  buildTestApp,
+  createTestPrisma,
+  migrateTestDb,
+  registerUser,
+  resetDb,
+} from './helpers.js';
 import { mediaKeysWithVariants } from '../src/media/variants.js';
 
 const prisma = createTestPrisma();
@@ -387,9 +395,15 @@ describe('x job', () => {
     clock.advance(30 * MINUTE);
     await app.jobs.run('x');
     expect(fakes.x.configs).toHaveLength(2);
-    // Admin "sync now" ignores the interval.
-    await app.jobs.run('x', { force: true });
+    // Admin "sync now" ignores the interval; the console shows the server's next check (12 h later).
+    const admin = await adminToken(app, prisma);
+    const synced = await app.inject({
+      method: 'POST',
+      url: '/v1/admin/integrations/x/sync',
+      headers: bearer(admin),
+    });
     expect(fakes.x.configs).toHaveLength(3);
+    expect(synced.json().nextSyncAt).toBe(new Date(clock.now().getTime() + 12 * HOUR).toISOString());
     // An admin change to the interval and post types applies on the next wake-up.
     await prisma.integrationConfig.update({
       where: { id: 'x' },
@@ -456,6 +470,13 @@ describe('x job', () => {
     await app.jobs.run('x');
     expect(fakes.x.configs).toHaveLength(1);
     fakes.x.error = null;
+    const admin = await adminToken(app, prisma);
+    const list = await app.inject({ method: 'GET', url: '/v1/admin/integrations', headers: bearer(admin) });
+    const x = (
+      list.json() as { integrations: { id: string; nextSyncAt?: string | null }[] }
+    ).integrations.find((i) => i.id === 'x');
+    // Retried after an hour, not 12 h — and the console says so.
+    expect(x?.nextSyncAt).toBe(new Date(clock.now().getTime() + HOUR).toISOString());
     clock.advance(30 * MINUTE);
     await app.jobs.run('x');
     expect(fakes.x.configs).toHaveLength(1);

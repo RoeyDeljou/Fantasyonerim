@@ -56,7 +56,7 @@ export function xNextFetchAt(state: Record<string, unknown>, pollEveryMinutes: n
   if (Number.isNaN(last)) return null;
   const interval = pollEveryMinutes * MINUTE;
   const wait = state['lastFetchOk'] === false ? Math.min(interval, X_RETRY_MS) : interval;
-  return new Date(last + wait - X_EARLY_SLACK_MS);
+  return new Date(last + wait);
 }
 
 export const xJob: Job = {
@@ -73,7 +73,7 @@ export const xJob: Job = {
     if (!x.row.enabled || !bearerToken || !username) return { summary: 'x disabled or not configured' };
     const options = xOptions(x.settings);
     const due = xNextFetchAt(ctx.state, options.pollEveryMinutes);
-    if (!ctx.force && due !== null && ctx.now.getTime() < due.getTime()) {
+    if (!ctx.force && due !== null && ctx.now.getTime() < due.getTime() - X_EARLY_SLACK_MS) {
       return { summary: `waiting: next X fetch at ${due.toISOString()}` };
     }
     if (!x.settings['userId']) {

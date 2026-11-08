@@ -521,7 +521,7 @@ function xRate(s: IntegrationStatus): XRate {
 
 /** X is pay-per-use: the admin picks which post types to pull and how often. Each change saves at once. */
 function XOptions({ status: s }: { status: IntegrationStatus }) {
-  const { t } = useI18n();
+  const { t, f } = useI18n();
   const it = t.integrations;
   const update = useUpdateIntegration(s.id);
   const rateId = useId();
@@ -561,6 +561,11 @@ function XOptions({ status: s }: { status: IntegrationStatus }) {
           ))}
         </select>
       </div>
+      {s.nextSyncAt && (
+        <p className="text-xs text-muted" data-testid="x-next-check">
+          {it.xNextCheck}: <time dateTime={s.nextSyncAt}>{f.dateTime(s.nextSyncAt)}</time>
+        </p>
+      )}
       <p className="mt-1 flex items-start gap-1.5 text-xs text-muted" data-testid="x-cost-note">
         <InfoIcon size={14} className="mt-0.5 shrink-0" />
         <span>{it.xCostNote}</span>
