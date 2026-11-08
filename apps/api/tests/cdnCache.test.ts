@@ -104,15 +104,23 @@ describe('vercel.json: /cdn rewrites to the API, cached like /media', () => {
     }
   });
 
+  it('vercel.json uses only exact /cdn header sources (Vercel rejects an optional "/?" and then skips every deploy)', () => {
+    for (const h of vercel.headers.filter((x) => x.source.startsWith('/cdn'))) {
+      expect(h.source, h.source).not.toMatch(/[?*+()]/);
+    }
+  });
+
   it.each(routes)('$path: rewrite caching on, CDN TTL = the API s-maxage', ({ path, cc }) => {
-    const rule = vercel.headers.find((h) => h.source === `/cdn${path}/?`);
-    expect(rule).toBeDefined();
-    const header = (key: string) =>
-      rule!.headers.find((h) => h.key.toLowerCase() === key.toLowerCase())?.value;
-    expect(header('x-vercel-enable-rewrite-caching')).toBe('1');
-    const cdn = header('CDN-Cache-Control') ?? '';
-    expect(Number(/max-age=(\d+)/.exec(cdn)?.[1])).toBe(sMaxAge(cc));
-    expect(cdn).toMatch(/stale-while-revalidate=\d+/);
+    for (const source of [`/cdn${path}`, `/cdn${path}/`]) {
+      const rule = vercel.headers.find((h) => h.source === source);
+      expect(rule, source).toBeDefined();
+      const header = (key: string) =>
+        rule!.headers.find((h) => h.key.toLowerCase() === key.toLowerCase())?.value;
+      expect(header('x-vercel-enable-rewrite-caching')).toBe('1');
+      const cdn = header('CDN-Cache-Control') ?? '';
+      expect(Number(/max-age=(\d+)/.exec(cdn)?.[1])).toBe(sMaxAge(cc));
+      expect(cdn).toMatch(/stale-while-revalidate=\d+/);
+    }
     // Same mechanism as the media rewrite.
     expect(
       vercel.headers.some(

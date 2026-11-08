@@ -10,8 +10,14 @@
       "source": "/media/:path*",
       "destination": "https://f003.backblazeb2.com/file/fantasyonerim-media/:path*"
     },
-    { "source": "/cdn/v1/config", "destination": "https://fantasyonerim-api.onrender.com/v1/config" },
-    { "source": "/cdn/v1/config/", "destination": "https://fantasyonerim-api.onrender.com/v1/config" },
+    {
+      "source": "/cdn/v1/config",
+      "destination": "https://fantasyonerim-api.onrender.com/v1/config"
+    },
+    {
+      "source": "/cdn/v1/config/",
+      "destination": "https://fantasyonerim-api.onrender.com/v1/config"
+    },
     {
       "source": "/cdn/v1/fpl/bootstrap",
       "destination": "https://fantasyonerim-api.onrender.com/v1/fpl/bootstrap"
@@ -25,62 +31,153 @@
     {
       "source": "/sw.js",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache" },
-        { "key": "Service-Worker-Allowed", "value": "/" }
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        }
       ]
     },
     {
       "source": "/version.json",
-      "headers": [{ "key": "Cache-Control", "value": "no-store, max-age=0" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, max-age=0"
+        }
+      ]
     },
     {
       "source": "/manifest.webmanifest",
-      "headers": [{ "key": "Content-Type", "value": "application/manifest+json" }]
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json"
+        }
+      ]
     },
     {
       "source": "/_next/static/(.*)",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     },
     {
       "source": "/fonts/(.*)",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
     },
     {
       "source": "/media/uploads/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=300, s-maxage=300" },
-        { "key": "CDN-Cache-Control", "value": "public, max-age=300" },
-        { "key": "x-vercel-enable-rewrite-caching", "value": "1" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=300, s-maxage=300"
+        },
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, max-age=300"
+        },
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "1"
+        }
       ]
     },
     {
       "source": "/media/((?!uploads/).*)",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, s-maxage=2592000, immutable" },
-        { "key": "CDN-Cache-Control", "value": "public, max-age=2592000, immutable" },
-        { "key": "x-vercel-enable-rewrite-caching", "value": "1" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, s-maxage=2592000, immutable"
+        },
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, max-age=2592000, immutable"
+        },
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "1"
+        }
       ]
     },
     {
-      "source": "/cdn/v1/config/?",
+      "source": "/cdn/v1/config",
       "headers": [
-        { "key": "CDN-Cache-Control", "value": "public, max-age=30, stale-while-revalidate=60" },
-        { "key": "x-vercel-enable-rewrite-caching", "value": "1" }
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, max-age=30, stale-while-revalidate=60"
+        },
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "1"
+        }
       ]
     },
     {
-      "source": "/cdn/v1/fpl/bootstrap/?",
+      "source": "/cdn/v1/config/",
       "headers": [
-        { "key": "CDN-Cache-Control", "value": "public, max-age=60, stale-while-revalidate=300" },
-        { "key": "x-vercel-enable-rewrite-caching", "value": "1" }
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, max-age=30, stale-while-revalidate=60"
+        },
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "source": "/cdn/v1/fpl/bootstrap",
+      "headers": [
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, max-age=60, stale-while-revalidate=300"
+        },
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "source": "/cdn/v1/fpl/bootstrap/",
+      "headers": [
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, max-age=60, stale-while-revalidate=300"
+        },
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "1"
+        }
       ]
     },
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "X-Frame-Options", "value": "DENY" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        }
       ]
     }
   ]
