@@ -633,7 +633,6 @@ export const en: Messages = {
     xRate_360: 'Every 6 hours',
     xRate_720: 'Twice a day',
     xRate_1440: 'Once a day',
-    xNextCheck: 'Next check',
     xCostNote:
       'X charges for every post it reads. One server check serves every user, and each post is read only once. Checking more often and pulling more post types costs more.',
     xPaid: 'Paid feature — contact the creator if you want it',

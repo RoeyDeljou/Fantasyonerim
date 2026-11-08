@@ -417,6 +417,39 @@ describe('x job', () => {
     });
   });
 
+  it('a failed account lookup never blocks the fetch (search needs only the username)', async () => {
+    await connectX();
+    await prisma.integrationConfig.update({
+      where: { id: 'x' },
+      data: { settings: { username: 'fantasyonerim' } },
+    });
+    let lookups = 0;
+    const { app: other } = await buildTestApp(prisma, {
+      clock,
+      integrations: {
+        ...fakes.factories,
+        resolveXUser: async () => {
+          lookups += 1;
+          throw new IntegrationUnavailableError('HTTP 503', 503);
+        },
+      },
+    });
+    try {
+      fakes.x.next = result([xPost('100', ago(HOUR))], { cursor: '100' });
+      await other.jobs.run('x');
+      expect(lookups).toBe(1);
+      expect(fakes.x.configs).toHaveLength(1);
+      expect(await prisma.newsItem.count({ where: { source: 'x_post' } })).toBe(1);
+      // Not due again for 12 h: no lookup, no fetch on the next wake-ups.
+      clock.advance(30 * MINUTE);
+      await other.jobs.run('x');
+      expect(lookups).toBe(1);
+      expect(fakes.x.configs).toHaveLength(1);
+    } finally {
+      await other.close();
+    }
+  });
+
   it('a failed X fetch is retried after an hour, not after the full interval', async () => {
     await connectX();
     fakes.x.error = new IntegrationUnavailableError('HTTP 503', 503);

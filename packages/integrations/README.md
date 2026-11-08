@@ -38,11 +38,12 @@ Instagram uses Facebook Login for Business on `graph.facebook.com` (`GRAPH_API_V
 do not expire).
 
 X is pay-per-use and bills every post _returned_. Reading uses `GET /2/tweets/search/recent` with
-`from:<username> -has:links -is:retweet -is:reply` (handle validated `^[A-Za-z0-9_]{1,15}$`), so X never returns
-or bills link posts, reposts or replies; plus `since_id`, `max_results=10`, one page on the first run and at most
-`maxPages` (3) while catching up. A post that still carries a non-media link is dropped and counted in
-`warnings`. **Caveat:** X's `has:links` (= `filter:links`) also matches native photos/videos (their pic.x.com
-link is in `entities.urls`), so posts with attached media are excluded too. Search covers the last 7 days; a
+`from:<username> -is:retweet -is:reply` plus the admin's post-type switches (defaults: `-has:links -has:videos`,
+photos kept; `-has:images` when photos are off). Handle validated `^[A-Za-z0-9_]{1,15}$`. So X never returns or
+bills replies, reposts or the turned-off post types; plus `since_id`, `max_results=10`, one page on the first run and
+at most `maxPages` (3) while catching up. Checked live (Nov 2026): `-has:links` drops outbound web links only —
+photo posts and quote posts are still returned. Each post is re-checked (a real outbound link or a turned-off media
+type → dropped and counted in `warnings`); dropped posts still advance the cursor. Search covers the last 7 days; a
 `since_id` older than that (400) restarts with one fresh page. 402 → `IntegrationUnavailableError`
 ("X credits depleted …"). Posting enforces the 280 weighted-char limit
 (`XPostTooLongError`). Images go through `POST /2/media/upload` (images only, ≤ 5 MB).

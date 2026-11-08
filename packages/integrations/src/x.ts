@@ -249,10 +249,11 @@ function maxId(a: string | null, b: string): string {
 type UrlEntity = z.infer<typeof UrlEntitySchema>;
 
 /**
- * The search query. `-has:links` makes X drop link posts server-side, so they are never returned nor
- * billed. Caveat: X's `has:links` (= `filter:links`) also matches native photos/videos, whose
- * pic.x.com link is in `entities.urls` — so posts with attached media are excluded too (README). The handle is validated (`^[A-Za-z0-9_]{1,15}$`) so nothing can be
- * injected into the query; anything else → IntegrationConfigError.
+ * The search query. The post types the admin turned off are excluded server-side, so X never returns (or bills)
+ * them: `-has:links` (outbound web links), `-has:videos`, `-has:images`. Checked against the live @Fantasyonerim
+ * timeline (Nov 2026): `-has:links` drops posts with outbound web links but still returns photo posts and quote
+ * posts. The post-filter below re-checks every post anyway. The handle is validated (`^[A-Za-z0-9_]{1,15}$`) so
+ * nothing can be injected into the query; anything else → IntegrationConfigError.
  */
 export function buildXSearchQuery(
   username: string,

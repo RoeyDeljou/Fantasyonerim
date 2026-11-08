@@ -149,8 +149,10 @@ there — X changes them). This app keeps reads small:
   them. Defaults: **photos on, web links off, videos off** (owner decision, Nov 2026). Quote posts are kept.
 - Admin console → Integrations → X → "מה מושכים מ־X": three switches (links / photos / videos) and "תדירות בדיקה"
   (every 30 min, 1 h, 3 h, 6 h, twice a day — default — or once a day). Changes apply on the next check; "Sync now"
-  checks immediately. A failed check is retried after an hour. A live update costs one post (plus one image upload when it has a photo). If the credits run out, the X card
-  (and the live-update result) shows "403 / plan or credits missing" — top up and it resumes by itself.
+  checks immediately. A failed check is retried after an hour.
+
+A live update costs one post (plus one image upload when it has a photo). If the credits run out, the X card shows
+"X credits depleted" (a live update shows "403 / plan or credits missing") — top up and it resumes by itself.
 
 Keys are stored encrypted on the server and are never shown again, in the console or anywhere else. To replace
 one, paste the new value; to remove one, clear it.

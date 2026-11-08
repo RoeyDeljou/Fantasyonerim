@@ -1,5 +1,5 @@
 import { xOptions } from '../integrations/config.js';
-import { loadIntegration, recordIntegrationRun, describeIntegrationError } from '../integrations/store.js';
+import { loadIntegration, describeIntegrationError } from '../integrations/store.js';
 import { runContentSource, runSummary } from './content.js';
 import { HOUR, MINUTE, type Job } from './types.js';
 
@@ -77,7 +77,7 @@ export const xJob: Job = {
       return { summary: `waiting: next X fetch at ${due.toISOString()}` };
     }
     if (!x.settings['userId']) {
-      // The PUT couldn't reach X to resolve the account: do it now, once.
+      // The PUT couldn't reach X to resolve the account: try again now (only when a fetch is due).
       try {
         const user = await app.integrations.resolveXUser({ bearerToken, username }, app.integrationCtx);
         await app.prisma.integrationConfig.update({
@@ -89,9 +89,12 @@ export const xJob: Job = {
         });
         x = await loadIntegration(app.prisma, app.config.secretsKey, 'x');
       } catch (err) {
-        const note = describeIntegrationError('x', err);
-        await recordIntegrationRun(app.prisma, 'x', app.clock.now(), { ok: false, error: note });
-        return { summary: `failed: ${note}` };
+        // Search needs only the username, so a failed lookup never blocks (or re-bills) the fetch; it is retried at
+        // the next due fetch.
+        ctx.log.warn(
+          { note: describeIntegrationError('x', err) },
+          'x: account lookup failed, fetching anyway',
+        );
       }
     }
     const source = app.integrations.createXSource(

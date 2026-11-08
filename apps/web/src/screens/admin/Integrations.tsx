@@ -521,17 +521,13 @@ function xRate(s: IntegrationStatus): XRate {
 
 /** X is pay-per-use: the admin picks which post types to pull and how often. Each change saves at once. */
 function XOptions({ status: s }: { status: IntegrationStatus }) {
-  const { t, f } = useI18n();
+  const { t } = useI18n();
   const it = t.integrations;
   const update = useUpdateIntegration(s.id);
   const rateId = useId();
   const rate = xRate(s);
   const save = (key: string, value: string) =>
     update.mutate({ enabled: s.enabled, settings: { ...s.settings, [key]: value } });
-  const next =
-    s.enabled && s.configured && s.lastRunAt
-      ? new Date(Date.parse(s.lastRunAt) + rate * 60_000).toISOString()
-      : null;
 
   return (
     <fieldset className="flex flex-col gap-1 border-t border-line pt-2" data-testid="x-options">
@@ -565,11 +561,6 @@ function XOptions({ status: s }: { status: IntegrationStatus }) {
           ))}
         </select>
       </div>
-      {next && (
-        <p className="text-xs text-muted" data-testid="x-next-check">
-          {it.xNextCheck}: <time dateTime={next}>{f.dateTime(next)}</time>
-        </p>
-      )}
       <p className="mt-1 flex items-start gap-1.5 text-xs text-muted" data-testid="x-cost-note">
         <InfoIcon size={14} className="mt-0.5 shrink-0" />
         <span>{it.xCostNote}</span>
