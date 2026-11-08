@@ -131,7 +131,14 @@ describe('integration settings', () => {
       spotify: { showId: '4sYY0tpz7M8gflimZAglHi' },
       apple: { podcastId: '1819558192' },
       instagram: { igUserId: null, username: null, pageId: null },
-      x: { username: 'fantasyonerim', userId: null },
+      x: {
+        username: 'fantasyonerim',
+        includeLinks: 'false',
+        includePhotos: 'true',
+        includeVideos: 'false',
+        pollEveryMinutes: '720',
+        userId: null,
+      },
       youtube: { channel: 'https://www.youtube.com/@Fantasyonerim', channelId: 'UCGjQpoCQcIMtirSjDW1IfxA' },
     });
   });
@@ -236,6 +243,41 @@ describe('integration settings', () => {
     expect(bad.statusCode).toBe(400);
     expect(bad.json().error.message).toMatch(/^secrets\.bearerToken: X rejected the bearer token\.$/);
     await other.close();
+  });
+
+  it('X post types and fetch rate: shown with defaults, editable, validated', async () => {
+    const list = IntegrationListSchema.parse(
+      (await app.inject({ method: 'GET', url: '/v1/admin/integrations', headers: bearer(admin) })).json(),
+    );
+    expect(list.integrations.find((i) => i.id === 'x')?.settings).toMatchObject({
+      includeLinks: 'false',
+      includePhotos: 'true',
+      includeVideos: 'false',
+      pollEveryMinutes: '720',
+    });
+    const res = await put('x', {
+      enabled: false,
+      settings: { includeVideos: 'true', includePhotos: 'false', pollEveryMinutes: '60' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().settings).toMatchObject({
+      includeLinks: 'false',
+      includePhotos: 'false',
+      includeVideos: 'true',
+      pollEveryMinutes: '60',
+    });
+    for (const settings of [
+      { pollEveryMinutes: '5' },
+      { pollEveryMinutes: 'often' },
+      { includeLinks: 'yes' },
+    ]) {
+      const bad = await put('x', { enabled: false, settings });
+      expect(bad.statusCode, JSON.stringify(settings)).toBe(400);
+      expect(bad.json().error.message).toMatch(/^settings\.(pollEveryMinutes|includeLinks): /);
+    }
+    // Clearing a setting goes back to its default.
+    const cleared = await put('x', { enabled: false, settings: { pollEveryMinutes: null } });
+    expect(cleared.json().settings.pollEveryMinutes).toBe('720');
   });
 
   it('"sync now" runs the source and returns its fresh status', async () => {

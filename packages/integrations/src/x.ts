@@ -22,27 +22,44 @@ import {
 
 export const X_API_URL = 'https://api.x.com/2';
 
+/** `GET /2/tweets/search/recent` — last 7 days; every returned post is billed, filtered-out posts are not. */
+export const X_SEARCH_RECENT_URL = `${X_API_URL}/tweets/search/recent`;
+
 /**
- * X is pay-per-use (each post read is billed), so reading is deliberately frugal: one request per poll,
- * `since_id` so only new posts are returned, small `max_results`, and further pages only while
- * catching up after a gap.
+ * X is pay-per-use (each post *returned* is billed), so reading is deliberately frugal: the recent-search
+ * endpoint with `from:<username> -has:links -is:retweet -is:reply`, so X filters link posts, reposts and
+ * replies server-side and never returns (or bills) them; `since_id` so only new posts come back;
+ * `max_results` 10; one page on the first run, a few pages at most while catching up.
  */
 export interface XTimelineConfig {
   bearerToken: string;
-  /** Numeric user id (from `resolveXUser`). */
-  userId: string;
-  /** For permalinks and the admin label. Without it links use https://x.com/i/status/<id>. */
-  username?: string;
+  /** Account handle (x.settings.username). Required: the search query is `from:<username>`. */
+  username: string;
+  /** Numeric user id. Not needed by search; accepted so existing callers keep compiling. */
+  userId?: string;
   /** Previous poll's cursor (newest post id). Omit on the first poll. */
   sinceId?: string | null;
-  /** 5–100, default 10. */
+  /** 10–100 (search/recent minimum is 10), default 10. */
   maxResults?: number;
-  /** Pages to follow while catching up (only with sinceId), default 3. */
+  /** Pages to follow while catching up (only with sinceId), default 3. The first run is always 1 page. */
   maxPages?: number;
   /** Default true. */
   excludeReplies?: boolean;
   /** Default true. */
   excludeRetweets?: boolean;
+  /** Import posts with outbound web links. Default false (client: lowest cost; X never returns/bills them). */
+  includeLinks?: boolean;
+  /** Import posts with attached photos. Default true. */
+  includePhotos?: boolean;
+  /** Import posts with attached videos / GIFs. Default false. */
+  includeVideos?: boolean;
+}
+
+/** Which post types to import. X filters them in the query, so excluded types are never returned or billed. */
+export interface XPostTypeOptions {
+  includeLinks?: boolean;
+  includePhotos?: boolean;
+  includeVideos?: boolean;
 }
 
 // ---------- errors ----------
@@ -70,7 +87,11 @@ export function xError(res: Response, body: unknown, nowMs: number, action: stri
     );
   }
   if (res.status === 402) {
-    return new IntegrationAuthError(`X says the account has no API credits left (HTTP 402).${detail}`);
+    return new IntegrationUnavailableError(
+      `X credits depleted — top up the X API credits (developer console → Billing); polling resumes ` +
+        `automatically (HTTP 402).${detail}`,
+      402,
+    );
   }
   if (res.status === 404 || res.status === 400) {
     return new IntegrationConfigError(
@@ -225,44 +246,103 @@ function maxId(a: string | null, b: string): string {
   return BigInt(b) > BigInt(a) ? b : a;
 }
 
+type UrlEntity = z.infer<typeof UrlEntitySchema>;
+
 /**
- * New original posts of the account since `sinceId` (replies and reposts excluded by default).
- * Returns the newest seen id as `cursor` (unchanged when there is nothing new).
+ * The search query. `-has:links` makes X drop link posts server-side, so they are never returned nor
+ * billed. Caveat: X's `has:links` (= `filter:links`) also matches native photos/videos, whose
+ * pic.x.com link is in `entities.urls` — so posts with attached media are excluded too (README). The handle is validated (`^[A-Za-z0-9_]{1,15}$`) so nothing can be
+ * injected into the query; anything else → IntegrationConfigError.
+ */
+export function buildXSearchQuery(
+  username: string,
+  options: { excludeReplies?: boolean; excludeRetweets?: boolean } & XPostTypeOptions = {},
+): string {
+  const handle = username.trim().replace(/^@/, '');
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(handle)) {
+    throw new IntegrationConfigError(`"${username}" is not a valid X username (letters, digits and _ only).`);
+  }
+  return [
+    `from:${handle}`,
+    ...(options.excludeRetweets === false ? [] : ['-is:retweet']),
+    ...(options.excludeReplies === false ? [] : ['-is:reply']),
+    // Verified live: -has:links drops only outbound web links — photo posts and quote posts are still returned.
+    ...(options.includeLinks === true ? [] : ['-has:links']),
+    ...(options.includeVideos === true ? [] : ['-has:videos']),
+    ...(options.includePhotos === false ? ['-has:images'] : []),
+  ].join(' ');
+}
+
+/**
+ * True when a URL entity is a real (outbound) link — not the post's own attached photo/video, and not the
+ * "show more" link X appends to the truncated `text` of a long post.
+ */
+function isRealLink(u: UrlEntity): boolean {
+  if (u.media_key !== undefined) return false;
+  const expanded = u.expanded_url ?? '';
+  // Links to posts on X itself (quote posts, the post's own photo/video page, "show more" on long posts) are not
+  // outbound links — X's own -has:links treats them the same way (verified live).
+  if (
+    /^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/(?:[A-Za-z0-9_]{1,15}|i\/web)\/status\/\d+/.test(
+      expanded,
+    )
+  )
+    return false;
+  if (/^https?:\/\/pic\.(?:x|twitter)\.com\//.test(expanded)) return false;
+  return true;
+}
+
+/** `since_id` older than search/recent's 7-day window → X answers 400 mentioning since_id. */
+function isStaleSinceId(res: Response, body: unknown): boolean {
+  return res.status === 400 && /since_id/i.test(JSON.stringify(body ?? ''));
+}
+
+/**
+ * New original posts of the account since `sinceId`, via recent search (see `XTimelineConfig`).
+ * Posts that still carry a real link are dropped (defence in depth) and counted in `warnings`.
+ * Returns the newest seen id as `cursor` (unchanged when there is nothing new). Dedupe key `x:<post id>`.
  */
 export async function fetchXPosts(config: XTimelineConfig, ctx: IntegrationContext): Promise<SourceResult> {
-  const username = config.username === undefined ? null : parseXUsername(config.username);
-  const sinceId = config.sinceId ?? null;
-  const maxResults = String(Math.min(Math.max(config.maxResults ?? 10, 5), 100));
-  const exclude = [
-    ...(config.excludeReplies === false ? [] : ['replies']),
-    ...(config.excludeRetweets === false ? [] : ['retweets']),
-  ];
+  const username = parseXUsername(config.username);
+  const query = buildXSearchQuery(username ?? config.username, config);
+  const handle = username ?? config.username;
+  const maxResults = String(Math.min(Math.max(config.maxResults ?? 10, 10), 100));
   const result: SourceResult = {
     items: [],
     skipped: [],
     warnings: [],
-    accountLabel: username === null ? null : `@${username}`,
-    cursor: sinceId,
+    accountLabel: `@${handle}`,
+    cursor: config.sinceId ?? null,
     notModified: false,
   };
+  let sinceId = config.sinceId ?? null;
   let cursor = sinceId;
-  let paginationToken: string | null = null;
-  const pages = sinceId === null ? 1 : Math.max(config.maxPages ?? 3, 1);
+  let dropped = 0;
+  let droppedMedia = 0;
+  let nextToken: string | null = null;
+  let pages = sinceId === null ? 1 : Math.max(config.maxPages ?? 3, 1);
   for (let page = 0; page < pages; page++) {
-    const url = new URL(`${X_API_URL}/users/${encodeURIComponent(config.userId)}/tweets`);
-    if (exclude.length > 0) url.searchParams.set('exclude', exclude.join(','));
+    const url = new URL(X_SEARCH_RECENT_URL);
+    url.searchParams.set('query', query);
     url.searchParams.set('max_results', maxResults);
     url.searchParams.set('tweet.fields', 'created_at,entities,attachments,note_tweet');
     url.searchParams.set('expansions', 'attachments.media_keys');
     url.searchParams.set('media.fields', 'type,url,preview_image_url,width,height,variants');
     if (sinceId !== null) url.searchParams.set('since_id', sinceId);
-    if (paginationToken !== null) url.searchParams.set('pagination_token', paginationToken);
+    if (nextToken !== null) url.searchParams.set('next_token', nextToken);
 
     const res = await send(ctx, 'X', url.toString(), {
       headers: { Authorization: `Bearer ${config.bearerToken}`, Accept: 'application/json' },
     });
     const body = await readJson(res);
-    if (!res.ok) throw xError(res, body, ctx.now(), 'read the timeline');
+    if (!res.ok && page === 0 && sinceId !== null && isStaleSinceId(res, body)) {
+      // The source was off for > 7 days: restart like a first run (1 page; drafts dedupe by key).
+      result.warnings.push('X: the last seen post is older than 7 days; re-read the latest page instead.');
+      sinceId = null;
+      pages = 2; // this failed attempt + one fresh page
+      continue;
+    }
+    if (!res.ok) throw xError(res, body, ctx.now(), 'read the posts');
     const parsed = parseEnvelope('X', TimelineSchema, body, res.status);
 
     const mediaByKey = new Map<string, z.infer<typeof MediaSchema>>();
@@ -278,15 +358,26 @@ export async function fetchXPosts(config: XTimelineConfig, ctx: IntegrationConte
       }
       const tw = t.data;
       cursor = maxId(cursor, tw.id);
+      const long = tw.note_tweet;
+      const urls = long ? (long.entities?.urls ?? tw.entities?.urls ?? []) : (tw.entities?.urls ?? []);
+      if (config.includeLinks !== true && urls.some((u) => isRealLink(u))) {
+        dropped += 1;
+        continue;
+      }
+      const mediaTypes = (tw.attachments?.media_keys ?? []).map((k) => mediaByKey.get(k)?.type);
+      if (
+        (config.includeVideos !== true && mediaTypes.some((t) => t === 'video' || t === 'animated_gif')) ||
+        (config.includePhotos === false && mediaTypes.includes('photo'))
+      ) {
+        droppedMedia += 1;
+        continue;
+      }
       const publishedAt = parseDateOrNull(tw.created_at);
       if (publishedAt === null) {
         result.skipped.push({ externalId: tw.id, reason: 'invalid created_at' });
         continue;
       }
-      const long = tw.note_tweet;
-      const text = long
-        ? expandXText(long.text, long.entities?.urls ?? tw.entities?.urls ?? [])
-        : expandXText(tw.text, tw.entities?.urls ?? []);
+      const text = expandXText(long ? long.text : tw.text, urls);
       const media = (tw.attachments?.media_keys ?? [])
         .map((k) => mediaByKey.get(k))
         .map((m) => (m === undefined ? null : toMedia(m)))
@@ -298,10 +389,7 @@ export async function fetchXPosts(config: XTimelineConfig, ctx: IntegrationConte
           title: null,
           text: text === '' ? null : text,
           media,
-          links: {
-            ...EMPTY_LINKS,
-            x: `https://x.com/${username ?? 'i'}/status/${tw.id}`,
-          },
+          links: { ...EMPTY_LINKS, x: `https://x.com/${handle}/status/${tw.id}` },
           podcast: null,
           publishedAt,
           expiresAt: null,
@@ -314,13 +402,22 @@ export async function fetchXPosts(config: XTimelineConfig, ctx: IntegrationConte
     if (parsed.meta?.newest_id !== undefined && /^\d+$/.test(parsed.meta.newest_id)) {
       cursor = maxId(cursor, parsed.meta.newest_id);
     }
-    paginationToken = parsed.meta?.next_token ?? null;
-    if (paginationToken === null) break;
+    nextToken = parsed.meta?.next_token ?? null;
+    if (nextToken === null || sinceId === null) break;
+  }
+  if (dropped > 0) {
+    result.warnings.push(
+      `X: skipped ${dropped} post(s) containing links (the client does not import link posts).`,
+    );
+  }
+  if (droppedMedia > 0) {
+    result.warnings.push(`X: skipped ${droppedMedia} post(s) with a media type the admin turned off.`);
   }
   result.cursor = cursor;
   return result;
 }
 
+/** The X ContentSource apps/api polls (cursor = newest post id = next `since_id`). */
 export function createXSource(
   config: Omit<XTimelineConfig, 'sinceId'>,
   ctx: IntegrationContext,

@@ -61,6 +61,8 @@ export type {
 export {
   X_API_URL,
   X_MEDIA_UPLOAD_URL,
+  X_SEARCH_RECENT_URL,
+  buildXSearchQuery,
   fetchXPosts,
   createXSource,
   resolveXUser,

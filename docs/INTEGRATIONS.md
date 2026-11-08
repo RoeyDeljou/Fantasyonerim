@@ -114,8 +114,8 @@ after a Facebook password change or removed permissions), press **Connect** agai
 
 X charges for API use (pay-per-use credits), so X is off until you decide to pay for it. It does two things:
 
-- **Read**: mirrors new posts from `@Fantasyonerim` into News (every 10 minutes, only new posts, at most ~10 per
-  check).
+- **Read**: mirrors new posts from `@Fantasyonerim` into News (twice a day by default, only new posts, at most ~10
+  per check, a little more to catch up after a gap).
 - **Write**: the admin "Live update" composer can also post to X (goal alerts etc.). Without write keys the X
   toggle there says "X isn't connected — paid feature, contact the creator".
 
@@ -140,9 +140,17 @@ Setup (on the **@Fantasyonerim** account):
    reading only; only the four write keys → posting only.
 
 **Costs.** You pay X per post read and per post created at the current rates on developer.x.com → Billing (check
-there — X changes them). This app keeps reads small: each check asks only for posts newer than the last one it
-saw. A live update costs one post (plus one image upload when it has a photo). If the credits run out, the X card
-(and the live-update result) shows "403 / plan or credits missing" — top up and it resumes by itself.
+there — X changes them). This app keeps reads small:
+
+- One server-side check serves every user — the app never calls X from a phone.
+- Each check asks only for posts newer than the last one it saw (`since_id`), so every post is read (and billed)
+  once.
+- The search itself skips replies, reposts and the post types the admin turned off, so X never returns (or bills)
+  them. Defaults: **photos on, web links off, videos off** (owner decision, Nov 2026). Quote posts are kept.
+- Admin console → Integrations → X → "מה מושכים מ־X": three switches (links / photos / videos) and "תדירות בדיקה"
+  (every 30 min, 1 h, 3 h, 6 h, twice a day — default — or once a day). Changes apply on the next check; "Sync now"
+  checks immediately. A failed check is retried after an hour. A live update costs one post (plus one image upload when it has a photo). If the credits run out, the X card
+  (and the live-update result) shows "403 / plan or credits missing" — top up and it resumes by itself.
 
 Keys are stored encrypted on the server and are never shown again, in the console or anywhere else. To replace
 one, paste the new value; to remove one, clear it.

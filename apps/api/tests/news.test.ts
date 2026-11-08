@@ -31,6 +31,7 @@ import { mediaKeysWithVariants } from '../src/media/variants.js';
 
 const prisma = createTestPrisma();
 const HOUR = 3_600_000;
+const MINUTE = 60_000;
 const CRON = 'cron-secret-0123456789abcdef';
 
 let app: FastifyInstance;
@@ -86,6 +87,15 @@ async function connectInstagram() {
       secretsEnc: encryptSecrets(devSecretsKey(), { accessToken: 'page-token' }),
     },
   });
+}
+
+async function connectX() {
+  const data = {
+    enabled: true,
+    settings: { username: 'fantasyonerim', userId: '4242' },
+    secretsEnc: encryptSecrets(devSecretsKey(), { bearerToken: 'bt' }),
+  };
+  await prisma.integrationConfig.upsert({ where: { id: 'x' }, update: data, create: { id: 'x', ...data } });
 }
 
 const integration = (id: 'podcast_rss' | 'instagram' | 'x' | 'apple') =>
@@ -351,8 +361,74 @@ describe('x job', () => {
     expect(fakes.x.cursors).toEqual([null, '100']);
     // userId was resolved once (the PUT couldn't) and stored.
     expect((await integration('x')).settings).toEqual({ username: 'fantasyonerim', userId: '4242' });
-    expect(fakes.x.configs[0]).toEqual({ bearerToken: 'bt', userId: '4242', username: 'fantasyonerim' });
+    // Defaults: photos on, web links and videos off.
+    expect(fakes.x.configs[0]).toEqual({
+      bearerToken: 'bt',
+      userId: '4242',
+      username: 'fantasyonerim',
+      includeLinks: false,
+      includePhotos: true,
+      includeVideos: false,
+    });
     expect(await prisma.newsItem.count({ where: { source: 'x_post' } })).toBe(1);
+  });
+
+  it('calls X only when the admin interval has passed (default twice a day); "sync now" always fetches', async () => {
+    await connectX();
+    fakes.x.next = result([], { cursor: null });
+    expect(await app.jobs.run('x')).toBe('ok');
+    expect(fakes.x.configs).toHaveLength(1);
+    // The job wakes every 30 min but X is not called again until 12 h have passed.
+    for (let i = 0; i < 23; i++) {
+      clock.advance(30 * MINUTE);
+      await app.jobs.run('x');
+    }
+    expect(fakes.x.configs).toHaveLength(1);
+    clock.advance(30 * MINUTE);
+    await app.jobs.run('x');
+    expect(fakes.x.configs).toHaveLength(2);
+    // Admin "sync now" ignores the interval.
+    await app.jobs.run('x', { force: true });
+    expect(fakes.x.configs).toHaveLength(3);
+    // An admin change to the interval and post types applies on the next wake-up.
+    await prisma.integrationConfig.update({
+      where: { id: 'x' },
+      data: {
+        settings: {
+          username: 'fantasyonerim',
+          userId: '4242',
+          pollEveryMinutes: '60',
+          includeLinks: 'true',
+          includePhotos: 'false',
+          includeVideos: 'true',
+        },
+      },
+    });
+    clock.advance(30 * MINUTE);
+    await app.jobs.run('x');
+    expect(fakes.x.configs).toHaveLength(3);
+    clock.advance(30 * MINUTE);
+    await app.jobs.run('x');
+    expect(fakes.x.configs).toHaveLength(4);
+    expect(fakes.x.configs[3]).toMatchObject({
+      includeLinks: true,
+      includePhotos: false,
+      includeVideos: true,
+    });
+  });
+
+  it('a failed X fetch is retried after an hour, not after the full interval', async () => {
+    await connectX();
+    fakes.x.error = new IntegrationUnavailableError('HTTP 503', 503);
+    await app.jobs.run('x');
+    expect(fakes.x.configs).toHaveLength(1);
+    fakes.x.error = null;
+    clock.advance(30 * MINUTE);
+    await app.jobs.run('x');
+    expect(fakes.x.configs).toHaveLength(1);
+    clock.advance(30 * MINUTE);
+    await app.jobs.run('x');
+    expect(fakes.x.configs).toHaveLength(2);
   });
 });
 

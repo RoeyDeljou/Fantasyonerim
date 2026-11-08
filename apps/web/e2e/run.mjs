@@ -1309,6 +1309,31 @@ async function journeys(browser) {
       .locator('[data-integration=x] [data-testid=x-paid-note]')
       .getByText("פיצ'ר בתשלום — צרו קשר עם היוצר אם תרצו להפעיל אותו")
       .waitFor();
+    // X cost controls: photos on, links + videos off, twice a day by default; each change saves at once.
+    const xo = admin.locator('[data-integration=x] [data-testid=x-options]');
+    const sw = (name) => xo.getByRole('switch', { name: new RegExp(`^${name}`) });
+    assert((await sw('ציוצים עם תמונות').getAttribute('aria-checked')) === 'true', 'photos on by default');
+    assert((await sw('ציוצים עם קישורים').getAttribute('aria-checked')) === 'false', 'links off by default');
+    assert((await sw('ציוצים עם סרטונים').getAttribute('aria-checked')) === 'false', 'videos off by default');
+    assert((await xo.getByTestId('x-rate').inputValue()) === '720', 'twice a day by default');
+    await xo.getByTestId('x-cost-note').waitFor();
+    await sw('ציוצים עם סרטונים').click();
+    await xo.locator('[role=switch][aria-checked=true]', { hasText: 'ציוצים עם סרטונים' }).waitFor();
+    await xo.getByTestId('x-rate').selectOption('60');
+    await admin.waitForFunction(() => document.querySelector('[data-testid=x-rate]')?.value === '60');
+    const adminTok = await admin.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+    const saved = await (
+      await globalThis.fetch(`${API}/v1/admin/integrations`, {
+        headers: { authorization: `Bearer ${adminTok}` },
+      })
+    ).json();
+    const xs = saved.integrations.find((i) => i.id === 'x').settings;
+    assert(
+      xs.includeVideos === 'true' && xs.pollEveryMinutes === '60',
+      `x settings saved: ${JSON.stringify(xs)}`,
+    );
+    await sw('ציוצים עם סרטונים').click();
+    await xo.getByTestId('x-rate').selectOption('720');
     await openCard(admin, 'integrations.instagram');
     await admin
       .locator('[data-integration=instagram]')

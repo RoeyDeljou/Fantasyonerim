@@ -31,6 +31,8 @@ export interface IntegrationDefinition {
   defaultSettings: Readonly<Record<string, string>>;
   /** Settings the admin may edit via PUT, with their validators. */
   editable: Readonly<Record<string, SettingNormalizer>>;
+  /** Values used (and shown to the admin) while an editable setting is unset. */
+  settingDefaults?: Readonly<Record<string, string>>;
   /** Settings set server-side (OAuth / API lookups); accepted in a PUT body but ignored. */
   readOnly: readonly string[];
   /** Write-only secrets accepted via PUT (never returned). */
@@ -60,6 +62,49 @@ const fromParser =
     const parsed = parse(value);
     return parsed === null ? { ok: false, message } : { ok: true, value: parsed };
   };
+
+const boolSetting: SettingNormalizer = (value) =>
+  value === 'true' || value === 'false'
+    ? { ok: true, value }
+    : { ok: false, message: 'must be "true" or "false"' };
+
+/** How often the admin may have the X job fetch (minutes). X is pay-per-use, so the default is twice a day. */
+export const X_POLL_MINUTES = [30, 60, 180, 360, 720, 1440] as const;
+export const X_DEFAULT_POLL_MINUTES = 720;
+
+/** X post types: photos on; web links and videos off (they cost the most for the least — owner decision). */
+export const X_SETTING_DEFAULTS: Readonly<Record<string, string>> = {
+  includeLinks: 'false',
+  includePhotos: 'true',
+  includeVideos: 'false',
+  pollEveryMinutes: String(X_DEFAULT_POLL_MINUTES),
+};
+
+const pollMinutes: SettingNormalizer = (value) => {
+  const n = Number(value);
+  return (X_POLL_MINUTES as readonly number[]).includes(n)
+    ? { ok: true, value: String(n) }
+    : { ok: false, message: `must be one of ${X_POLL_MINUTES.join(', ')} (minutes)` };
+};
+
+/** The X settings the job needs, with defaults applied. */
+export function xOptions(settings: Readonly<Record<string, string>>): {
+  includeLinks: boolean;
+  includePhotos: boolean;
+  includeVideos: boolean;
+  pollEveryMinutes: number;
+} {
+  const get = (k: string) => settings[k] ?? X_SETTING_DEFAULTS[k];
+  const minutes = Number(get('pollEveryMinutes'));
+  return {
+    includeLinks: get('includeLinks') === 'true',
+    includePhotos: get('includePhotos') !== 'false',
+    includeVideos: get('includeVideos') === 'true',
+    pollEveryMinutes: (X_POLL_MINUTES as readonly number[]).includes(minutes)
+      ? minutes
+      : X_DEFAULT_POLL_MINUTES,
+  };
+}
 
 const has = (record: Readonly<Record<string, string>>, ...keys: string[]) =>
   keys.every((k) => (record[k] ?? '') !== '');
@@ -127,7 +172,12 @@ export const INTEGRATIONS: Readonly<Record<IntegrationId, IntegrationDefinition>
     defaultSettings: { username: 'fantasyonerim' },
     editable: {
       username: fromParser(parseXUsername, 'must be an X username (e.g. @fantasyonerim) or profile URL'),
+      includeLinks: boolSetting,
+      includePhotos: boolSetting,
+      includeVideos: boolSetting,
+      pollEveryMinutes: pollMinutes,
     },
+    settingDefaults: X_SETTING_DEFAULTS,
     readOnly: ['userId'],
     secretKeys: ['bearerToken', 'apiKey', 'apiSecret', 'accessToken', 'accessSecret'],
     paidFeature: true,

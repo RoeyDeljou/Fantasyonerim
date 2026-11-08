@@ -118,7 +118,9 @@ export function toIntegrationStatus(loaded: LoadedIntegration): IntegrationStatu
       configured,
       paidFeature: def.paidFeature,
       accountLabel: row.accountLabel,
-      settings: Object.fromEntries(shownKeys.map((k) => [k, settings[k] ?? null])),
+      settings: Object.fromEntries(
+        shownKeys.map((k) => [k, settings[k] ?? def.settingDefaults?.[k] ?? null]),
+      ),
       hasSecret: Object.keys(secrets).length > 0,
       secretKeys: Object.keys(secrets).sort(),
       lastRunAt: iso(row.lastRunAt),

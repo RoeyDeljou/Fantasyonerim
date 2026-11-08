@@ -18,7 +18,7 @@ an `IntegrationContext` (`{ fetch, now }`).
 | `apple`       | `createAppleLinkResolver({ podcastId })`                                                                       | `podcastId` (number or show URL) | —                                                          | (links only)                             |
 | `spotify`     | `createSpotifyLinkResolver({ showId, clientId, clientSecret })`                                                | `showId` (show URL or id)        | `clientId`, `clientSecret`                                 | (links only)                             |
 | `instagram`   | `createInstagramPostsSource` / `createInstagramStoriesSource({ igUserId, accessToken, username })`             | `igUserId`, `username`, `pageId` | `accessToken` (Page token from `completeInstagramConnect`) | `instagram:<id>`, `instagram_story:<id>` |
-| `x` (read)    | `createXSource({ bearerToken, userId, username })`, `resolveXUser` once to get `userId`                        | `username`, `userId`             | `bearerToken`                                              | `x:<post id>`                            |
+| `x` (read)    | `createXSource({ bearerToken, username })` (recent search; `userId` optional, unused)                          | `username`, `userId`             | `bearerToken`                                              | `x:<post id>`                            |
 | `x` (publish) | `createXPublisher({ apiKey, apiSecret, accessToken, accessSecret, username })`                                 | `username`                       | `apiKey`, `apiSecret`, `accessToken`, `accessSecret`       | —                                        |
 | `youtube`     | `createYouTubeSource({ channelId })`, `createYouTubeLinkResolver({ channelId })`; `resolveYouTubeChannel` once | `channel` (→ `channelId`)        | —                                                          | `youtube:<video id>`                     |
 
@@ -37,7 +37,14 @@ Instagram uses Facebook Login for Business on `graph.facebook.com` (`GRAPH_API_V
 `buildInstagramConnectUrl` → callback → `completeInstagramConnect` (returns the connectable accounts; Page tokens
 do not expire).
 
-X is pay-per-use: reading uses `since_id` + small `max_results`; posting enforces the 280 weighted-char limit
+X is pay-per-use and bills every post _returned_. Reading uses `GET /2/tweets/search/recent` with
+`from:<username> -has:links -is:retweet -is:reply` (handle validated `^[A-Za-z0-9_]{1,15}$`), so X never returns
+or bills link posts, reposts or replies; plus `since_id`, `max_results=10`, one page on the first run and at most
+`maxPages` (3) while catching up. A post that still carries a non-media link is dropped and counted in
+`warnings`. **Caveat:** X's `has:links` (= `filter:links`) also matches native photos/videos (their pic.x.com
+link is in `entities.urls`), so posts with attached media are excluded too. Search covers the last 7 days; a
+`since_id` older than that (400) restarts with one fresh page. 402 → `IntegrationUnavailableError`
+("X credits depleted …"). Posting enforces the 280 weighted-char limit
 (`XPostTooLongError`). Images go through `POST /2/media/upload` (images only, ≤ 5 MB).
 
 YouTube (no API key, no quota): `resolveYouTubeChannel(channel, ctx)` turns the admin's input (`@handle`,

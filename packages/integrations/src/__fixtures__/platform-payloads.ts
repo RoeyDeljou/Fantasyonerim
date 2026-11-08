@@ -214,12 +214,23 @@ export const X_USER_ID = '1790000000000000001';
 
 export const xUser = { data: { id: X_USER_ID, name: 'פנטזיונרים', username: 'Fantasyonerim' } };
 
-export const xTimeline = {
+/**
+ * `GET /2/tweets/search/recent?query=from:Fantasyonerim -has:links -is:retweet -is:reply` (shape recorded
+ * from the X API v2 reference). …004 still carries a Spotify link (defence in depth must drop it); …003 is
+ * a long post whose truncated `text` has X's own "show more" link (not a real link).
+ */
+export const xSearchRecent = {
   data: [
     {
-      id: '1850000000000000003',
+      id: '1850000000000000005',
+      created_at: '2026-10-24T19:30:00.000Z',
+      edit_history_tweet_ids: ['1850000000000000005'],
+      text: 'מי הקפטן שלכם למחזור 9? 🧢',
+    },
+    {
+      id: '1850000000000000004',
       created_at: '2026-10-24T19:00:00.000Z',
-      edit_history_tweet_ids: ['1850000000000000003'],
+      edit_history_tweet_ids: ['1850000000000000004'],
       text: 'פרק 62 באוויר! 🎙️ https://t.co/ep62link https://t.co/mediaphoto',
       entities: {
         urls: [
@@ -234,7 +245,7 @@ export const xTimeline = {
             start: 41,
             end: 64,
             url: 'https://t.co/mediaphoto',
-            expanded_url: 'https://x.com/Fantasyonerim/status/1850000000000000003/photo/1',
+            expanded_url: 'https://x.com/Fantasyonerim/status/1850000000000000004/photo/1',
             display_url: 'pic.x.com/mediaphoto',
             media_key: '3_1850000000000000100',
           },
@@ -243,9 +254,9 @@ export const xTimeline = {
       attachments: { media_keys: ['3_1850000000000000100'] },
     },
     {
-      id: '1850000000000000002',
+      id: '1850000000000000003',
       created_at: '2026-10-23T12:00:00.000Z',
-      edit_history_tweet_ids: ['1850000000000000002'],
+      edit_history_tweet_ids: ['1850000000000000003'],
       text: 'שרשור ארוך על הקפטנים למחזור 8 — האלאנד, סלאח, פאלמר ומה עם… https://t.co/longcut',
       entities: {
         urls: [
@@ -253,23 +264,30 @@ export const xTimeline = {
             start: 60,
             end: 83,
             url: 'https://t.co/longcut',
-            expanded_url: 'https://x.com/i/web/status/1850000000000000002',
+            expanded_url: 'https://x.com/i/web/status/1850000000000000003',
           },
         ],
       },
       note_tweet: {
-        text: 'שרשור ארוך על הקפטנים למחזור 8 — האלאנד, סלאח, פאלמר ומה עם הדיפנס של ארסנל?\n\nכל הנתונים בטבלה: https://t.co/sheet1',
-        entities: {
-          urls: [
-            {
-              start: 98,
-              end: 121,
-              url: 'https://t.co/sheet1',
-              expanded_url: 'https://docs.google.com/spreadsheets/d/abc',
-              display_url: 'docs.google.com/spreadsheets/…',
-            },
-          ],
-        },
+        text: 'שרשור ארוך על הקפטנים למחזור 8 — האלאנד, סלאח, פאלמר ומה עם הדיפנס של ארסנל?\n\nמה אתם עושים עם האלאנד?',
+      },
+    },
+    {
+      id: '1850000000000000002',
+      created_at: '2026-10-22T18:00:00.000Z',
+      edit_history_tweet_ids: ['1850000000000000002'],
+      text: 'תקציר המחזור 🎥 https://t.co/mediavideo',
+      entities: {
+        urls: [
+          {
+            start: 15,
+            end: 38,
+            url: 'https://t.co/mediavideo',
+            expanded_url: 'https://x.com/Fantasyonerim/status/1850000000000000002/video/1',
+            display_url: 'pic.x.com/mediavideo',
+            media_key: '7_1850000000000000200',
+          },
+        ],
       },
       attachments: { media_keys: ['7_1850000000000000200'] },
     },
@@ -320,10 +338,31 @@ export const xTimeline = {
     ],
   },
   meta: {
-    result_count: 4,
-    newest_id: '1850000000000000003',
+    result_count: 6,
+    newest_id: '1850000000000000005',
     oldest_id: '1850000000000000001',
   },
 };
 
-export const xEmptyTimeline = { meta: { result_count: 0 } };
+/** X's 402 problem body when the pay-per-use balance is empty. */
+export const xCreditsDepleted = {
+  title: 'CreditsDepleted',
+  detail: 'Your enrolled account [1790000000000000001] does not have any credits to fulfill this request.',
+  type: 'https://api.twitter.com/2/problems/credits',
+};
+
+/** search/recent with a since_id older than its 7-day window. */
+export const xStaleSinceId = {
+  errors: [
+    {
+      parameters: { since_id: ['1700000000000000000'] },
+      message:
+        "Invalid 'since_id':'1700000000000000000'. 'since_id' must be a tweet id created after 2026-10-18T12:00Z. Please use a 'since_id' that is larger than 1849000000000000000",
+    },
+  ],
+  title: 'Invalid Request',
+  detail: 'One or more parameters to your request was invalid.',
+  type: 'https://api.twitter.com/2/problems/invalid-request',
+};
+
+export const xEmptySearch = { meta: { result_count: 0 } };

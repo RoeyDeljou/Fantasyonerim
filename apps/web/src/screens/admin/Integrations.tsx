@@ -299,6 +299,7 @@ function IntegrationCard({ status: s }: { status: IntegrationStatus }) {
         )}
 
         {s.id === 'instagram' && <InstagramConnect status={s} />}
+        {s.id === 'x' && <XOptions status={s} />}
 
         <div className="border-t border-line pt-1">
           <Switch
@@ -499,6 +500,81 @@ function SettingsForm({ status: s }: { status: IntegrationStatus }) {
         )}
       </div>
     </form>
+  );
+}
+
+// ---------- x ----------
+
+const X_RATES = [30, 60, 180, 360, 720, 1440] as const;
+type XRate = (typeof X_RATES)[number];
+const X_DEFAULT_RATE: XRate = 720;
+const X_TYPES = [
+  { key: 'includeLinks', label: 'xLinks', desc: 'xLinksDesc', fallback: false },
+  { key: 'includePhotos', label: 'xPhotos', desc: null, fallback: true },
+  { key: 'includeVideos', label: 'xVideos', desc: 'xVideosDesc', fallback: false },
+] as const satisfies readonly { key: string; label: keyof I; desc: keyof I | null; fallback: boolean }[];
+
+function xRate(s: IntegrationStatus): XRate {
+  const n = Number(s.settings['pollEveryMinutes']);
+  return X_RATES.find((r) => r === n) ?? X_DEFAULT_RATE;
+}
+
+/** X is pay-per-use: the admin picks which post types to pull and how often. Each change saves at once. */
+function XOptions({ status: s }: { status: IntegrationStatus }) {
+  const { t, f } = useI18n();
+  const it = t.integrations;
+  const update = useUpdateIntegration(s.id);
+  const rateId = useId();
+  const rate = xRate(s);
+  const save = (key: string, value: string) =>
+    update.mutate({ enabled: s.enabled, settings: { ...s.settings, [key]: value } });
+  const next =
+    s.enabled && s.configured && s.lastRunAt
+      ? new Date(Date.parse(s.lastRunAt) + rate * 60_000).toISOString()
+      : null;
+
+  return (
+    <fieldset className="flex flex-col gap-1 border-t border-line pt-2" data-testid="x-options">
+      <legend className="mb-1 text-sm font-bold text-ink">{it.xOptionsTitle}</legend>
+      {X_TYPES.map((o) => (
+        <Switch
+          key={o.key}
+          label={it[o.label]}
+          description={o.desc ? it[o.desc] : undefined}
+          checked={(s.settings[o.key] ?? null) === null ? o.fallback : s.settings[o.key] === 'true'}
+          disabled={update.isPending}
+          onChange={(on) => save(o.key, on ? 'true' : 'false')}
+        />
+      ))}
+      <div className="flex min-h-12 items-center justify-between gap-3">
+        <label htmlFor={rateId} className="text-[15px] font-medium text-ink">
+          {it.xRate}
+        </label>
+        <select
+          id={rateId}
+          value={rate}
+          disabled={update.isPending}
+          onChange={(e) => save('pollEveryMinutes', e.target.value)}
+          className="min-h-11 rounded-xl border border-line bg-surface-2 px-3 text-base font-semibold text-ink focus:border-primary focus:outline-none disabled:opacity-50"
+          data-testid="x-rate"
+        >
+          {X_RATES.map((r) => (
+            <option key={r} value={r}>
+              {it[`xRate_${r}`]}
+            </option>
+          ))}
+        </select>
+      </div>
+      {next && (
+        <p className="text-xs text-muted" data-testid="x-next-check">
+          {it.xNextCheck}: <time dateTime={next}>{f.dateTime(next)}</time>
+        </p>
+      )}
+      <p className="mt-1 flex items-start gap-1.5 text-xs text-muted" data-testid="x-cost-note">
+        <InfoIcon size={14} className="mt-0.5 shrink-0" />
+        <span>{it.xCostNote}</span>
+      </p>
+    </fieldset>
   );
 }
 
