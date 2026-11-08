@@ -1,6 +1,6 @@
 import { loadIntegration, recordIntegrationRun, describeIntegrationError } from '../integrations/store.js';
 import { runContentSource, runSummary } from './content.js';
-import { MINUTE, type Job } from './types.js';
+import { HOUR, MINUTE, type Job } from './types.js';
 
 export const instagramPostsJob: Job = {
   name: 'instagram_posts',
@@ -44,8 +44,9 @@ export const instagramStoriesJob: Job = {
 
 export const xJob: Job = {
   name: 'x',
-  // X API is pay-per-use: poll every 30 min to keep credit usage low (owner decision).
-  everyMs: 30 * MINUTE,
+  // X API is pay-per-use and the client wants the lowest cost: poll twice a day (owner decision). One server-side
+  // fetch serves every user; since_id means each post is read (and billed) once.
+  everyMs: 12 * HOUR,
   async run(ctx) {
     const { app } = ctx;
     let x = await loadIntegration(app.prisma, app.config.secretsKey, 'x');
