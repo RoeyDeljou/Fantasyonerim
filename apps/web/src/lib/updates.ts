@@ -195,6 +195,7 @@ export function startUpdateWatcher(): void {
   for (const type of ['pointerdown', 'keydown', 'input', 'wheel', 'touchmove'] as const) {
     window.addEventListener(type, touch, { capture: true, passive: true });
   }
+  // Capture: scroll events don't bubble, but this still sees the tab shell's inner scroller (lib/scroller.ts).
   window.addEventListener('scroll', touch, { capture: true, passive: true });
 
   onResume(() => void check('resume'));

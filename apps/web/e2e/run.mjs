@@ -13,7 +13,9 @@
 // Env overrides: E2E_DB_NAME, E2E_DATABASE_URL, E2E_API_PORT, E2E_WEB_PORT, E2E_SKIP_BUILD=1, E2E_SKIP_DB_RESET=1, E2E_HEADED=1,
 // E2E_ONLY_UPDATES=1 (register, then only the app-update journeys), E2E_ONLY_ROUNDUP=1 (register, then only the
 // Gameweek Roundup journeys; E2E_ROUNDUP_SHOTS=<dir> saves their phone screenshots), E2E_DEBUG_DIR=<dir> (screenshot + text of every
-// open page when a journey fails).
+// open page when a journey fails), E2E_ONLY_TABBAR=1 (register, set the league via the API, then only the tab-bar
+// journeys; E2E_TABBAR_SHOTS=<dir> saves the dark Hebrew Table screenshots). The tab-bar check also runs in Playwright
+// WebKit when its browser is installed (skipped with a log line otherwise).
 import { spawn, spawnSync } from 'node:child_process';
 import { createECDH, randomBytes } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
@@ -543,11 +545,27 @@ async function newContext(browser, opts = {}) {
 }
 
 async function noHorizontalScroll(page, where) {
-  const { sw, cw } = await page.evaluate(() => ({
-    sw: document.documentElement.scrollWidth,
-    cw: document.documentElement.clientWidth,
-  }));
+  // The page, and on the tabs the shell's content scroller (the only thing that scrolls there, lib/scroller.ts).
+  const { sw, cw, ssw, scw } = await page.evaluate(() => {
+    const sc = document.querySelector('[data-app-scroller]');
+    return {
+      sw: document.documentElement.scrollWidth,
+      cw: document.documentElement.clientWidth,
+      ssw: sc?.scrollWidth ?? 0,
+      scw: sc?.clientWidth ?? 0,
+    };
+  });
   assert(sw <= cw, `${where}: horizontal scroll (${sw} > ${cw})`);
+  assert(ssw <= scw, `${where}: horizontal scroll in the content (${ssw} > ${scw})`);
+}
+
+/** Scrolls the tab shell's content area (the document never scrolls on the tabs). */
+async function scrollContent(page, top) {
+  await page.evaluate((y) => {
+    const sc = document.querySelector('[data-app-scroller]');
+    if (!sc) throw new Error('no app scroller');
+    sc.scrollTop = y === 'end' ? sc.scrollHeight : y;
+  }, top);
 }
 
 /** Opens an admin collapsible card (a no-op when it is already open) and returns it. */
@@ -707,6 +725,13 @@ async function journeys(browser) {
 
   await roundupJourneys(browser, page);
   if (process.env.E2E_ONLY_ROUNDUP) {
+    await user.close();
+    return;
+  }
+
+  if (process.env.E2E_ONLY_TABBAR) {
+    await setLeagueViaApi(); // the full run sets it in the admin journey first
+    await tabBarJourneys(browser, page);
     await user.close();
     return;
   }
@@ -1560,12 +1585,14 @@ async function journeys(browser) {
         await p.getByTestId('find-my-team-status').getByText(`הקבוצה שלך במקום ${rank}`).waitFor();
         // The row is on screen → the button goes away; scrolled back to the top → it's back.
         await btn.waitFor({ state: 'detached' });
-        await p.evaluate(() => globalThis.scrollTo(0, 0));
+        await scrollContent(p, 0);
         await btn.waitFor();
       }
       await ctx.close();
     },
   );
+
+  await tabBarJourneys(browser, page);
 
   await step('find my team: no button when the fan is not in the league (both tables)', async () => {
     const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
@@ -3715,6 +3742,176 @@ async function roundupContext(browser, token, mocks, { locale = 'he', theme = 'l
     },
   );
   return { ctx, calls };
+}
+
+// ---------- the tab bar never moves ----------
+// iOS 26 WebKit misplaces `position: fixed` elements while the DOCUMENT scrolls (the owner saw the tab bar
+// mid-screen). The tabs therefore never scroll the document: only the shell's content area scrolls, and the tab
+// bar is a plain flex child at the bottom (components/AppShell.tsx).
+
+/** E2E_ONLY_TABBAR: the admin's league setting, straight through the API. */
+async function setLeagueViaApi() {
+  const login = await globalThis.fetch(`${API}/v1/auth/admin-login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(ADMIN),
+  });
+  const { token } = await login.json();
+  const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  const settings = await (await globalThis.fetch(`${API}/v1/admin/settings`, { headers })).json();
+  const put = await globalThis.fetch(`${API}/v1/admin/settings`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ ...settings, leagueId: Number(DEMO.league) }),
+  });
+  assert(put.ok, `set league: ${put.status}`);
+}
+
+/** The tab bar is at the bottom of the screen, the document isn't scrolled, and the end of the list clears it. */
+async function tabBarGeometry(page, lastRowSel) {
+  return page.evaluate((sel) => {
+    const nav = document.querySelector('[data-tab-bar]');
+    const sc = document.querySelector('[data-app-scroller]');
+    const header = document.querySelector('header');
+    const rows = sel ? document.querySelectorAll(sel) : [];
+    const last = rows.length ? rows[rows.length - 1] : null;
+    const doc = document.scrollingElement ?? document.documentElement;
+    const r = nav?.getBoundingClientRect();
+    return {
+      vh: globalThis.innerHeight,
+      navTop: r?.top ?? -1,
+      navBottom: r?.bottom ?? -1,
+      navPosition: nav ? getComputedStyle(nav).position : 'none',
+      headerTop: header?.getBoundingClientRect().top ?? -1,
+      docScrollTop: doc.scrollTop,
+      docOverflow: doc.scrollHeight - doc.clientHeight,
+      scrollTop: sc?.scrollTop ?? -1,
+      scrollMax: sc ? sc.scrollHeight - sc.clientHeight : -1,
+      lastBottom: last?.getBoundingClientRect().bottom ?? null,
+      rows: rows.length,
+    };
+  }, lastRowSel);
+}
+
+async function assertTabBarPinned(page, where, lastRowSel) {
+  const g = await tabBarGeometry(page, lastRowSel);
+  const at = `${where}: ${JSON.stringify(g)}`;
+  assert(g.navPosition !== 'fixed', `${at} — the tab bar must not be position: fixed`);
+  // Chromium/WebKit headless: safe-area-inset-bottom is 0, so the bar ends exactly at the viewport bottom.
+  assert(Math.abs(g.navBottom - g.vh) < 1, `${at} — the tab bar is not at the bottom`);
+  assert(Math.abs(g.headerTop) < 1, `${at} — the header moved`);
+  assert(g.docScrollTop === 0 && g.docOverflow <= 0, `${at} — the document scrolls`);
+  return g;
+}
+
+/** One browser: long Table (150 rows over 3 pages) and the News feed, scrolled through to the end. */
+async function tabBarCheck(browser, token, tag, { shots, dark = false } = {}) {
+  const ctx = await newContext(browser, dark ? { colorScheme: 'dark' } : {});
+  await ctx.addInitScript(
+    ([tok, theme]) => {
+      globalThis.localStorage.setItem('fant.token', tok);
+      if (theme) globalThis.localStorage.setItem('fant.theme', theme);
+    },
+    [token, dark ? 'dark' : null],
+  );
+  await bigLeague(ctx, { page: null, rank: null });
+  const p = await ctx.newPage();
+  watch(p, tag);
+
+  await p.goto(`${WEB}/table/`);
+  const rowsSel = 'main ol > li';
+  await p.locator('main ol li button').first().waitFor();
+  // All three pages: a long list.
+  for (let n = 50; n < 150; n += 50) {
+    await scrollContent(p, 'end');
+    await p.getByRole('button', { name: 'טענו עוד' }).click();
+    await p.waitForFunction(([sel, k]) => document.querySelectorAll(sel).length > k, [rowsSel, n]);
+  }
+  await scrollContent(p, 0);
+  await sleep(200);
+  const before = await assertTabBarPinned(p, `${tag} /table/ top`, rowsSel);
+  assert(before.scrollMax > before.vh * 2, `${tag}: the table is long (${before.scrollMax})`);
+
+  // Real input: the wheel over the list scrolls the content, never the document.
+  await p.mouse.move(195, 400);
+  for (let i = 0; i < 6; i++) await p.mouse.wheel(0, 600);
+  await p.waitForFunction(() => (document.querySelector('[data-app-scroller]')?.scrollTop ?? 0) > 0);
+  await sleep(300);
+  await assertTabBarPinned(p, `${tag} /table/ wheel`, rowsSel);
+  // Even a script can't scroll the page itself.
+  await p.evaluate(() => globalThis.scrollTo(0, 5000));
+  await assertTabBarPinned(p, `${tag} /table/ window.scrollTo`, rowsSel);
+
+  await scrollContent(p, Math.round(before.scrollMax / 2));
+  await sleep(300);
+  await assertTabBarPinned(p, `${tag} /table/ middle`, rowsSel);
+  if (shots) await p.screenshot({ path: `${shots}/table-middle.png` });
+
+  await scrollContent(p, 'end');
+  await sleep(300);
+  const end = await assertTabBarPinned(p, `${tag} /table/ end`, rowsSel);
+  assert(Math.abs(end.scrollTop - end.scrollMax) <= 1, `${tag}: scrolled to the end`);
+  assert(
+    end.lastBottom !== null && end.lastBottom <= end.navTop,
+    `${tag}: the last row (${end.lastBottom}) ends above the tab bar (${end.navTop})`,
+  );
+  if (shots) await p.screenshot({ path: `${shots}/table-bottom.png` });
+  await noHorizontalScroll(p, `${tag} /table/ end`);
+
+  // The other tabs: pinned at the top and at the end of their content.
+  for (const [path, sel] of [
+    ['/news/', '[data-testid=news-feed] > li'],
+    ['/community/', null],
+    ['/my-team/', null],
+    ['/live/', null],
+    ['/profile/', null],
+  ]) {
+    await p.goto(`${WEB}${path}`);
+    await p.locator('main').waitFor();
+    if (sel) await p.locator(sel).first().waitFor();
+    else await p.locator('main [aria-busy=true]').first().waitFor({ state: 'detached' });
+    await sleep(300);
+    await assertTabBarPinned(p, `${tag} ${path} top`, sel);
+    await scrollContent(p, 'end');
+    await sleep(300);
+    const g = await assertTabBarPinned(p, `${tag} ${path} end`, sel);
+    if (sel) {
+      assert(
+        g.lastBottom !== null && g.lastBottom <= g.navTop,
+        `${tag} ${path}: the last item (${g.lastBottom}) ends above the tab bar (${g.navTop})`,
+      );
+    }
+  }
+  await ctx.close();
+}
+
+async function tabBarJourneys(browser, userPage) {
+  const token = await userPage.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+  const shots = process.env.E2E_TABBAR_SHOTS;
+  await step('tab bar: never moves while the content scrolls; the document never scrolls (Chromium)', () =>
+    tabBarCheck(browser, token, 'tabbar'),
+  );
+
+  if (shots) {
+    // The owner's report: Hebrew, dark mode, Table scrolled down.
+    await step('tab bar: phone screenshots (he, dark, Table middle and bottom)', async () => {
+      await tabBarCheck(browser, token, 'tabbar-shots', { shots, dark: true });
+    });
+  }
+
+  let webkit = null;
+  try {
+    webkit = await require('playwright').webkit.launch();
+  } catch (e) {
+    log(`WebKit not available — tab bar check skipped there (${String(e).split('\n')[0].slice(0, 120)})`);
+  }
+  if (webkit) {
+    try {
+      await step('tab bar: the same check in WebKit', () => tabBarCheck(webkit, token, 'tabbar-webkit'));
+    } finally {
+      await webkit.close();
+    }
+  }
 }
 
 async function roundupJourneys(browser, userPage) {

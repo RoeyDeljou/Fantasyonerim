@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useT } from '@/i18n';
 import type { RefreshResult } from '@/lib/refresh';
+import { appScrollTop } from '@/lib/scroller';
 import { CheckIcon, RefreshIcon } from './icons';
 import { IconButton, cx } from './ui';
 
@@ -54,10 +55,11 @@ const DAMPING = 0.5;
 const SLOP = 8;
 
 /**
- * Touch pull-to-refresh on the page scroller (the window). Passive listeners only: it never calls
- * preventDefault, so native scrolling, iOS rubber-banding and horizontal strips (fixtures) behave exactly as
- * before — the indicator just follows a downward drag that starts while the page is at the very top. Chrome's
- * own pull-to-reload is already off (`overscroll-behavior-y: contain` on body). Direction-agnostic, so RTL-safe.
+ * Touch pull-to-refresh on the page scroller (the shell's content area, lib/scroller.ts). Passive listeners on the
+ * document only: it never calls preventDefault, so native scrolling, iOS rubber-banding and horizontal strips
+ * (fixtures) behave exactly as before — the indicator just follows a downward drag that starts while the content is
+ * at the very top. Chrome's own pull-to-reload is off (`overscroll-behavior` on the scroller and the page,
+ * globals.css). Direction-agnostic, so RTL-safe.
  */
 export function PullToRefresh({ refreshing, onRefresh }: { refreshing: boolean; onRefresh(): void }) {
   const [pull, setPull] = useState(0);
@@ -76,7 +78,7 @@ export function PullToRefresh({ refreshing, onRefresh }: { refreshing: boolean; 
       pullRef.current = v;
       setPull(v);
     };
-    const atTop = () => (document.scrollingElement?.scrollTop ?? window.scrollY) <= 0;
+    const atTop = () => appScrollTop() <= 0;
 
     const onStart = (e: TouchEvent) => {
       const touch = e.touches[0];

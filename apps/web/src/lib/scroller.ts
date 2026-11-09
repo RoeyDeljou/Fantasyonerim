@@ -44,30 +44,20 @@ export function rememberScroll(top: number): void {
 let watching = false;
 /** Started by AppShell (idempotent): restores the remembered position after back/forward. */
 export function watchHistoryScroll(): void {
-  if (watching || typeof window === 'undefined') return;
+  if (watching) return;
   watching = true;
   window.addEventListener('popstate', () => {
     // Read now: the outgoing screen may still emit scroll events under the new URL before it re-renders.
     const target = positions.get(locationKey()) ?? 0;
     const until = performance.now() + RESTORE_MS;
     let stable = 0;
-    let lastHeight = -1;
-    let cancelled = false;
-    const cancel = () => {
-      cancelled = true;
-    };
-    const opts: AddEventListenerOptions = { once: true, passive: true, capture: true };
-    for (const type of ['touchstart', 'wheel', 'keydown', 'pointerdown'] as const) {
-      window.addEventListener(type, cancel, opts);
-    }
-    // The screen re-renders a frame or more after popstate: keep applying until the position holds.
+    // The screen re-renders a frame or more after popstate: keep applying until the position holds (~10 frames).
     const apply = () => {
-      if (cancelled || performance.now() > until) return;
+      if (performance.now() > until) return;
       const el = appScroller();
       if (el) {
         if (el.scrollHeight - el.clientHeight >= target && el.scrollTop !== target) el.scrollTop = target;
-        stable = el.scrollTop === target && el.scrollHeight === lastHeight ? stable + 1 : 0;
-        lastHeight = el.scrollHeight;
+        stable = el.scrollTop === target ? stable + 1 : 0;
         if (stable >= 10) return;
       }
       requestAnimationFrame(apply);

@@ -95,12 +95,10 @@ export function FindMyTeam({
       setRowVisible(false);
       return;
     }
-    // The shell's scroller: the header and the tab bar sit outside it; the floating button covers its bottom edge.
-    const root = appScroller();
-    const top = root ? 0 : Math.round(document.querySelector('header')?.getBoundingClientRect().height ?? 64);
+    // Against the shell's scroller (the header and the tab bar sit outside it); this button covers its bottom edge.
     const io = new IntersectionObserver((entries) => setRowVisible(entries.some((e) => e.isIntersecting)), {
-      root,
-      rootMargin: `-${top}px 0px -${root ? 32 : 96}px 0px`,
+      root: appScroller(),
+      rootMargin: '0px 0px -32px 0px',
     });
     io.observe(el);
     return () => io.disconnect();

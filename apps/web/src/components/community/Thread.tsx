@@ -7,6 +7,7 @@ import { isApiError } from '@/lib/api';
 import { isBannedError, useBanned } from '@/lib/banned';
 import { useIsGuest } from '@/lib/guest';
 import { SignUpPrompt } from '@/components/SignUpPrompt';
+import { ShellDock } from '@/components/ShellDock';
 import { useDraft } from '@/lib/drafts';
 import { useComments, useCreateComment, useDeleteComment, useMe, usePost } from '@/lib/queries';
 import { ChatIcon, ChevronStartIcon, RefreshIcon, SendIcon } from '@/components/icons';
@@ -83,7 +84,7 @@ function Comments({ postId }: { postId: PostId }) {
   }, [q.data]);
 
   return (
-    <section aria-labelledby="comments-title" className="flex flex-col gap-2 pb-20">
+    <section aria-labelledby="comments-title" className="flex flex-col gap-2">
       <h2 id="comments-title" className="text-base font-bold text-ink">
         {c.commentsTitle}
       </h2>
@@ -165,15 +166,25 @@ function CommentItem({ comment }: { comment: Comment }) {
   );
 }
 
-/** Height of the on-screen keyboard where the browser overlays it (iOS Safari), else 0. */
-function useKeyboardInset(): number {
-  const [inset, setInset] = useState(0);
+/**
+ * Where the browser overlays the on-screen keyboard (iOS Safari): how far to lift the reply bar from its place in
+ * the shell's dock (right above the tab bar) so it sits on the keyboard, as a negative px offset; else 0.
+ */
+function useKeyboardLift(): number {
+  const [lift, setLift] = useState(0);
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
     const update = () => {
       const covered = window.innerHeight - vv.height - vv.offsetTop;
-      setInset(covered > 80 ? covered : 0); // ignore toolbar wobble
+      if (covered <= 80) {
+        setLift(0); // ignore toolbar wobble
+        return;
+      }
+      // The bar's own bottom = the tab bar's top; the keyboard's top = the layout viewport's bottom − covered.
+      const barTop =
+        document.querySelector('[data-tab-bar]')?.getBoundingClientRect().top ?? window.innerHeight;
+      setLift(Math.min(0, window.innerHeight - covered - barTop));
     };
     update();
     vv.addEventListener('resize', update);
@@ -183,7 +194,7 @@ function useKeyboardInset(): number {
       vv.removeEventListener('scroll', update);
     };
   }, []);
-  return inset;
+  return lift;
 }
 
 function CommentBar({ postId, disabled }: { postId: PostId; disabled: boolean }) {
@@ -193,7 +204,7 @@ function CommentBar({ postId, disabled }: { postId: PostId; disabled: boolean })
   const [text, setText] = useDraft(`community.comment.${postId}`);
   const ref = useRef<HTMLTextAreaElement>(null);
   const id = useId();
-  const inset = useKeyboardInset();
+  const lift = useKeyboardLift();
   const trimmed = text.trim();
   const tooLong = trimmed.length > COMMENT_MAX;
   const valid = trimmed.length > 0 && !tooLong;
@@ -232,59 +243,63 @@ function CommentBar({ postId, disabled }: { postId: PostId; disabled: boolean })
       ? c.commentTooLong
       : null;
 
+  // In the shell's dock (ShellDock.tsx): a flex child above the tab bar, never fixed over scrolling content.
   return (
-    <div
-      className="fixed inset-x-0 z-20 border-t border-line bg-surface/95 backdrop-blur"
-      style={{ bottom: inset > 0 ? `${inset}px` : 'calc(4rem + env(safe-area-inset-bottom))' }}
-    >
-      <form
-        className="mx-auto flex max-w-xl flex-col gap-1 px-3 py-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
+    <ShellDock>
+      <div
+        className="border-t border-line bg-surface/95 backdrop-blur"
+        style={lift < 0 ? { transform: `translateY(${lift}px)` } : undefined}
+        data-testid="comment-bar"
       >
-        {error && (
-          <p role="alert" className="px-1 text-xs font-semibold text-live">
-            {error}
-          </p>
-        )}
-        <div className="flex items-end gap-2">
-          <label htmlFor={id} className="sr-only">
-            {c.commentLabel}
-          </label>
-          <textarea
-            ref={ref}
-            id={id}
-            dir="auto"
-            rows={1}
-            value={text}
-            disabled={disabled}
-            placeholder={disabled ? c.banned : c.commentPlaceholder}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            className={cx(
-              'max-h-[120px] min-h-11 flex-1 resize-none rounded-2xl border bg-surface-2 px-3 py-2.5 text-base leading-snug text-ink placeholder:text-muted focus:border-primary focus:outline-none disabled:opacity-60',
-              tooLong ? 'border-live' : 'border-line',
-            )}
-            data-testid="comment-input"
-          />
-          <button
-            type="submit"
-            aria-label={c.send}
-            disabled={disabled || !valid || create.isPending}
-            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-opacity disabled:opacity-40"
-            data-testid="comment-send"
-          >
-            {create.isPending ? <Spinner /> : <SendIcon size={20} className="rtl:-scale-x-100" />}
-          </button>
-        </div>
-      </form>
-    </div>
+        <form
+          className="mx-auto flex max-w-xl flex-col gap-1 px-3 py-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          {error && (
+            <p role="alert" className="px-1 text-xs font-semibold text-live">
+              {error}
+            </p>
+          )}
+          <div className="flex items-end gap-2">
+            <label htmlFor={id} className="sr-only">
+              {c.commentLabel}
+            </label>
+            <textarea
+              ref={ref}
+              id={id}
+              dir="auto"
+              rows={1}
+              value={text}
+              disabled={disabled}
+              placeholder={disabled ? c.banned : c.commentPlaceholder}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
+              className={cx(
+                'max-h-[120px] min-h-11 flex-1 resize-none rounded-2xl border bg-surface-2 px-3 py-2.5 text-base leading-snug text-ink placeholder:text-muted focus:border-primary focus:outline-none disabled:opacity-60',
+                tooLong ? 'border-live' : 'border-line',
+              )}
+              data-testid="comment-input"
+            />
+            <button
+              type="submit"
+              aria-label={c.send}
+              disabled={disabled || !valid || create.isPending}
+              className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-opacity disabled:opacity-40"
+              data-testid="comment-send"
+            >
+              {create.isPending ? <Spinner /> : <SendIcon size={20} className="rtl:-scale-x-100" />}
+            </button>
+          </div>
+        </form>
+      </div>
+    </ShellDock>
   );
 }
