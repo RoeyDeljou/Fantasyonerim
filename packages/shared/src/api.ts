@@ -160,13 +160,23 @@ export const PublicConfigSchema = z.object({
 export type PublicConfig = z.infer<typeof PublicConfigSchema>;
 
 // ---------- captain battle ----------
-export const CaptainBattleEntryKindSchema = z.enum(['community', 'custom']);
+/**
+ * `community` and `fpl_lad` are the two PERMANENT special captains (one row each, always part of the battle and of
+ * the season leaderboard); everything else the admin adds is `custom`.
+ */
+export const CaptainBattleEntryKindSchema = z.enum(['community', 'fpl_lad', 'custom']);
+export type CaptainBattleEntryKind = z.infer<typeof CaptainBattleEntryKindSchema>;
+
+/** The small badge over a captain row, chosen by the admin. Empty/absent = the default for the row's kind/source. */
+export const CaptainTagSchema = z.string().check(z.trim(), z.maxLength(24));
 
 const CaptainBattleEntryBase = {
   /** e.g. "הקפטן של דור", "קפטן הקהילה". Free text chosen by the admin. */
   label: z.string().check(z.trim(), z.minLength(1), z.maxLength(40)),
-  /** 'community' rows get the community highlight; everything else is 'custom'. */
+  /** 'community' / 'fpl_lad' = the permanent special captains; everything else is 'custom'. */
   kind: CaptainBattleEntryKindSchema,
+  /** Admin-chosen badge text (null/empty = the default for the kind: community "קהילה", linked team "קבוצת FPL"). */
+  tag: z.optional(z.nullable(CaptainTagSchema)),
 };
 
 /**
@@ -182,7 +192,14 @@ export type CaptainBattleEntryInput = z.infer<typeof CaptainBattleEntryInputSche
 /** PUT /v1/admin/captain-battle */
 export const CaptainBattleConfigSchema = z.object({
   event: GameweekSchema,
-  entries: z.array(CaptainBattleEntryInputSchema).check(z.maxLength(20)),
+  entries: z.array(CaptainBattleEntryInputSchema).check(
+    z.maxLength(20),
+    z.refine(
+      (rows) =>
+        (['community', 'fpl_lad'] as const).every((k) => rows.filter((r) => r.kind === k).length <= 1),
+      'at most one community and one fpl_lad captain',
+    ),
+  ),
 });
 export type CaptainBattleConfig = z.infer<typeof CaptainBattleConfigSchema>;
 
@@ -190,7 +207,9 @@ export const CaptainBattleRowSchema = z.object({
   /** Stable row key; "me" for the signed-in user's own captain row. */
   key: z.string(),
   label: z.string(),
-  kind: z.enum(['community', 'custom', 'mine']),
+  kind: z.enum(['community', 'fpl_lad', 'custom', 'mine']),
+  /** Admin-chosen badge text; null = the client's default for the kind/source. */
+  tag: z._default(z.nullable(z.string()), null),
   source: z.enum(['player', 'entry', 'mine']),
   /** Set for entry-linked rows and the "mine" row. */
   entryId: z.nullable(FplEntryIdSchema),

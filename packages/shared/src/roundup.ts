@@ -91,7 +91,9 @@ export type RoundupTransferPick = z.infer<typeof RoundupTransferPickSchema>;
 export const RoundupCaptainSchema = z.object({
   key: z.string(),
   label: z.string(),
-  kind: z.enum(['community', 'custom', 'mine']),
+  kind: z.enum(['community', 'fpl_lad', 'custom', 'mine']),
+  /** Admin-chosen badge text; null = the client's default for the kind. Rows stored before tags existed read as null. */
+  tag: z._default(z.nullable(z.string()), null),
   playerId: z.nullable(FplPlayerIdSchema),
   multiplier: z.number().check(z.int(), z.gte(1), z.lte(3)),
   /** Base points × multiplier (0 when playerId is null). */
@@ -138,3 +140,49 @@ export const GameweekRoundupSchema = z.object({
   builtAt: z.nullable(z.string().check(z.iso.datetime({ offset: true }))),
 });
 export type GameweekRoundup = z.infer<typeof GameweekRoundupSchema>;
+
+// ---------- season captain battle ----------
+
+/**
+ * One row of the season Captain Battle leaderboard ("קרב קפטנים עונתי"): total captain points over every official GW
+ * so far (captain base points × the armband multiplier), NOT the number of GW wins. League members rank next to the
+ * two permanent special captains (the community's and FPL Lad's).
+ */
+export const SeasonCaptainRowSchema = z.object({
+  /** 'manager' = a league team's own captain picks; the others are the permanent special captains. */
+  kind: z.enum(['manager', 'community', 'fpl_lad']),
+  /** entryId (as text) for managers; 'community' / 'fpl_lad' for the special captains. */
+  key: z.string(),
+  entryId: z.nullable(FplEntryIdSchema),
+  /** Team name for managers; the configured label for special captains. */
+  name: z.string(),
+  /** Manager name for managers; null for special captains. */
+  subtitle: z.nullable(z.string()),
+  /** Admin-chosen badge text of a special captain; null otherwise (the client uses its default). */
+  tag: z.nullable(z.string()),
+  /** Competition ranking: equal points share a rank (1, 2, 2, 4). */
+  rank: int(),
+  points: int(),
+  /** GWs that count towards the total (the GWs the captain / the team's captain is known for). */
+  gameweeks: int(),
+});
+export type SeasonCaptainRow = z.infer<typeof SeasonCaptainRowSchema>;
+
+export const SeasonCaptainsStatusSchema = z.enum([
+  'ready',
+  /** No official GW roundup is stored yet (season start, or the back-fill is still running). */
+  'building',
+  /** No league is configured. */
+  'unavailable',
+]);
+
+/** GET /v1/league/season-captains — public; the viewer's own row is found by `entryId` on the client. */
+export const SeasonCaptainsSchema = z.object({
+  status: SeasonCaptainsStatusSchema,
+  league: z.nullable(z.object({ id: FplLeagueIdSchema, name: z.string() })),
+  /** The last official GW included in the totals. */
+  throughEvent: z.nullable(GameweekSchema),
+  rows: z.array(SeasonCaptainRowSchema),
+  updatedAt: z.string().check(z.iso.datetime({ offset: true })),
+});
+export type SeasonCaptains = z.infer<typeof SeasonCaptainsSchema>;
