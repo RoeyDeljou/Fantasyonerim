@@ -20,6 +20,11 @@ export const CACHE_CONTROL = {
   config: 'public, max-age=30, s-maxage=30, stale-while-revalidate=60',
   /** News feed pages / stories (an admin hide shows within ~15 s). */
   news: 'public, max-age=15, stale-while-revalidate=45',
+  /**
+   * Gameweek Roundup without a signed-in viewer: a stored roundup never changes, and "pending" → "building" →
+   * "ready" may lag by a minute. Browser cache only (varies by Authorization: signed-in viewers get `private`).
+   */
+  roundup: 'public, max-age=60, stale-while-revalidate=120',
   /** Per-viewer responses: the browser may keep them, never a shared cache; always revalidated (ETag). */
   private: 'private, no-cache',
 } as const;
@@ -59,8 +64,13 @@ export async function sendHot(
   reply: FastifyReply,
   body: HotBody,
   cacheControl: string,
+  /** Extra request headers the response varies by (e.g. `authorization`). */
+  vary: readonly string[] = [],
 ): Promise<FastifyReply> {
-  reply.header('etag', body.etag).header('cache-control', cacheControl).header('vary', 'accept-encoding');
+  reply
+    .header('etag', body.etag)
+    .header('cache-control', cacheControl)
+    .header('vary', ['accept-encoding', ...vary].join(', '));
   if (etagMatches(request.headers['if-none-match'], body.etag)) return reply.code(304).send();
   const encoding = body.compressible ? negotiateEncoding(request.headers['accept-encoding']) : 'identity';
   const payload = await body.encoded(encoding);

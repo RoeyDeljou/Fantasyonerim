@@ -1,4 +1,16 @@
-import { FplNotFoundError, FplUnavailableError, type FplService } from '@fant/fpl';
+import {
+  EntryHistorySchema,
+  EntryTransferSchema,
+  FplNotFoundError,
+  FplUnavailableError,
+  LeagueInfoSchema,
+  type EntryHistory,
+  type EntryTransfer,
+  type EventPoints,
+  type FplService,
+  type LeagueInfo,
+  type PlayerEventPoints,
+} from '@fant/fpl';
 import {
   BootstrapSchema,
   EntryLiveSchema,
@@ -22,6 +34,8 @@ import {
   type FplPlayerId,
   type Gameweek,
   type PlayerLive,
+  FplPlayerIdSchema,
+  type GameweekInfo,
 } from '@fant/shared';
 
 const ISO = '2026-10-25T12:00:00.000Z';
@@ -51,6 +65,79 @@ export function makeBootstrap(currentEvent: number | null = 9, nextEvent: number
     teams: [{ id: 1, name: 'Arsenal', shortName: 'ARS', code: 3 }],
     players: [player(1, 'Salah'), player(2, 'Haaland'), player(3, 'Palmer'), player(4, 'Saka')],
     fetchedAt: ISO,
+  });
+}
+
+/**
+ * Bootstrap GW list 1…38: GWs ≤ `officialUpTo` are finished + data-checked, `finishedUpTo` (default the same)
+ * finished; `current` is FPL's current GW.
+ */
+export function makeEvents(
+  current: number | null,
+  officialUpTo: number,
+  finishedUpTo = officialUpTo,
+): GameweekInfo[] {
+  return Array.from({ length: 38 }, (_, i) => {
+    const id = i + 1;
+    return {
+      id,
+      name: `Gameweek ${id}`,
+      deadlineTime: new Date(Date.parse('2026-08-15T10:00:00.000Z') + i * 7 * 86_400_000).toISOString(),
+      finished: id <= finishedUpTo,
+      dataChecked: id <= officialUpTo,
+      isCurrent: id === current,
+      isNext: current !== null && id === current + 1,
+      averageScore: id <= finishedUpTo ? 50 + id : null,
+      highestScore: id <= finishedUpTo ? 100 + id : null,
+    } as GameweekInfo;
+  });
+}
+
+export interface HistoryRow {
+  event: number;
+  points: number;
+  transfersMade?: number;
+  transfersCost?: number;
+  pointsOnBench?: number;
+}
+
+/** An entry's season from per-GW rows (`points` net of the hit; totals accumulated). */
+export function makeHistory(
+  entryId: number,
+  rows: readonly HistoryRow[],
+  chips: { chip: string; event: number }[] = [],
+): EntryHistory {
+  let total = 0;
+  return EntryHistorySchema.parse({
+    entryId,
+    events: rows.map((r) => {
+      total += r.points;
+      return {
+        event: r.event,
+        points: r.points,
+        grossPoints: r.points + (r.transfersCost ?? 0),
+        totalPoints: total,
+        transfersMade: r.transfersMade ?? 0,
+        transfersCost: r.transfersCost ?? 0,
+        pointsOnBench: r.pointsOnBench ?? 0,
+        overallRank: 1000,
+        rankInGameweek: 1000,
+        bank: 5,
+        value: 1000,
+      };
+    }),
+    chips,
+  });
+}
+
+export function makeTransfer(event: number, playerOut: number, playerIn: number): EntryTransfer {
+  return EntryTransferSchema.parse({
+    event,
+    playerIn,
+    playerOut,
+    playerInCost: 50,
+    playerOutCost: 50,
+    time: '2026-10-01T10:00:00Z',
   });
 }
 
@@ -172,6 +259,18 @@ export class FakeFplService implements FplService {
   /** getFixtureDetail data by fixture id (unknown id → FplNotFoundError). */
   fixtureDetails = new Map<number, FixtureDetail>();
   calls: string[] = [];
+  /** getEntryHistory by entry id (missing → FplNotFoundError). */
+  histories = new Map<number, EntryHistory>();
+  /** getEntryTransfers by entry id (missing → no transfers). */
+  transfers = new Map<number, EntryTransfer[]>();
+  /** getEventPoints by GW (player id → points); a GW not here uses `playerPoints`. */
+  eventPoints = new Map<number, Map<number, number>>();
+  /** getLeagueInfo startEvent by league id (default 1). */
+  leagueStartEvents = new Map<number, number>();
+  /** Per-entry getEntryHistory failures (entryId → error). */
+  failHistoryFor = new Map<number, Error>();
+  /** getEventPoints failure. */
+  failEventPoints: Error | null = null;
   /** getLeagueNewEntries by league id (joined, not ranked yet); a league in `leagues` defaults to none. */
   newEntries = new Map<number, number[]>();
 
@@ -307,6 +406,36 @@ export class FakeFplService implements FplService {
     this.check(`getLeagueNewEntries:${leagueId}`);
     if (!this.leagues.has(leagueId)) throw new FplNotFoundError(`league ${leagueId}`);
     return (this.newEntries.get(leagueId) ?? []).map((id) => FplEntryIdSchema.parse(id));
+  }
+
+  async getEntryHistory(entryId: FplEntryId): Promise<EntryHistory> {
+    this.check(`getEntryHistory:${entryId}`);
+    const failure = this.failHistoryFor.get(entryId);
+    if (failure) throw failure;
+    const history = this.histories.get(entryId);
+    if (!history) throw new FplNotFoundError(`history ${entryId}`);
+    return history;
+  }
+
+  async getEntryTransfers(entryId: FplEntryId): Promise<EntryTransfer[]> {
+    this.check(`getEntryTransfers:${entryId}`);
+    return this.transfers.get(entryId) ?? [];
+  }
+
+  async getEventPoints(event: Gameweek): Promise<EventPoints> {
+    this.check(`getEventPoints:${event}`);
+    if (this.failEventPoints) throw this.failEventPoints;
+    const points = this.eventPoints.get(event) ?? this.playerPoints;
+    return new Map<ReturnType<typeof FplPlayerIdSchema.parse>, PlayerEventPoints>(
+      [...points].map(([id, p]) => [FplPlayerIdSchema.parse(id), { points: p, minutes: 90 }]),
+    );
+  }
+
+  async getLeagueInfo(leagueId: FplLeagueId): Promise<LeagueInfo> {
+    this.check(`getLeagueInfo:${leagueId}`);
+    const league = this.leagues.get(leagueId);
+    if (!league) throw new FplNotFoundError(`league ${leagueId}`);
+    return LeagueInfoSchema.parse({ ...league, startEvent: this.leagueStartEvents.get(leagueId) ?? 1 });
   }
 
   async getPlayersLive(playerIds: readonly FplPlayerId[], event: Gameweek): Promise<PlayerLive[]> {

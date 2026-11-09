@@ -9,6 +9,7 @@ export type JobName =
   | 'youtube'
   | 'deadline_reminders'
   | 'gameweek_summary'
+  | 'gameweek_roundup'
   | 'live_alerts'
   | 'cleanup'
   | 'image_variants';

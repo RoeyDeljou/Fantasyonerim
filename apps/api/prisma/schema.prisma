@@ -136,6 +136,26 @@ model CaptainBattleEntry {
   @@unique([battleId, order])
 }
 
+/// Gameweek Roundup ("סיכום מחזור"): one stored, final roundup per league per official GW (job
+/// `gameweek_roundup`). Keyed by league so changing the league ID in admin settings never serves the old
+/// league's roundup.
+model GameweekRoundup {
+  id            String   @id @default(cuid())
+  leagueId      Int
+  event         Int
+  /// League name when built (FPL `getLeagueInfo`).
+  leagueName    String
+  /// RoundupCore (@fant/fpl buildGameweekRoundup), validated with RoundupCoreSchema on read.
+  data          Json
+  /// RoundupCaptain[]: that GW's captain-battle rows with final points (sorted, desc). [] without a config.
+  captains      Json
+  /// { "<playerId>": base GW points } for every captain in `data.table` (the viewer's "mine" row).
+  captainPoints Json
+  builtAt       DateTime
+
+  @@unique([leagueId, event])
+}
+
 // ---------- Phase 2: News, integrations, push, jobs ----------
 
 enum IntegrationId {

@@ -16,6 +16,7 @@ import { configRoutes } from './routes/config.js';
 import { fplRoutes } from './routes/fpl.js';
 import { leagueRoutes } from './routes/league.js';
 import { meRoutes } from './routes/me.js';
+import { roundupRoutes } from './routes/roundup.js';
 import { redactUrl, withSafeLogging } from './logging.js';
 import { formatZodIssues } from './validate.js';
 import { realIntegrations, type IntegrationFactories } from './integrations/factories.js';
@@ -258,6 +259,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   authRoutes(app, ctx, auth, strictLimit);
   fplRoutes(app, ctx);
   leagueRoutes(app, ctx, auth);
+  roundupRoutes(app, ctx, auth);
   captainBattleRoutes(app, ctx, auth);
   adminRoutes(app, ctx, auth, strictLimit);
   newsRoutes(app, ctx);

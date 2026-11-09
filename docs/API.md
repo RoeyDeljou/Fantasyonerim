@@ -8,30 +8,31 @@ Legend: 🌐 public · 👤 signed-in user · 🛡 admin
 
 ## Phase 1
 
-| Method  | Path                             | Auth                    | Body / query                   | Response                                                                                      |
-| ------- | -------------------------------- | ----------------------- | ------------------------------ | --------------------------------------------------------------------------------------------- |
-| GET     | `/health`                        | 🌐                      | –                              | `{ ok: true, fpl?: 'ok'\|'degraded'\|'updating' }` (no error details)                         |
-| GET     | `/v1/config`                     | 🌐                      | –                              | `PublicConfig`                                                                                |
-| POST    | `/v1/auth/register`              | 🌐                      | `RegisterBody` (incl. `email`) | `AuthResponse` (201) · 404 unknown Team ID · 409 team already registered / email already used |
-| POST    | `/v1/auth/email-login`           | 🌐                      | `EmailLoginBody`               | `AuthResponse` · 401 "Email or Team ID is incorrect" (same for every miss)                    |
-| POST    | `/v1/auth/admin-login`           | 🌐                      | `AdminLoginBody`               | `AuthResponse` · 401                                                                          |
-| POST    | `/v1/auth/logout`                | 👤                      | –                              | 204                                                                                           |
-| GET     | `/v1/me`                         | 👤                      | –                              | `Me`                                                                                          |
-| PATCH   | `/v1/me`                         | 👤                      | `UpdateMeBody`                 | `Me` · 409 email already used by another account                                              |
-| GET     | `/v1/fpl/bootstrap`              | 🌐                      | –                              | `Bootstrap`                                                                                   |
-| GET     | `/v1/fpl/fixtures`               | 🌐                      | `?event=`                      | `Fixture[]`                                                                                   |
-| GET     | `/v1/fpl/fixtures/:fixtureId`    | 🌐                      | –                              | `FixtureDetail` (match sheet) · 404 unknown fixture · 400 invalid id                          |
-| GET     | `/v1/fpl/entries/:entryId`       | 🌐                      | –                              | `EntrySummary`                                                                                |
-| GET     | `/v1/fpl/entries/:entryId/picks` | 🌐                      | `?event=` (default current)    | `EntryPicks`                                                                                  |
-| GET     | `/v1/fpl/entries/:entryId/live`  | 🌐                      | `?event=` (default current)    | `EntryLive`                                                                                   |
-| GET     | `/v1/league/standings`           | 🌐                      | `?page=`                       | `LeagueStandings` · 404 when no league configured                                             |
-| GET     | `/v1/league/live`                | 🌐                      | `?page=`                       | `LiveLeague`                                                                                  |
-| GET     | `/v1/league/position`            | 👤                      | –                              | `LeaguePosition` (find my team, below) · 404 when no league set                               |
-| GET     | `/v1/captain-battle`             | 🌐 (👤 adds "mine" row) | –                              | `CaptainBattle`                                                                               |
-| GET/PUT | `/v1/admin/settings`             | 🛡                       | `AdminSettings`                | `AdminSettings`                                                                               |
-| GET/PUT | `/v1/admin/captain-battle`       | 🛡                       | `CaptainBattleConfig`          | `CaptainBattleConfig` (GET → null when unset)                                                 |
-| GET     | `/v1/admin/admins`               | 🛡                       | –                              | `AdminAccount[]`                                                                              |
-| POST    | `/v1/admin/admins`               | 🛡                       | `CreateAdminBody`              | `AdminAccount` (201)                                                                          |
+| Method  | Path                             | Auth                    | Body / query                            | Response                                                                                      |
+| ------- | -------------------------------- | ----------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------- |
+| GET     | `/health`                        | 🌐                      | –                                       | `{ ok: true, fpl?: 'ok'\|'degraded'\|'updating' }` (no error details)                         |
+| GET     | `/v1/config`                     | 🌐                      | –                                       | `PublicConfig`                                                                                |
+| POST    | `/v1/auth/register`              | 🌐                      | `RegisterBody` (incl. `email`)          | `AuthResponse` (201) · 404 unknown Team ID · 409 team already registered / email already used |
+| POST    | `/v1/auth/email-login`           | 🌐                      | `EmailLoginBody`                        | `AuthResponse` · 401 "Email or Team ID is incorrect" (same for every miss)                    |
+| POST    | `/v1/auth/admin-login`           | 🌐                      | `AdminLoginBody`                        | `AuthResponse` · 401                                                                          |
+| POST    | `/v1/auth/logout`                | 👤                      | –                                       | 204                                                                                           |
+| GET     | `/v1/me`                         | 👤                      | –                                       | `Me`                                                                                          |
+| PATCH   | `/v1/me`                         | 👤                      | `UpdateMeBody`                          | `Me` · 409 email already used by another account                                              |
+| GET     | `/v1/fpl/bootstrap`              | 🌐                      | –                                       | `Bootstrap`                                                                                   |
+| GET     | `/v1/fpl/fixtures`               | 🌐                      | `?event=`                               | `Fixture[]`                                                                                   |
+| GET     | `/v1/fpl/fixtures/:fixtureId`    | 🌐                      | –                                       | `FixtureDetail` (match sheet) · 404 unknown fixture · 400 invalid id                          |
+| GET     | `/v1/fpl/entries/:entryId`       | 🌐                      | –                                       | `EntrySummary`                                                                                |
+| GET     | `/v1/fpl/entries/:entryId/picks` | 🌐                      | `?event=` (default current)             | `EntryPicks`                                                                                  |
+| GET     | `/v1/fpl/entries/:entryId/live`  | 🌐                      | `?event=` (default current)             | `EntryLive`                                                                                   |
+| GET     | `/v1/league/standings`           | 🌐                      | `?page=`                                | `LeagueStandings` · 404 when no league configured                                             |
+| GET     | `/v1/league/live`                | 🌐                      | `?page=`                                | `LiveLeague`                                                                                  |
+| GET     | `/v1/league/position`            | 👤                      | –                                       | `LeaguePosition` (find my team, below) · 404 when no league set                               |
+| GET     | `/v1/captain-battle`             | 🌐 (👤 adds "mine" row) | –                                       | `CaptainBattle`                                                                               |
+| GET     | `/v1/league/roundup`             | 🌐 (👤 adds "mine" row) | `?event=` (default: latest official GW) | `GameweekRoundup` (Gameweek Roundup, below) · 400 event outside 1…current GW                  |
+| GET/PUT | `/v1/admin/settings`             | 🛡                       | `AdminSettings`                         | `AdminSettings`                                                                               |
+| GET/PUT | `/v1/admin/captain-battle`       | 🛡                       | `CaptainBattleConfig`                   | `CaptainBattleConfig` (GET → null when unset)                                                 |
+| GET     | `/v1/admin/admins`               | 🛡                       | –                                       | `AdminAccount[]`                                                                              |
+| POST    | `/v1/admin/admins`               | 🛡                       | `CreateAdminBody`                       | `AdminAccount` (201)                                                                          |
 
 Upstream FPL failures map to `503 upstream_unavailable`.
 
@@ -156,3 +157,40 @@ Schemas: `packages/shared/src/broadcast.ts`.
 
 `live_alerts` runs every 2 minutes while a fixture of the current GW is live (plus one pass after the last one ends);
 its first run of a GW only records a baseline. Pushes: urgency high, TTL 1 h, a unique tag per alert.
+
+## Gameweek Roundup (סיכום מחזור)
+
+`GET /v1/league/roundup?event=<gw>` serves the podcast league's stored, final results of one GW (`GameweekRoundup`).
+
+- **`status`**: `unavailable` when no league is configured (or a stored row no longer parses); `pending` when the GW
+  isn't `finished && dataChecked` yet ("Come back at the end of the game week!"); `building` when it is, but the job
+  hasn't stored its roundup for the configured league yet; `ready` otherwise. Every section other than `ready` is
+  empty (`league`, `participants`, … null, `table`/`captains` `[]`, `builtAt` null).
+- **`event`** defaults to the latest official GW; before any GW is official, FPL's current GW (the next one before the
+  season starts) with `pending`. **`events`** = 1 … current GW. `event` must be an integer in that range (400).
+- **Captains**: that GW's captain battle with final points, stored when the roundup was built, sorted by
+  `captainPoints` desc. The battle used is the one saved for the latest GW ≤ `event` (as the live battle showed it):
+  team-linked rows read that team's picks (the captain, or the vice who got the armband, × the team's multiplier);
+  hand-picked rows count only when the battle was saved for exactly that GW (base points × 2). No battle → `[]`.
+- **`mine`** (`key: "me"`, `label: "mine"`, the client shows its own i18n text): a signed-in fan with a Team ID gets
+  their own captain that GW, on `ready` GWs only, even without a battle — from their stored table row when they're a
+  league member (no FPL call), else from their picks + the GW's points. A team with no picks that GW (404) or FPL
+  failing → no row, never an error.
+- **Caching**: without a token `public, max-age=60, stale-while-revalidate=120` + `Vary: Authorization` (the shared
+  body is computed once per 30 s for everybody and dropped as soon as a roundup is stored); with a token
+  `private, no-cache`.
+- **Storage**: `GameweekRoundup` rows are keyed by `(leagueId, event)`, so changing the league in admin settings
+  never serves the previous league's roundups (the new league's are built by the job, previous ones are kept).
+
+**Job `gameweek_roundup`** (every 5 min, lease 15 min, also via `/internal/jobs/tick`). Builds every official GW
+without a stored roundup for the configured league, newest first, then back-fills older ones. The newest official GW
+is built only 5 minutes (`FPL_CACHE_TTL.history`) after the job first saw it official; older GWs right away. Per run:
+league info + all standings pages, then history + transfers once per member (reused for every GW of the run), then
+per GW one `event/{gw}/live/` and one picks request per member, all at concurrency 4 (`ROUNDUP_FETCH_CONCURRENCY`).
+The run is bounded by a budget of 1,000 FPL requests: `max(1, ⌊(1000 − 2N) / (N + 1)⌋)` GWs for N members, i.e. 3 GWs
+for 171 members (~860 requests, ~1 minute). A full back-fill of 10 GWs therefore takes 4 runs, ~15–20 minutes. A GW
+is stored only when complete: an `FplUnavailableError` aborts the run (lastError on the job lease), nothing partial
+is stored and the next run retries; while FplService is backing off (`getHealth().retryAt`) the run makes no FPL call.
+A member's 404 (history or picks) leaves that member, or that data, blank. GWs before the league's `startEvent`
+are stored with blank sections (captain rows still computed). Members are the league's current standings (FPL has no
+historical member list).
