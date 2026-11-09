@@ -21,7 +21,7 @@ import {
   toAdminSettings,
   toBattleConfig,
 } from '../settings.js';
-import { cleanTag, kindToDb } from '../league/captains.js';
+import { cleanTag, kindToDb, withPermanentEntries } from '../league/captains.js';
 import { normalizeLeagueCode } from '../league/config.js';
 import { parseInput, serialize } from '../validate.js';
 
@@ -113,7 +113,9 @@ export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, p
 
     admin.put('/v1/admin/captain-battle', async (request) => {
       const body = parseInput(CaptainBattleConfigSchema, request.body);
-      const playerIds = body.entries.flatMap((e) => (e.source === 'player' ? [e.playerId] : []));
+      const playerIds = body.entries.flatMap((e) =>
+        e.source === 'player' && e.playerId !== null ? [e.playerId] : [],
+      );
       const entryIds = [...new Set(body.entries.flatMap((e) => (e.source === 'entry' ? [e.entryId] : [])))];
       if (playerIds.length > 0) {
         const bootstrap = await ctx.fpl.getBootstrap();
@@ -144,7 +146,7 @@ export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, p
         });
         await tx.captainBattleEntry.deleteMany({ where: { battleId: saved.id } });
         await tx.captainBattleEntry.createMany({
-          data: body.entries.map((e, order) => ({
+          data: withPermanentEntries(body.entries).map((e, order) => ({
             battleId: saved.id,
             order,
             label: e.label,

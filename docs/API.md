@@ -52,8 +52,13 @@ battle (`CaptainBattleConfig` refuses duplicates). Every row has `kind` (`commun
 default for the kind/source). `GET /v1/captain-battle` always lists both permanent captains: when the latest saved
 battle has none (it predates them, or the admin deleted the row) a virtual row is added (`key` = the kind,
 default label `קפטן הקהילה` / `הקפטן של FPL Lad`, `playerId: null`, `live: null`, sorted last). The viewer's `mine` row
-has `tag: null`. A virtual row is never stored: persisting a permanent row needs a player (DB check), so the admin
-console sees only the rows it saved. With no battle saved at all the board stays empty.
+has `tag: null`. Saving (`PUT /v1/admin/captain-battle`) stores any missing permanent captain first, with the default label and
+`playerId: null` ("not picked yet"; the DB check allows a player-less PLAYER row only for `COMMUNITY` / `FPL_LAD`, a
+`custom` player row needs a player). `GET /v1/admin/captain-battle` always lists both permanent rows first, even for a
+battle saved before they existed (still `null` when no battle was ever saved). A stored unpicked row behaves like the
+virtual one in the live battle and the roundup (`playerId: null`, 0 points). The previous release null-checks
+`playerId` in the live battle and roundup, but its admin GET rejects such a row until the new release is serving.
+With no battle saved at all the public board stays empty.
 
 **Boot-time upgrade** (`upgradeCaptainKinds`, `src/league/captains.ts`, runs after the server listens): in every saved
 battle an entry labelled like `/fpl\s*-?\s*lad/i` whose kind isn't `FPL_LAD` becomes `FPL_LAD` (production had it as

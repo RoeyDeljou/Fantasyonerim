@@ -199,9 +199,13 @@ describe('admin captain battle', () => {
       payload: config,
     });
     expect(put.statusCode).toBe(200);
+    // The permanent FPL Lad captain is added (no player yet); the saved community row stays where it was sent.
     expect(CaptainBattleConfigSchema.parse(put.json())).toEqual({
       ...config,
-      entries: config.entries.map((e) => ({ ...e, tag: null })),
+      entries: [
+        { label: 'הקפטן של FPL Lad', kind: 'fpl_lad', tag: null, source: 'player', playerId: null },
+        ...config.entries.map((e) => ({ ...e, tag: null })),
+      ],
     });
 
     const replaced = {
@@ -217,9 +221,13 @@ describe('admin captain battle', () => {
     const got = await app.inject({ method: 'GET', url: '/v1/admin/captain-battle', headers: bearer(token) });
     expect(CaptainBattleConfigSchema.parse(got.json())).toEqual({
       ...replaced,
-      entries: replaced.entries.map((e) => ({ ...e, tag: null })),
+      entries: [
+        { label: 'קפטן הקהילה', kind: 'community', tag: null, source: 'player', playerId: null },
+        { label: 'הקפטן של FPL Lad', kind: 'fpl_lad', tag: null, source: 'player', playerId: null },
+        ...replaced.entries.map((e) => ({ ...e, tag: null })),
+      ],
     });
-    expect(await prisma.captainBattleEntry.count()).toBe(1);
+    expect(await prisma.captainBattleEntry.count()).toBe(3);
 
     const pub = PublicConfigSchema.parse((await app.inject({ method: 'GET', url: '/v1/config' })).json());
     expect(pub.captainBattleEvent).toBe(9);

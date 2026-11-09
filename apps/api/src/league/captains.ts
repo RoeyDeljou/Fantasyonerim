@@ -1,4 +1,4 @@
-import type { CaptainBattleEntryKind as SharedKind } from '@fant/shared';
+import type { CaptainBattleEntryInput, CaptainBattleEntryKind as SharedKind } from '@fant/shared';
 import type { CaptainBattleEntryKind as DbKind, PrismaClient } from '@prisma/client';
 
 /**
@@ -27,6 +27,25 @@ export function kindToDb(kind: SharedKind): DbKind {
   return kind === 'community' ? 'COMMUNITY' : kind === 'fpl_lad' ? 'FPL_LAD' : 'CUSTOM';
 }
 
+/**
+ * The entries with the two permanent captains guaranteed: a missing community / fpl_lad row is added first, with the
+ * default label and no player yet ("not picked yet"). Saved rows keep their order.
+ */
+export function withPermanentEntries<T extends { kind: SharedKind }>(
+  entries: readonly T[],
+): (T | CaptainBattleEntryInput)[] {
+  const missing = PERMANENT_KINDS.filter((k) => !entries.some((e) => e.kind === k)).map(
+    (kind): CaptainBattleEntryInput => ({
+      label: DEFAULT_CAPTAIN_LABELS[kind],
+      kind,
+      tag: null,
+      source: 'player',
+      playerId: null,
+    }),
+  );
+  return [...missing, ...entries];
+}
+
 /** Empty / whitespace-only → null (the client shows its default badge). */
 export const cleanTag = (tag: string | null | undefined): string | null => {
   const t = tag?.trim() ?? '';
@@ -45,26 +64,36 @@ export async function upgradeCaptainKinds(prisma: PrismaClient): Promise<number>
   const battles = await prisma.captainBattle.findMany({
     select: {
       id: true,
-      entries: { select: { id: true, label: true, kind: true }, orderBy: { order: 'asc' } },
+      entries: {
+        select: { id: true, label: true, kind: true, source: true, playerId: true },
+        orderBy: { order: 'asc' },
+      },
     },
   });
   let changed = 0;
   for (const battle of battles) {
     const seen = new Set<DbKind>();
     const updates: { id: string; kind: DbKind }[] = [];
+    const removals: string[] = [];
     for (const entry of battle.entries) {
       let kind: DbKind = FPL_LAD_LABEL.test(entry.label) ? 'FPL_LAD' : entry.kind;
       if (kind !== 'CUSTOM') {
         if (seen.has(kind)) kind = 'CUSTOM';
         else seen.add(kind);
       }
-      if (kind !== entry.kind) updates.push({ id: entry.id, kind });
+      if (kind === entry.kind) continue;
+      // A duplicate permanent row with no player cannot become CUSTOM (a custom row needs a player): drop it.
+      if (kind === 'CUSTOM' && entry.source === 'PLAYER' && entry.playerId === null) removals.push(entry.id);
+      else updates.push({ id: entry.id, kind });
     }
-    if (updates.length === 0) continue;
-    await prisma.$transaction(
-      updates.map((u) => prisma.captainBattleEntry.update({ where: { id: u.id }, data: { kind: u.kind } })),
-    );
-    changed += updates.length;
+    if (updates.length + removals.length === 0) continue;
+    await prisma.$transaction([
+      ...updates.map((u) =>
+        prisma.captainBattleEntry.update({ where: { id: u.id }, data: { kind: u.kind } }),
+      ),
+      prisma.captainBattleEntry.deleteMany({ where: { id: { in: removals } } }),
+    ]);
+    changed += updates.length + removals.length;
   }
   return changed;
 }

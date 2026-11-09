@@ -93,9 +93,9 @@ function SeasonList({ rows: all }: { rows: readonly SeasonCaptainRow[] }) {
     <>
       <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
         <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_4.5rem] items-center gap-2 border-b border-line px-3 py-2 text-xs font-semibold text-muted">
-          <span>{t.season.rank}</span>
+          <span>{t.table.rank}</span>
           <span>{t.table.team}</span>
-          <span className="text-end">{t.season.pts}</span>
+          <span className="text-end">{t.liveAction.captainPts}</span>
         </div>
         <ol className="divide-y divide-line" data-testid="season-list">
           {rows.map((r) => (
@@ -183,7 +183,7 @@ const SeasonRow = memo(function SeasonRow({
         <button
           type="button"
           onClick={() => onOpen(r.entryId as FplEntryId)}
-          aria-label={fmt(t.season.openTeam, { name: r.subtitle ?? r.name })}
+          aria-label={fmt(t.table.openTeam, { name: r.subtitle ?? r.name })}
           className={cx(cls, 'hover:bg-surface-2')}
         >
           {body}

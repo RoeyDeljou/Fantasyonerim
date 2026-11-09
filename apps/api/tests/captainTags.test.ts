@@ -1,4 +1,4 @@
-import { ApiErrorSchema, CaptainBattleConfigSchema, CaptainBattleSchema } from '@fant/shared';
+import { ApiErrorSchema, CaptainBattleConfigSchema, CaptainBattleSchema, GameweekSchema } from '@fant/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { makePicks, type FakeFplService } from './fakeFpl.js';
@@ -11,6 +11,7 @@ import {
   registerUser,
   resetDb,
 } from './helpers.js';
+import { roundupCaptainRows } from '../src/league/roundup.js';
 import { cleanTag, DEFAULT_CAPTAIN_LABELS, upgradeCaptainKinds } from '../src/league/captains.js';
 
 const prisma = createTestPrisma();
@@ -89,7 +90,11 @@ describe('admin captain battle: tags and permanent captains', () => {
       entries: [{ label: 'Dor', source: 'entry', entryId: 777, kind: 'custom', tag: 'Host' }],
     });
     expect(res.statusCode).toBe(200);
-    expect((await getAdmin()).entries[0]).toMatchObject({ source: 'entry', tag: 'Host', kind: 'custom' });
+    expect((await getAdmin()).entries.find((e) => e.label === 'Dor')).toMatchObject({
+      source: 'entry',
+      tag: 'Host',
+      kind: 'custom',
+    });
   });
 
   it.each([
@@ -127,18 +132,76 @@ describe('admin captain battle: tags and permanent captains', () => {
       entries: [{ label: 'X', source: 'player', playerId: 1, kind: 'custom', tag }],
     });
     expect(res.statusCode).toBe(200);
-    expect((await getAdmin()).entries[0]?.tag).toBe(tag);
+    expect((await getAdmin()).entries.find((e) => e.label === 'X')?.tag).toBe(tag);
   });
 
-  it('a battle saved without the permanent rows is stored as sent (a permanent row needs a player to be stored)', async () => {
+  it('PUT stores the missing permanent rows first, with default labels and no player', async () => {
     const res = await put({
       event: 9,
       entries: [{ label: 'Producer', source: 'player', playerId: 2, kind: 'custom' }],
     });
     expect(res.statusCode).toBe(200);
-    expect(await prisma.captainBattleEntry.count()).toBe(1);
-    // ...and the live battle still shows both permanent captains (below).
-    expect((await getLive()).rows.map((r) => r.kind)).toEqual(['custom', 'community', 'fpl_lad']);
+    const expected = [
+      ['קפטן הקהילה', 'community', null],
+      ['הקפטן של FPL Lad', 'fpl_lad', null],
+      ['Producer', 'custom', 2],
+    ];
+    const brief = (entries: { label: string; kind: string; playerId?: number | null }[]) =>
+      entries.map((e) => [e.label, e.kind, e.playerId ?? null]);
+    expect(brief(CaptainBattleConfigSchema.parse(res.json()).entries)).toEqual(expected);
+    expect(brief((await getAdmin()).entries)).toEqual(expected);
+    const rows = await prisma.captainBattleEntry.findMany({ orderBy: { order: 'asc' } });
+    expect(rows.map((r) => [r.kind, r.source, r.playerId])).toEqual([
+      ['COMMUNITY', 'PLAYER', null],
+      ['FPL_LAD', 'PLAYER', null],
+      ['CUSTOM', 'PLAYER', 2],
+    ]);
+  });
+
+  it('PUT accepts an explicit unpicked permanent row (and keeps its tag); a custom row needs a player', async () => {
+    const ok = await put({
+      event: 9,
+      entries: [{ label: 'Fans', source: 'player', playerId: null, kind: 'community', tag: ' Crowd ' }],
+    });
+    expect(ok.statusCode).toBe(200);
+    const fans = (await getAdmin()).entries.find((e) => e.kind === 'community');
+    expect(fans).toMatchObject({ label: 'Fans', playerId: null, tag: 'Crowd' });
+    const bad = await put({
+      event: 9,
+      entries: [{ label: 'X', source: 'player', playerId: null, kind: 'custom' }],
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+
+  it('admin GET returns the permanent rows first even for a battle saved before they existed', async () => {
+    await prisma.captainBattle.create({
+      data: {
+        event: 9,
+        entries: { create: [{ order: 0, label: 'Old', kind: 'CUSTOM', source: 'PLAYER', playerId: 1 }] },
+      },
+    });
+    expect((await getAdmin()).entries.map((e) => [e.kind, 'playerId' in e ? e.playerId : null])).toEqual([
+      ['community', null],
+      ['fpl_lad', null],
+      ['custom', 1],
+    ]);
+  });
+
+  it('the DB check allows an unpicked PLAYER row only for the permanent kinds', async () => {
+    const battle = await prisma.captainBattle.create({ data: { event: 9 } });
+    const row = (order: number, kind: 'CUSTOM' | 'COMMUNITY' | 'FPL_LAD', extra: object = {}) =>
+      prisma.captainBattleEntry.create({
+        data: { battleId: battle.id, order, label: 'x', kind, source: 'PLAYER', ...extra },
+      });
+    await expect(row(0, 'CUSTOM')).rejects.toThrow();
+    await expect(row(1, 'COMMUNITY', { playerId: 1, entryId: 5 })).rejects.toThrow();
+    await expect(row(2, 'COMMUNITY')).resolves.toBeDefined();
+    await expect(row(3, 'FPL_LAD')).resolves.toBeDefined();
+    await expect(
+      prisma.captainBattleEntry.create({
+        data: { battleId: battle.id, order: 4, label: 'x', kind: 'COMMUNITY', source: 'ENTRY', playerId: 1 },
+      }),
+    ).rejects.toThrow();
   });
 
   it('cleanTag', () => {
@@ -152,7 +215,7 @@ describe('admin captain battle: tags and permanent captains', () => {
 });
 
 describe('GET /v1/captain-battle: permanent rows and tags', () => {
-  it('shows saved tags and kinds; absent permanent rows are virtual "not picked yet" rows', async () => {
+  it('shows saved tags and kinds; a stored unpicked permanent row is a "not picked yet" row', async () => {
     fpl.addEntry(777);
     fpl.picks.set('777:9', makePicks(777, 9, 4, 2));
     await put({
@@ -168,14 +231,32 @@ describe('GET /v1/captain-battle: permanent rows and tags', () => {
       ['Fans', 'community', 'Crowd', 1, 12],
       [DEFAULT_CAPTAIN_LABELS.fpl_lad, 'fpl_lad', null, null, 0],
     ]);
-    const virtual = battle.rows[2];
-    expect(virtual).toMatchObject({
-      key: 'fpl_lad',
+    expect(battle.rows[2]).toMatchObject({
       source: 'player',
       entryId: null,
       live: null,
       multiplier: 2,
     });
+  });
+
+  it('a stored unpicked permanent row looks exactly like the virtual one for a battle that predates it', async () => {
+    await put({ event: 9, entries: [] });
+    const stored = (await getLive()).rows;
+    expect(stored.map((r) => r.kind)).toEqual(['community', 'fpl_lad']);
+    await prisma.captainBattleEntry.deleteMany();
+    app.hot.invalidateConfig();
+    const virtual = (await getLive()).rows;
+    const strip = (rows: typeof stored) => rows.map(({ key: _key, ...rest }) => rest);
+    expect(strip(virtual)).toEqual(strip(stored));
+  });
+
+  it('a stored unpicked permanent row scores 0 / playerId null in the roundup captain rows', async () => {
+    await put({ event: 9, entries: [] });
+    const rows = await roundupCaptainRows(prisma, fpl, GameweekSchema.parse(9), new Map(), new Map());
+    expect(rows.map((r) => [r.kind, r.label, r.playerId, r.captainPoints, r.tag])).toEqual([
+      ['community', 'קפטן הקהילה', null, 0, null],
+      ['fpl_lad', 'הקפטן של FPL Lad', null, 0, null],
+    ]);
   });
 
   it('a saved fpl_lad row is a normal row; both permanent rows missing are both virtual (default labels)', async () => {
@@ -190,7 +271,8 @@ describe('GET /v1/captain-battle: permanent rows and tags', () => {
     ]);
     expect(battle.rows[1]?.label).toBe(DEFAULT_CAPTAIN_LABELS.community);
 
-    await put({ event: 9, entries: [] });
+    await prisma.captainBattleEntry.deleteMany();
+    app.hot.invalidateConfig();
     battle = await getLive();
     expect(battle.rows.map((r) => [r.kind, r.label, r.playerId])).toEqual([
       ['community', 'קפטן הקהילה', null],
@@ -320,6 +402,24 @@ describe('upgradeCaptainKinds (boot-time, idempotent)', () => {
     ]);
     const admin = await getAdmin();
     expect(admin.entries.map((e) => e.kind)).toEqual(['custom', 'community', 'fpl_lad']);
+  });
+
+  it('drops a duplicate permanent row that has no player instead of demoting it (a custom row needs a player)', async () => {
+    const battle = await prisma.captainBattle.create({
+      data: {
+        event: 9,
+        entries: {
+          create: [
+            { order: 0, label: 'Fans', kind: 'COMMUNITY', source: 'PLAYER', playerId: 1 },
+            { order: 1, label: 'Fans 2', kind: 'COMMUNITY', source: 'PLAYER', playerId: null },
+          ],
+        },
+      },
+    });
+    expect(await upgradeCaptainKinds(prisma)).toBe(1);
+    const rows = await prisma.captainBattleEntry.findMany({ where: { battleId: battle.id } });
+    expect(rows.map((r) => r.label)).toEqual(['Fans']);
+    expect(await upgradeCaptainKinds(prisma)).toBe(0);
   });
 
   it('does nothing without battles', async () => {

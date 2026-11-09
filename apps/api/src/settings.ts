@@ -10,7 +10,7 @@ import { serialize } from './validate.js';
 import type { AppSettings, CaptainBattle, CaptainBattleEntry, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { EXPECTED_INSTAGRAM_USERNAME, INTEGRATIONS } from './integrations/config.js';
-import { kindFromDb } from './league/captains.js';
+import { kindFromDb, withPermanentEntries } from './league/captains.js';
 import { effectiveLeagueCode, leagueJoinUrl } from './league/config.js';
 
 const SETTINGS_ID = 1;
@@ -117,14 +117,16 @@ export function toBattleConfig(battle: BattleWithEntries): CaptainBattleConfig {
     CaptainBattleConfigSchema,
     {
       event: battle.event,
-      entries: battle.entries.map((e) => ({
-        label: e.label,
-        kind: kindFromDb(e.kind),
-        tag: e.tag,
-        ...(e.source === 'ENTRY'
-          ? { source: 'entry', entryId: e.entryId }
-          : { source: 'player', playerId: e.playerId }),
-      })),
+      entries: withPermanentEntries(
+        battle.entries.map((e) => ({
+          label: e.label,
+          kind: kindFromDb(e.kind),
+          tag: e.tag,
+          ...(e.source === 'ENTRY'
+            ? { source: 'entry', entryId: e.entryId }
+            : { source: 'player', playerId: e.playerId }),
+        })),
+      ),
     },
     'settings',
   );

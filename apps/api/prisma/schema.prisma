@@ -131,7 +131,8 @@ model CaptainBattleEntry {
   /// Admin-chosen badge text (≤ 24 chars, trimmed); null = the client's default for the kind/source.
   tag      String?
   /// PLAYER: hand-picked `playerId`. ENTRY: linked FPL team `entryId` (captain read from its picks).
-  /// DB CHECK "CaptainBattleEntry_source_target_check" enforces exactly one of them per source.
+  /// DB CHECK "CaptainBattleEntry_source_target_check": ENTRY rows have entryId only; PLAYER rows have playerId only,
+  /// except a COMMUNITY / FPL_LAD row, which may have none yet ("not picked yet").
   source   CaptainBattleEntrySource @default(PLAYER)
   playerId Int?
   entryId  Int?
