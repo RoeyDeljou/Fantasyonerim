@@ -4,3 +4,4 @@ export * from './api.js';
 export * from './news.js';
 export * from './community.js';
 export * from './broadcast.js';
+export * from './roundup.js';
