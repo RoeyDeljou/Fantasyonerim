@@ -23,6 +23,7 @@ import {
   ROUNDUP_HOT_PREFIX,
   sortCaptains,
 } from '../league/roundup.js';
+import { computeSeasonCaptains, SEASON_CAPTAINS_HOT_PREFIX } from '../league/seasonCaptains.js';
 import { CACHE_CONTROL, sendHot } from '../perf/http.js';
 import type { HotPolicy } from '../perf/hotCache.js';
 import { parseInput, serialize } from '../validate.js';
@@ -30,6 +31,9 @@ import { cleanQuery, EventQuerySchema } from './query.js';
 
 /** A stored roundup is final; the status of an unbuilt GW is re-read every 30 s. */
 const ROUNDUP_POLICY: HotPolicy = { freshMs: 30_000, staleMs: 60_000, staleIfErrorMs: 30 * 60_000 };
+
+/** The season leaderboard is recomputed at most once a minute (and dropped when a roundup is stored). */
+const SEASON_POLICY: HotPolicy = { freshMs: 60_000, staleMs: 120_000, staleIfErrorMs: 30 * 60_000 };
 
 /** The `mine` row's label: the client shows its own i18n text for kind `mine`. */
 export const MINE_LABEL = 'mine';
@@ -118,6 +122,7 @@ export function roundupRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth)
         key: 'me',
         label: MINE_LABEL,
         kind: 'mine',
+        tag: null,
         playerId: FplPlayerIdSchema.parse(captain.playerId),
         multiplier: captain.multiplier,
         captainPoints: captain.points * captain.multiplier,
@@ -160,5 +165,21 @@ export function roundupRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth)
       { ...value, captains: sortCaptains([...value.captains, mine]) },
       'GameweekRoundup',
     );
+  });
+
+  /**
+   * GET /v1/league/season-captains — the season Captain Battle leaderboard, from the stored roundups only. Public and
+   * identical for everybody: computed once per minute (ctx.hot) and sent as a precomputed body.
+   */
+  app.get('/v1/league/season-captains', async (request, reply) => {
+    const leagueId = await ctx.hot.leagueId();
+    const { body } = await ctx.hot.cache.get(
+      `${SEASON_CAPTAINS_HOT_PREFIX}${leagueId ?? 'none'}`,
+      SEASON_POLICY,
+      async () => ({
+        build: () => computeSeasonCaptains(ctx.prisma, leagueId, ctx.clock.now()),
+      }),
+    );
+    return sendHot(request, reply, body, CACHE_CONTROL.roundup);
   });
 }

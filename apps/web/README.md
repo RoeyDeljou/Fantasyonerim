@@ -100,10 +100,12 @@ Detail views and sub-tabs live in query params (`/my-team/?view=live&gw=7`, `/ta
 4. runs these journeys in Chromium at 390×844 and fails on any unexpected console error or horizontal scroll:
    register with a name, an email and demo Team ID 1000003 → reload stays signed in → My Team shows the Triple Captain chip and the
    pitch → Live sub-view → Table/Live show "league not set" without calling `/v1/league/*` → non-admin is
-   blocked from `/admin` → admin signs in, sets league 314159 and saves the default captain battle (two linked
-   teams + a hand-picked community player) → Table shows the league and opens a manager's team → Captain Battle
+   blocked from `/admin` → admin signs in, sets league 314159 and saves the default Live Captain Battle (the permanent community + FPL Lad rows, two linked
+   teams) → Mini League's Table shows the league and opens a manager's team → Live Captain Battle
    shows the rows plus "my captain" → sign out → sign back in with email + Team ID (a wrong pair is refused) → admin sign-in on the fan's
-   device keeps the fan session and restores it on admin sign-out. Phase 2 adds: News shows the seeded podcast
+   device keeps the fan session and restores it on admin sign-out. The Mini League tab also has a Gameweek Roundup and a Season Captain Battle sub-tab (`?view=season`, total captain points
+   over the season incl. the community and FPL Lad captains; mocked in e2e with `page.route`), and the admin editor
+   has per-row captain tags. Phase 2 adds: News shows the seeded podcast
    cards (badge, de-duplicated title, duration, no `<audio>`), the Listen sheet has the exact Spotify/Apple hrefs
    and a single-platform episode opens directly, the story ring goes unseen → seen through the viewer, the
    `?item=` deep link (and a missing item), notification state + a preference toggle that persists across a

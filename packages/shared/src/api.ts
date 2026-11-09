@@ -184,7 +184,12 @@ const CaptainBattleEntryBase = {
  * ("הקפטן של דור" → Dor's Team ID) whose captain for the GW is read from that team's picks automatically.
  */
 export const CaptainBattleEntryInputSchema = z.discriminatedUnion('source', [
-  z.object({ ...CaptainBattleEntryBase, source: z.literal('player'), playerId: FplPlayerIdSchema }),
+  z.object({
+    ...CaptainBattleEntryBase,
+    source: z.literal('player'),
+    /** Null = "not picked yet for this GW": allowed for the permanent community / fpl_lad rows only. */
+    playerId: z.nullable(FplPlayerIdSchema),
+  }),
   z.object({ ...CaptainBattleEntryBase, source: z.literal('entry'), entryId: FplEntryIdSchema }),
 ]);
 export type CaptainBattleEntryInput = z.infer<typeof CaptainBattleEntryInputSchema>;
@@ -198,6 +203,10 @@ export const CaptainBattleConfigSchema = z.object({
       (rows) =>
         (['community', 'fpl_lad'] as const).every((k) => rows.filter((r) => r.kind === k).length <= 1),
       'at most one community and one fpl_lad captain',
+    ),
+    z.refine(
+      (rows) => rows.every((r) => r.source !== 'player' || r.playerId !== null || r.kind !== 'custom'),
+      'a custom player row needs a player',
     ),
   ),
 });

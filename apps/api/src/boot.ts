@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from './app.js';
 import { bootstrapAdmin } from './auth/bootstrapAdmin.js';
 import { parseOrigins, type Env } from './env.js';
+import { upgradeCaptainKinds } from './league/captains.js';
 import { createFplFromEnv } from './fpl.js';
 import { ensureIntegrationRows, seedIntegrationSecrets } from './integrations/store.js';
 import { JobScheduler } from './jobs/runner.js';
@@ -141,6 +142,18 @@ export async function startServer({
 
   await app.listen({ port: env.PORT, host: env.HOST });
   app.log.info({ fplMode: env.FPL_MODE, jobs: env.JOBS_ENABLED, mediaStore: env.MEDIA_STORE }, 'api ready');
+
+  // Saved captain battles → permanent-captain model (FPL Lad row, one community row). Deliberately after listen():
+  // the previous release may still be serving during a deploy and does not know the FPL_LAD enum value.
+  try {
+    const upgraded = await upgradeCaptainKinds(prisma);
+    if (upgraded > 0) {
+      app.hot.invalidateConfig();
+      app.log.info({ upgraded }, 'captain battle entries upgraded');
+    }
+  } catch (err) {
+    app.log.error({ err }, 'captain battle upgrade failed (retried on the next boot)');
+  }
 
   if (env.JOBS_ENABLED) scheduler.start();
   // Keeps the live league / captain battle / fixtures warm while a fixture is in play (no-op otherwise).

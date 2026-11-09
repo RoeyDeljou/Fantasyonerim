@@ -250,17 +250,20 @@ describe('shared hot responses', () => {
     const anon = CaptainBattleSchema.parse((await get('/v1/captain-battle')).json());
     const forA = await get('/v1/captain-battle', bearer(a.token));
     const forB = CaptainBattleSchema.parse((await get('/v1/captain-battle', bearer(b.token))).json());
-    expect(anon.rows.map((r) => r.label)).toEqual(['Dor', 'Community']);
+    // The permanent FPL Lad captain is always on the board (nobody picked yet: last).
+    expect(anon.rows.map((r) => r.label)).toEqual(['Dor', 'Community', 'הקפטן של FPL Lad']);
     expect(CaptainBattleSchema.parse(forA.json()).rows.map((r) => [r.label, r.captainPoints])).toEqual([
       [a.user.name, 39],
       ['Dor', 12],
       ['Community', 4],
+      ['הקפטן של FPL Lad', 0],
     ]);
     expect(forA.headers['cache-control']).toBe('private, no-cache');
     expect(forB.rows.map((r) => [r.label, r.captainPoints])).toEqual([
       ['Dor', 12],
       ['Community', 4],
       [b.user.name, 4], // ties keep the battle's order, the viewer's row last (as before)
+      ['הקפטן של FPL Lad', 0],
     ]);
     // The battle's own team picks were read once for all three requests.
     expect(fpl.calls.filter((c) => c === 'getEntryPicks:777:9')).toHaveLength(1);

@@ -51,6 +51,7 @@ export function captainBattleRoutes(app: FastifyInstance, ctx: AppContext, auth:
       key: 'me',
       label: viewer.user.name,
       kind: 'mine',
+      tag: null,
       source: 'mine',
       entryId,
       playerId,

@@ -28,6 +28,7 @@ import {
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { isFplNotFound } from '../fplErrors.js';
+import { kindFromDb } from './captains.js';
 import { allStandingRows, fetchAllPages } from './pages.js';
 
 /**
@@ -47,9 +48,10 @@ export const FRESH: FplReadOptions = { fresh: true };
  * Version of the roundup rules stored with every row. Bump it whenever a rule change must reach roundups already
  * stored: the job then rebuilds every older row (newest GW first, within its per-run budget) and replaces it
  * atomically; the old row is served until then. 1 = ranks reconstructed for every GW; 2 = the newest official GW
- * uses FPL's official standings.
+ * uses FPL's official standings; 3 = captain rows carry the admin's `tag` and the permanent `fpl_lad` kind (older
+ * rows have the FPL Lad captain as `community` and no tags; the season leaderboard reads them with a label fallback).
  */
-export const ROUNDUP_BUILD_VERSION = 2;
+export const ROUNDUP_BUILD_VERSION = 3;
 
 /** Build a GW only this long after we first saw it `finished && dataChecked` (history cache TTL, 5 min). */
 export const ROUNDUP_BUILD_DELAY_MS = FPL_CACHE_TTL.history;
@@ -172,13 +174,15 @@ export async function roundupCaptainRows(
 
   const rows: RoundupCaptain[] = [];
   for (const e of battle.entries) {
-    const kind = e.kind === 'COMMUNITY' ? 'community' : 'custom';
+    const kind = kindFromDb(e.kind);
+    const tag = e.tag;
     if (e.source === 'ENTRY' && e.entryId !== null) {
       const captain = effectiveCaptain(memberPicks.get(e.entryId) ?? extraPicks.get(e.entryId) ?? null);
       rows.push({
         key: e.id,
         label: e.label,
         kind,
+        tag,
         playerId: captain === null ? null : FplPlayerIdSchema.parse(captain.playerId),
         multiplier: captain?.multiplier ?? 2,
         captainPoints: captain === null ? 0 : base(captain.playerId) * captain.multiplier,
@@ -188,6 +192,7 @@ export async function roundupCaptainRows(
         key: e.id,
         label: e.label,
         kind,
+        tag,
         playerId: e.playerId === null ? null : FplPlayerIdSchema.parse(e.playerId),
         multiplier: 2,
         captainPoints: e.playerId === null ? 0 : base(e.playerId) * 2,

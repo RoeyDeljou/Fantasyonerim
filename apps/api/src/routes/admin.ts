@@ -21,6 +21,7 @@ import {
   toAdminSettings,
   toBattleConfig,
 } from '../settings.js';
+import { cleanTag, kindToDb } from '../league/captains.js';
 import { normalizeLeagueCode } from '../league/config.js';
 import { parseInput, serialize } from '../validate.js';
 
@@ -147,7 +148,8 @@ export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, p
             battleId: saved.id,
             order,
             label: e.label,
-            kind: e.kind === 'community' ? ('COMMUNITY' as const) : ('CUSTOM' as const),
+            kind: kindToDb(e.kind),
+            tag: cleanTag(e.tag),
             ...(e.source === 'entry'
               ? { source: 'ENTRY' as const, entryId: e.entryId, playerId: null }
               : { source: 'PLAYER' as const, playerId: e.playerId, entryId: null }),

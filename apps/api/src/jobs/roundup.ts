@@ -11,6 +11,7 @@ import {
   ROUNDUP_HOT_PREFIX,
   supportsRoundup,
 } from '../league/roundup.js';
+import { SEASON_CAPTAINS_HOT_PREFIX } from '../league/seasonCaptains.js';
 import { getSettings } from '../settings.js';
 import { MINUTE, type Job } from './types.js';
 
@@ -87,7 +88,10 @@ export const gameweekRoundupJob: Job = {
           prisma: app.prisma,
           fpl,
           now: () => app.clock.now(),
-          onStored: (event) => app.hot.cache.invalidate(`${ROUNDUP_HOT_PREFIX}${leagueId}:${event}:`),
+          onStored: (event) => {
+            app.hot.cache.invalidate(`${ROUNDUP_HOT_PREFIX}${leagueId}:${event}:`);
+            app.hot.cache.invalidate(SEASON_CAPTAINS_HOT_PREFIX);
+          },
         },
         leagueId,
         confirmed,

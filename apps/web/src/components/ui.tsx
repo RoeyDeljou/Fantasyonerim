@@ -139,11 +139,13 @@ export function Segmented<V extends string>({
   value,
   options,
   onChange,
+  byLabel = false,
 }: {
   label: string;
   value: V;
   options: ReadonlyArray<{ value: V; label: string }>;
   onChange(v: V): void;
+  byLabel?: boolean;
 }) {
   return (
     <div role="tablist" aria-label={label} className="flex gap-1 rounded-2xl bg-surface-2 p-1">
@@ -157,7 +159,9 @@ export function Segmented<V extends string>({
             aria-selected={active}
             onClick={() => onChange(o.value)}
             className={cx(
-              'min-h-11 flex-1 rounded-xl px-3 text-sm font-semibold transition-colors',
+              'min-h-11 min-w-0 rounded-xl px-2 text-center text-sm leading-tight font-semibold transition-colors',
+              // `byLabel`: share the width by label length so a long label doesn't wrap to three lines.
+              byLabel ? 'flex-auto' : 'flex-1',
               active ? 'bg-surface text-ink shadow-card' : 'text-muted hover:text-ink',
             )}
           >

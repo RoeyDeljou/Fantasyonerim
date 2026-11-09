@@ -32,7 +32,7 @@ import {
   TableIcon,
 } from '@/components/icons';
 import { ManagerSheet } from '@/components/lazySheets';
-import { CaptainCard, captainKindLabel } from '@/components/team/CaptainCard';
+import { CaptainCard, useCaptainBadge } from '@/components/team/CaptainCard';
 import { ChipIcon } from '@/components/team/ChipIcon';
 import { FindMyTeam } from '@/components/team/FindMyTeam';
 import { GwSelector } from '@/components/team/TeamParts';
@@ -380,7 +380,7 @@ function Captains({ rows, index }: { rows: readonly RoundupCaptain[]; index: Fpl
   const { t } = useI18n();
   return (
     <section data-testid="roundup-captains">
-      <SectionTitle>{t.liveAction.viewCaptains}</SectionTitle>
+      <SectionTitle>{t.roundup.captainsTitle}</SectionTitle>
       <ol className="flex flex-col gap-2">
         {rankCaptains(rows).map(({ row, rank }) => (
           <RoundupCaptainRow key={row.key} row={row} rank={rank} index={index} />
@@ -401,12 +401,13 @@ function RoundupCaptainRow({
 }) {
   const { t } = useI18n();
   const { player, team } = playerOf(index, row.playerId);
+  const badge = useCaptainBadge(row);
   return (
     <CaptainCard
       rank={rank}
       player={player}
       team={team}
-      kindLabel={captainKindLabel(t, row.kind)}
+      badge={badge}
       label={row.label}
       mine={row.kind === 'mine'}
       multiplier={row.multiplier}

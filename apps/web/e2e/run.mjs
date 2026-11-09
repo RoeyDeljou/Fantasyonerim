@@ -12,7 +12,7 @@
 //
 // Env overrides: E2E_DB_NAME, E2E_DATABASE_URL, E2E_API_PORT, E2E_WEB_PORT, E2E_SKIP_BUILD=1, E2E_SKIP_DB_RESET=1, E2E_HEADED=1,
 // E2E_ONLY_UPDATES=1 (register, then only the app-update journeys), E2E_ONLY_ROUNDUP=1 (register, then only the
-// Gameweek Roundup journeys; E2E_ROUNDUP_SHOTS=<dir> saves their phone screenshots), E2E_DEBUG_DIR=<dir> (screenshot + text of every
+// Gameweek Roundup + Season Captain Battle + captain-tag journeys; E2E_SEASON_SHOTS=<dir> saves the season / tag screenshots; E2E_ROUNDUP_SHOTS=<dir> saves their phone screenshots), E2E_DEBUG_DIR=<dir> (screenshot + text of every
 // open page when a journey fails), E2E_ONLY_TABBAR=1 (register, set the league via the API, then only the tab-bar
 // journeys; E2E_TABBAR_SHOTS=<dir> saves the dark Hebrew Table screenshots). The tab-bar check also runs in Playwright
 // WebKit when its browser is installed (skipped with a log line otherwise).
@@ -724,6 +724,7 @@ async function journeys(browser) {
   }
 
   await roundupJourneys(browser, page);
+  await seasonJourneys(browser, page);
   if (process.env.E2E_ONLY_ROUNDUP) {
     await user.close();
     return;
@@ -1334,7 +1335,7 @@ async function journeys(browser) {
     await admin.getByLabel('League ID של הליגה הקלאסית').fill(DEMO.league);
     await admin.getByRole('button', { name: 'שמירת הליגה' }).click();
     await admin.getByText('Fantasyonerim League').first().waitFor();
-    // Default rows: Dor (linked), Itay (linked), community (player).
+    // Default rows: community + FPL Lad (permanent, hand-picked players), Dor (linked), Itay (linked).
     await openCard(admin, 'settings.battle');
     await admin.getByText('עדיין לא הוגדר קרב').waitFor();
     const teamIds = admin.getByLabel('Team ID של הקבוצה');
@@ -1342,9 +1343,11 @@ async function journeys(browser) {
     await teamIds.nth(0).fill(DEMO.normal);
     await teamIds.nth(1).fill(DEMO.vice);
     await admin.getByText('Fantasyonerim HQ').first().waitFor(); // preview of the linked team
-    await admin.getByRole('button', { name: 'בחירת שחקן' }).click();
-    await admin.getByLabel('חיפוש לפי שם שחקן').fill('a');
-    await admin.locator('dialog[open] ul li button').first().click();
+    for (let i = 0; i < 2; i++) {
+      await admin.getByRole('button', { name: 'בחירת שחקן' }).first().click();
+      await admin.getByLabel('חיפוש לפי שם שחקן').fill('a');
+      await admin.locator('dialog[open] ul li button').first().click();
+    }
     await admin.getByRole('button', { name: 'שמירת קרב הקפטנים' }).click();
     await admin.getByText('נשמר', { exact: true }).first().waitFor();
     // Collapsing is remembered per card on this device, and survives a reload.
@@ -1826,6 +1829,8 @@ async function journeys(browser) {
     await page.getByText('הקפטן שלי').first().waitFor();
     await page.getByText('הקפטן של דור').first().waitFor();
     await page.getByText('קפטן הקהילה').first().waitFor();
+    await page.getByText('הקפטן של FPL Lad').first().waitFor();
+    await page.getByRole('img', { name: 'FPL Lad' }).first().waitFor();
     await noHorizontalScroll(page, 'captain battle');
   });
 
@@ -1849,12 +1854,15 @@ async function journeys(browser) {
 
       await page.route(`${API}/v1/captain-battle`, unpicked);
       await page.goto(`${WEB}/live/?view=captains`);
-      const fan = page.getByTestId('battle-not-picked');
+      const fan = page.getByTestId('battle-not-picked').first();
       await fan.waitFor();
       assert((await fan.textContent())?.includes(label()), `fan sees "${await fan.textContent()}"`);
       assert((await fan.getByRole('link').count()) === 0, 'no "Pick" link for a fan');
       // Entry rows keep their own state (never "not picked yet").
-      assert((await page.getByTestId('battle-not-picked').count()) === 1, 'only the hand-picked row');
+      assert(
+        (await page.getByTestId('battle-not-picked').count()) === 2,
+        'only the two hand-picked rows (community, FPL Lad)',
+      );
       const last = page.locator('ol > li').last();
       assert((await last.getByTestId('battle-not-picked').count()) === 1, 'the unpicked row is sorted last');
       await noHorizontalScroll(page, 'captain battle (not picked)');
@@ -1869,7 +1877,7 @@ async function journeys(browser) {
       await admin.locator('[data-card="settings.battle"][data-open=false]').waitFor();
       await admin.route(`${API}/v1/captain-battle`, unpicked);
       await admin.goto(`${WEB}/live/?view=captains`);
-      const row = admin.getByTestId('battle-not-picked');
+      const row = admin.getByTestId('battle-not-picked').first();
       await row.waitFor();
       assert((await row.textContent())?.includes(label()), 'admin sees the not-picked text');
       const pick = row.getByRole('link', { name: 'לבחירה' });
@@ -3728,6 +3736,18 @@ async function roundupContext(browser, token, mocks, { locale = 'he', theme = 'l
         ? r.continue()
         : r.fulfill(json({ entryId: Number(DEMO.tripleCaptain), page: 1, rank: 3, member: true })),
   );
+  // Season Captain Battle: MOCKED too; `season.body` is what the next request gets (a function → called, a status → error).
+  const season = { body: null, calls: 0, failWith: null };
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/league/season-captains',
+    (r) => {
+      if (r.request().method() === 'OPTIONS') return r.continue();
+      season.calls++;
+      if (season.failWith)
+        return r.fulfill(json({ error: { code: 'bad_request', message: 'boom' } }, season.failWith));
+      return r.fulfill(json(season.body));
+    },
+  );
   const calls = [];
   await ctx.route(
     (u) => u.origin === API && u.pathname === '/v1/league/roundup',
@@ -3741,7 +3761,7 @@ async function roundupContext(browser, token, mocks, { locale = 'he', theme = 'l
       );
     },
   );
-  return { ctx, calls };
+  return { ctx, calls, season };
 }
 
 // ---------- the tab bar never moves ----------
@@ -4068,6 +4088,454 @@ async function roundupJourneys(browser, userPage) {
           await sp.locator('[data-testid=roundup][data-status=ready]').waitFor();
           await sp.waitForTimeout(300);
           await sp.screenshot({ path: `${dir}/roundup-${locale}-${theme}-gw9.png`, fullPage: true });
+          await c.close();
+        }
+    });
+  }
+}
+
+// ---------- Mini League tab, Season Captain Battle, captain tags ----------
+// GET /v1/league/season-captains and the captain-battle endpoints (GET /v1/captain-battle, GET/PUT /v1/admin/captain-battle) are
+// MOCKED with page.route (the real ones are covered by apps/api tests), so the UI is checked against the contract alone.
+
+function seasonMock(status, me, { rows = null, throughEvent = 10 } = {}) {
+  const team = (i, points) => ({
+    kind: 'manager',
+    key: String(3000000 + i),
+    entryId: 3000000 + i,
+    name: `קבוצה ${i}`,
+    subtitle: `Manager ${i}`,
+    tag: null,
+    points,
+    gameweeks: 10,
+  });
+  const base = Array.from({ length: 16 }, (_, i) => team(i + 1, 400 - i * 10));
+  base[12] = { ...base[12], entryId: me, key: String(me), name: 'E2E United', subtitle: 'E2E Tester' };
+  // 410 community, 400 FPL Lad: ties with team 1 (400) so ranks run 1, 2, 2, 4…
+  const special = [
+    {
+      kind: 'community',
+      key: 'community',
+      entryId: null,
+      name: 'קפטן הקהילה',
+      subtitle: null,
+      tag: null,
+      points: 410,
+      gameweeks: 10,
+    },
+    {
+      kind: 'fpl_lad',
+      key: 'fpl_lad',
+      entryId: null,
+      name: 'הקפטן של FPL Lad',
+      subtitle: null,
+      tag: null,
+      points: 400,
+      gameweeks: 9,
+    },
+  ];
+  const sorted = [...special, ...base].sort((a, b) => b.points - a.points);
+  const ranked = sorted.map((r) => ({ ...r, rank: 1 + sorted.filter((o) => o.points > r.points).length }));
+  return {
+    status,
+    league: status === 'unavailable' ? null : { id: Number(DEMO.league), name: 'ליגת פנטזיונרים' },
+    throughEvent: status === 'ready' ? throughEvent : null,
+    rows: status === 'ready' ? (rows ?? ranked) : [],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/** A GET /v1/captain-battle body from the entries an admin saved (PUT /v1/admin/captain-battle). */
+function battleMock(entries, playerIds, me) {
+  const rows = entries.map((e, i) => ({
+    key: `row${i}`,
+    label: e.label,
+    kind: e.kind,
+    tag: e.tag ?? null,
+    source: e.source,
+    entryId: e.source === 'entry' ? e.entryId : null,
+    playerId: playerIds[(i * 7) % playerIds.length],
+    captainPoints: 30 - i * 4,
+    multiplier: 2,
+    live: null,
+  }));
+  rows.push({
+    key: 'me',
+    label: 'הקפטן שלי',
+    kind: 'mine',
+    tag: null,
+    source: 'mine',
+    entryId: me,
+    playerId: playerIds[3],
+    captainPoints: 12,
+    multiplier: 2,
+    live: null,
+  });
+  return { event: 10, rows, updatedAt: new Date().toISOString() };
+}
+
+async function seasonJourneys(browser, userPage) {
+  const token = await userPage.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+  const me = Number(DEMO.tripleCaptain);
+  const bootstrap = await (await globalThis.fetch(`${API}/v1/fpl/bootstrap`)).json();
+  const playerIds = bootstrap.players.map((p) => p.id);
+  const shots = process.env.E2E_SEASON_SHOTS;
+
+  const { ctx, season } = await roundupContext(browser, token, roundupMocks(playerIds, me));
+  const p = await ctx.newPage();
+  watch(p, 'season');
+  season.body = seasonMock('ready', me);
+  const tabs = p.getByRole('tablist', { name: 'תצוגת הליגה' });
+
+  await step(
+    'Mini League: renamed tab + header, three sub-tabs that fit at 390 px, season is lazy',
+    async () => {
+      await p.goto(`${WEB}/table/`);
+      await tabs.waitFor();
+      await p
+        .getByRole('navigation', { name: 'ניווט ראשי' })
+        .getByRole('link', { name: 'מיני ליג' })
+        .waitFor();
+      assert(
+        (await p.locator('header').first().innerText()).includes('מיני ליג'),
+        'screen header title is "מיני ליג"',
+      );
+      const names = await tabs.getByRole('tab').allInnerTexts();
+      assert(names.join('|') === 'טבלה|סיכום מחזור|קרב קפטנים עונתי', `sub-tabs: ${names.join('|')}`);
+      const fits = await tabs.evaluate((el) => el.scrollWidth <= el.clientWidth);
+      assert(fits, 'the three-way segmented control fits without scrolling');
+      await noHorizontalScroll(p, 'mini league tabs');
+      assert(season.calls === 0, 'the season leaderboard is not fetched while the Table sub-tab is open');
+    },
+  );
+
+  const root = p.getByTestId('season-captains');
+  await step(
+    'Season Captain Battle (ready): ranking by total points, ties, special rows, my row',
+    async () => {
+      await tabs.getByRole('tab', { name: 'קרב קפטנים עונתי' }).click();
+      await p.waitForURL('**/table/?view=season');
+      await root.waitFor();
+      await p.getByRole('heading', { name: 'קרב קפטנים עונתי' }).waitFor();
+      assert(
+        (await p.getByTestId('season-subtitle').innerText()).includes('עד מחזור 10'),
+        'subtitle names the GW',
+      );
+      await p.getByText('לא לפי מספר ניצחונות').waitFor();
+      const rows = p.locator('[data-testid=season-list] > li');
+      assert((await rows.count()) === 10, 'top 10 shown');
+      const ranks = await rows.evaluateAll((els) =>
+        els.map((el) => el.querySelector('span')?.textContent?.trim()),
+      );
+      assert(ranks.slice(0, 4).join(',') === '1,2,2,4', `ties share a rank: ${ranks.slice(0, 4)}`);
+      const special = p.locator('[data-testid=season-list] > li[data-kind=community]');
+      await special.getByText('קהילה', { exact: true }).waitFor();
+      await special.getByText('קפטן הקהילה').waitFor();
+      const lad = p.locator('[data-testid=season-list] > li[data-kind=fpl_lad]');
+      const logo = lad.getByRole('img', { name: 'FPL Lad' });
+      await logo.waitFor();
+      assert(
+        (await lad.getByTestId('captain-tag').count()) === 0,
+        'FPL Lad without a custom tag shows the logo alone',
+      );
+      assert((await lad.innerText()).includes('9 מחזורים'), 'gameweeks counted shown');
+      await p.getByTestId('season-show-all').click();
+      assert((await rows.count()) === 18, 'show all expands to every row');
+      const mine = p.locator(`[data-testid=season-list] > li[data-entry="${me}"]`);
+      assert((await mine.getAttribute('data-mine')) === 'true', 'my team is highlighted');
+      assert((await mine.innerText()).includes('E2E United'), 'my row shows the team name');
+      await noHorizontalScroll(p, 'season ready');
+    },
+  );
+
+  await step('Season: find-my-team jumps to my row below the fold; deep link works', async () => {
+    await p.goto(`${WEB}/table/?view=season`);
+    await root.waitFor();
+    assert(
+      (await p.locator(`[data-testid=season-list] > li[data-entry="${me}"]`).count()) === 0,
+      'collapsed',
+    );
+    await p.getByTestId('find-my-team').click();
+    await p.locator(`[data-testid=season-list] > li[data-entry="${me}"]`).waitFor();
+    await p.waitForFunction((id) => {
+      const li = document.querySelector(`[data-testid=season-list] > li[data-entry="${id}"]`);
+      const sc = document.querySelector('[data-app-scroller]');
+      if (!li || !sc) return false;
+      const r = li.getBoundingClientRect();
+      const c = sc.getBoundingClientRect();
+      return r.top >= c.top && r.bottom <= c.bottom;
+    }, String(me));
+  });
+
+  await step('Season: building (retry), unavailable, empty and error states', async () => {
+    season.body = seasonMock('building', me);
+    await p.goto(`${WEB}/table/?view=season`);
+    await p.getByText('הנתונים בהכנה').waitFor();
+    await p.getByText('נסו שוב בעוד כמה דקות').waitFor();
+    season.body = seasonMock('ready', me);
+    await p.getByRole('button', { name: 'נסו שוב' }).click();
+    await root.waitFor();
+    season.body = seasonMock('unavailable', me);
+    await p.goto(`${WEB}/table/?view=season`);
+    await p.getByText('הליגה עוד לא הוגדרה').waitFor();
+    season.body = seasonMock('ready', me, { rows: [] });
+    await p.goto(`${WEB}/table/?view=season`);
+    await p.getByText('עוד אין דירוג').waitFor();
+    // Error state: a fresh device (no cached copy), not watched for console errors (the 500 is on purpose).
+    const { ctx: ectx, season: eseason } = await roundupContext(browser, token, roundupMocks(playerIds, me));
+    eseason.failWith = 400;
+    const ep = await ectx.newPage();
+    await ep.goto(`${WEB}/table/?view=season`);
+    await ep.getByRole('alert').getByRole('button', { name: 'נסו שוב' }).waitFor();
+    await noHorizontalScroll(ep, 'season error');
+    eseason.failWith = null;
+    eseason.body = seasonMock('ready', me);
+    await ep.getByRole('alert').getByRole('button', { name: 'נסו שוב' }).click();
+    await ep.getByTestId('season-captains').waitFor();
+    await ectx.close();
+  });
+
+  await step('Season: the leaderboard is kept on the device (public, no viewer key)', async () => {
+    const keys = await persistedKeys(p);
+    assert(keys.includes('league,season-captains'), `persisted: ${keys.join(' ')}`);
+  });
+  await ctx.close();
+
+  // ----- admin: permanent rows, tag field, custom captain with a tag; live battle shows it -----
+  const saved = { body: null, puts: [] };
+  const routeAdminBattle = (c) =>
+    c.route(
+      (u) => u.origin === API && u.pathname === '/v1/admin/captain-battle',
+      (r) => {
+        const m = r.request().method();
+        if (m === 'OPTIONS') return r.continue();
+        if (m === 'PUT') {
+          const body = r.request().postDataJSON();
+          saved.puts.push(body);
+          saved.body = body;
+          return r.fulfill(json(body));
+        }
+        return r.fulfill(json(saved.body));
+      },
+    );
+  const adminCtx = await newContext(browser);
+  await routeAdminBattle(adminCtx);
+  const a = await adminCtx.newPage();
+  watch(a, 'season-admin');
+  let adminToken = null;
+  await step(
+    'Admin editor: pinned permanent rows, per-row tag, custom captain saved with its tag',
+    async () => {
+      await a.goto(`${WEB}/admin/`);
+      await a.waitForURL('**/admin/login/');
+      await a.getByLabel('שם משתמש').fill(ADMIN.username);
+      await a.getByLabel('סיסמה').fill(ADMIN.password);
+      await a.getByRole('button', { name: 'כניסה' }).click();
+      await a.waitForURL('**/admin/');
+      adminToken = await a.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+      const card = await openCard(a, 'settings.battle');
+      const rows = card.locator('li[data-battle-kind]');
+      assert((await rows.count()) === 4, 'defaults: community, FPL Lad, Dor, Itay');
+      const kinds = await rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-battle-kind')));
+      assert(kinds.join(',') === 'community,fpl_lad,custom,custom', `row order: ${kinds}`);
+      assert((await card.getByRole('tab', { name: 'רגיל' }).count()) === 0, 'no community/standard switch');
+      // Permanent rows: default labels, no move / delete controls.
+      for (const k of ['community', 'fpl_lad']) {
+        const row = card.locator(`li[data-battle-kind=${k}]`);
+        assert((await row.getByRole('button', { name: 'הזזה למעלה' }).count()) === 0, `${k}: not movable`);
+        assert((await row.getByRole('button', { name: 'הסרה' }).count()) === 0, `${k}: not deletable`);
+      }
+      assert(
+        (await card.locator('li[data-battle-kind=community] input').first().inputValue()) === 'קפטן הקהילה',
+        'community default label',
+      );
+      assert(
+        (await card.locator('li[data-battle-kind=fpl_lad] input').first().inputValue()) ===
+          'הקפטן של FPL Lad',
+        'FPL Lad default label',
+      );
+      // Every row has a tag field whose placeholder shows the default.
+      const tags = card.getByTestId('battle-tag');
+      assert((await tags.count()) === 4, 'a tag input per row');
+      assert(
+        (await tags.nth(0).getAttribute('placeholder')) === 'ברירת מחדל: קהילה',
+        'community default tag placeholder',
+      );
+      assert(
+        ((await tags.nth(2).getAttribute('placeholder')) ?? '').includes('קבוצת FPL'),
+        'linked-team default tag placeholder',
+      );
+      assert((await tags.nth(0).getAttribute('maxlength')) === '24', 'tag max length 24');
+      // Fill the rest: a player for the community row only (FPL Lad stays "not picked yet"), Team IDs for Dor / Itay.
+      const teamIds = card.getByLabel('Team ID של הקבוצה');
+      await teamIds.nth(0).fill(DEMO.normal);
+      await teamIds.nth(1).fill(DEMO.vice);
+      for (let i = 0; i < 1; i++) {
+        await card.getByRole('button', { name: 'בחירת שחקן' }).first().click();
+        await a.getByLabel('חיפוש לפי שם שחקן').fill('a');
+        await a.locator('dialog[open] ul li button').first().click();
+      }
+      // A new captain is `custom`, with its own tag (not "קהילה").
+      await card.getByRole('button', { name: 'הוספת קפטן' }).click();
+      assert((await rows.count()) === 5, 'custom row added');
+      const added = rows.nth(4);
+      assert((await added.getAttribute('data-battle-kind')) === 'custom', 'added row is custom');
+      await added.locator('input').first().fill('אלופת הליגה');
+      await added.getByLabel('Team ID של הקבוצה').fill(DEMO.tripleCaptain);
+      await added.getByTestId('battle-tag').fill('VIP');
+      await card.getByRole('button', { name: 'שמירת קרב הקפטנים' }).click();
+      await a.getByText('נשמר', { exact: true }).first().waitFor();
+      const put = saved.puts.at(-1);
+      assert(put.entries.length === 5, `saved ${put.entries.length} rows`);
+      assert(
+        put.entries.map((e) => e.kind).join(',') === 'community,fpl_lad,custom,custom,custom',
+        `saved kinds: ${put.entries.map((e) => e.kind)}`,
+      );
+      assert(put.entries[4].tag === 'VIP' && put.entries[0].tag === null, 'tag saved; empty → null');
+      assert(put.entries[1].label === 'הקפטן של FPL Lad', 'FPL Lad row sent');
+      assert(put.entries[1].playerId === null, 'a permanent row saves without a player (playerId null)');
+      assert(put.entries[0].playerId !== null, 'the picked community player is sent');
+      // Reload: the saved tag is back in the editor.
+      await a.reload();
+      const card2 = await openCard(a, 'settings.battle');
+      await card2.getByTestId('battle-tag').nth(4).waitFor();
+      assert((await card2.getByTestId('battle-tag').nth(4).inputValue()) === 'VIP', 'tag survives a reload');
+      assert((await card2.locator('li[data-battle-kind]').count()) === 5, 'rows survive a reload');
+      await noHorizontalScroll(a, 'admin captain editor');
+      // A hand-added community duplicate is impossible: there is no kind switch to make one.
+    },
+  );
+  if (shots) {
+    await step('Admin editor + captain screenshots (he/en × light/dark)', async () => {
+      for (const locale of ['he', 'en'])
+        for (const theme of ['light', 'dark']) {
+          const c = await newContext(browser, { colorScheme: theme });
+          await c.addInitScript(
+            ([tok, loc, th]) => {
+              globalThis.localStorage.setItem('fant.token', tok);
+              globalThis.localStorage.setItem('fant.locale', loc);
+              globalThis.localStorage.setItem('fant.theme', th);
+            },
+            [adminToken, locale, theme],
+          );
+          await routeAdminBattle(c);
+          const sp = await c.newPage();
+          watch(sp, `season-admin-${locale}-${theme}`);
+          await sp.goto(`${WEB}/admin/?card=battle`);
+          const card = await openCard(sp, 'settings.battle');
+          await card.locator('li[data-battle-kind]').nth(4).waitFor();
+          await sp.waitForTimeout(400);
+          await sp.screenshot({ path: `${shots}/admin-editor-${locale}-${theme}.png`, fullPage: true });
+          await c.close();
+        }
+    });
+  }
+  await adminCtx.close();
+
+  // ----- the live battle + roundup show the tags and the FPL Lad logo -----
+  const battle = battleMock(saved.body.entries, playerIds, me);
+  const withBattle = async (opts) => {
+    const r = await roundupContext(browser, token, roundupMocks(playerIds, me), opts);
+    await r.ctx.route(
+      (u) => u.origin === API && u.pathname === '/v1/captain-battle',
+      (route) => (route.request().method() === 'OPTIONS' ? route.continue() : route.fulfill(json(battle))),
+    );
+    r.season.body = seasonMock('ready', me);
+    return r;
+  };
+  const { ctx: lctx } = await withBattle();
+  const lp = await lctx.newPage();
+  watch(lp, 'season-live');
+  await step(
+    'Live Captain Battle: renamed; tags shown (VIP not "קהילה"); FPL Lad shows its logo',
+    async () => {
+      await lp.goto(`${WEB}/live/`);
+      await lp.getByRole('tab', { name: 'קרב קפטנים לייב' }).click();
+      await lp.waitForURL('**/live/?view=captains');
+      await lp.getByRole('heading', { name: 'קרב קפטנים לייב' }).waitFor();
+      const list = lp.locator('main ol > li');
+      await list.first().waitFor();
+      const vip = list.filter({ hasText: 'אלופת הליגה' });
+      assert((await vip.getByTestId('captain-tag').innerText()) === 'VIP', 'custom captain shows its tag');
+      assert(!(await vip.innerText()).includes('קהילה'), 'custom captain is not tagged "קהילה"');
+      const comm = list.filter({ hasText: 'קפטן הקהילה' });
+      assert((await comm.getByTestId('captain-tag').innerText()) === 'קהילה', 'community default tag');
+      const lad = list.filter({ hasText: 'הקפטן של FPL Lad' });
+      const img = lad.getByRole('img', { name: 'FPL Lad' });
+      await img.waitFor();
+      const dims = await img.evaluate((el) => ({
+        w: el.getAttribute('width'),
+        h: el.getAttribute('height'),
+        ok: el.complete && el.naturalWidth > 0,
+        shownH: el.getBoundingClientRect().height,
+        chip: getComputedStyle(el.parentElement).backgroundColor,
+      }));
+      assert(dims.ok, 'the logo loaded');
+      assert(dims.w === '58' && dims.h === '14', `explicit width/height: ${dims.w}x${dims.h}`);
+      assert(Math.round(dims.shownH) === 14, `logo is ~14 px high (${dims.shownH})`);
+      assert(dims.chip !== 'rgba(0, 0, 0, 0)', 'the logo sits on a light chip');
+      assert((await lad.getByTestId('captain-tag').count()) === 0, 'default FPL Lad tag is the logo alone');
+      const linked = list.filter({ hasText: 'הקפטן של דור' });
+      assert(
+        (await linked.getByTestId('captain-tag').innerText()) === 'קבוצת FPL',
+        'linked-team default tag',
+      );
+      await noHorizontalScroll(lp, 'live captain battle tags');
+    },
+  );
+  await step('Live Captain Battle: an FPL Lad custom tag shows the logo followed by the text', async () => {
+    const tagged = {
+      ...battle,
+      rows: battle.rows.map((r) => (r.kind === 'fpl_lad' ? { ...r, tag: 'Legend' } : r)),
+    };
+    await lctx.route(
+      (u) => u.origin === API && u.pathname === '/v1/captain-battle',
+      (route) => (route.request().method() === 'OPTIONS' ? route.continue() : route.fulfill(json(tagged))),
+    );
+    await lp.goto(`${WEB}/live/?view=captains`);
+    const lad = lp.locator('main ol > li').filter({ hasText: 'הקפטן של FPL Lad' });
+    await lad.getByTestId('captain-tag').waitFor();
+    const badge = lad.getByTestId('fpl-lad-logo');
+    const [b1, b2] = await Promise.all([badge.boundingBox(), lad.getByTestId('captain-tag').boundingBox()]);
+    assert(b1 && b2 && Math.abs(b1.y - b2.y) < 12, 'logo and tag text on the same line');
+    assert(b1 && b2 && Math.abs(b1.x - b2.x) > 10, 'logo and text side by side');
+  });
+  await lctx.close();
+
+  await step(
+    'Live tab: sub-tab is "קרב קפטנים לייב"; GW Roundup keeps its own captain section title',
+    async () => {
+      const { ctx: c } = await withBattle();
+      const rp = await c.newPage();
+      watch(rp, 'season-roundup');
+      await rp.goto(`${WEB}/live/`);
+      await rp.getByRole('tab', { name: 'קרב קפטנים לייב' }).waitFor();
+      await rp.goto(`${WEB}/table/?view=roundup`);
+      await rp.getByTestId('roundup-captains').waitFor();
+      await rp.getByTestId('roundup-captains').getByRole('heading', { name: 'קרב הקפטנים' }).waitFor();
+      await c.close();
+    },
+  );
+
+  if (shots) {
+    await step('Season / live-battle screenshots (he/en × light/dark, 390×844)', async () => {
+      for (const locale of ['he', 'en'])
+        for (const theme of ['light', 'dark']) {
+          const { ctx: c } = await withBattle({ locale, theme });
+          const sp = await c.newPage();
+          watch(sp, `season-shots-${locale}-${theme}`);
+          await sp.goto(`${WEB}/table/?view=season`);
+          await sp.getByTestId('season-captains').waitFor();
+          await sp.waitForTimeout(500);
+          await noHorizontalScroll(sp, `season ${locale} ${theme}`);
+          await sp.screenshot({ path: `${shots}/season-${locale}-${theme}.png` });
+          await sp.getByTestId('season-show-all').click();
+          await sp.screenshot({ path: `${shots}/season-${locale}-${theme}-all.png`, fullPage: true });
+          await sp.goto(`${WEB}/live/?view=captains`);
+          await sp.locator('main ol > li').first().waitFor();
+          await sp.getByRole('img', { name: 'FPL Lad' }).first().waitFor();
+          await sp.waitForTimeout(400);
+          await sp.screenshot({ path: `${shots}/live-battle-${locale}-${theme}.png` });
           await c.close();
         }
     });

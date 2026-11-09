@@ -133,10 +133,10 @@ describe('A. public routes never resolve the session', () => {
     const feed = CommunityPageSchema.parse((await get('/v1/community/posts', fan.token)).json());
     expect(feed.items[0]).toMatchObject({ id: postId, mine: true, likedByMe: true });
     const forFan = CaptainBattleSchema.parse((await get('/v1/captain-battle', fan.token)).json());
-    expect(forFan.rows.map((r) => r.kind)).toEqual(['mine', 'custom']);
+    expect(forFan.rows.map((r) => r.kind)).toEqual(['mine', 'custom', 'community', 'fpl_lad']);
     expect(sessionReads()).toBe(1); // resolved once, through the batched + cached path
     const anon = CaptainBattleSchema.parse((await get('/v1/captain-battle')).json());
-    expect(anon.rows.map((r) => r.kind)).toEqual(['custom']);
+    expect(anon.rows.map((r) => r.kind)).toEqual(['custom', 'community', 'fpl_lad']);
   });
 });
 

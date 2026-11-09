@@ -53,6 +53,7 @@ describe('query cache persistence', () => {
     expect(isPersistedKey(['league', 'roundup', 'guest', 10])).toBe(true);
     expect(isPersistedKey(['league', 'roundup', 'pending', 'latest'])).toBe(false);
     expect(isPersistedKey(['league', 'roundup'])).toBe(false);
+    expect(isPersistedKey(['league', 'season-captains'])).toBe(true);
   });
 
   it('keeps only the first page of an infinite feed and restores its `undefined` cursor', () => {

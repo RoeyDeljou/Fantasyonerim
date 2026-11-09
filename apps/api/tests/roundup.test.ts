@@ -675,7 +675,15 @@ describe('gameweek_roundup job', () => {
           event: 1,
           entries: {
             create: [
-              { order: 0, label: 'Community captain', kind: 'COMMUNITY', source: 'PLAYER', playerId: 1 },
+              {
+                order: 0,
+                label: 'Community captain',
+                kind: 'COMMUNITY',
+                tag: 'Fans',
+                source: 'PLAYER',
+                playerId: 1,
+              },
+              { order: 4, label: 'FPL Lad', kind: 'FPL_LAD', source: 'PLAYER', playerId: 3 },
               { order: 1, label: "Producer's pick", kind: 'CUSTOM', source: 'PLAYER', playerId: 2 },
               { order: 2, label: "Itay's captain", kind: 'CUSTOM', source: 'ENTRY', entryId: 12 },
               { order: 3, label: "Dor's captain", kind: 'CUSTOM', source: 'ENTRY', entryId: 77 },
@@ -686,11 +694,14 @@ describe('gameweek_roundup job', () => {
       await buildAll();
 
       const gw1 = (await getRoundup('?event=1')).body;
-      expect(gw1.captains.map((c) => [c.label, c.kind, c.playerId, c.multiplier, c.captainPoints])).toEqual([
-        ["Dor's captain", 'custom', 2, 3, 39],
-        ["Producer's pick", 'custom', 2, 2, 26],
-        ["Itay's captain", 'custom', 4, 2, 18],
-        ['Community captain', 'community', 1, 2, 12],
+      expect(
+        gw1.captains.map((c) => [c.label, c.kind, c.tag, c.playerId, c.multiplier, c.captainPoints]),
+      ).toEqual([
+        ["Dor's captain", 'custom', null, 2, 3, 39],
+        ["Producer's pick", 'custom', null, 2, 2, 26],
+        ["Itay's captain", 'custom', null, 4, 2, 18],
+        ['Community captain', 'community', 'Fans', 1, 2, 12],
+        ['FPL Lad', 'fpl_lad', null, 3, 2, 4],
       ]);
 
       // GW2 has no battle of its own: the GW1 battle's team rows carry over (as in the live battle), the
@@ -768,6 +779,27 @@ describe('GET /v1/league/roundup', () => {
         },
       });
       await buildAll();
+    });
+
+    it('rows stored before tags / fpl_lad existed (no `tag` key) still parse, with a null tag', async () => {
+      const legacy = [
+        {
+          key: 'a',
+          label: 'Community captain',
+          kind: 'community',
+          playerId: 4,
+          multiplier: 2,
+          captainPoints: 18,
+        },
+      ];
+      await prisma.gameweekRoundup.updateMany({
+        where: { event: 2 },
+        data: { captains: legacy, buildVersion: 2 },
+      });
+      app.hot.cache.invalidate('league:roundup:');
+      const { body } = await getRoundup('?event=2');
+      expect(body.status).toBe('ready');
+      expect(body.captains.map((c) => [c.kind, c.tag])).toEqual([['community', null]]);
     });
 
     it('guests get no mine row and a public, short-lived response', async () => {

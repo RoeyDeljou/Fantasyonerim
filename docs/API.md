@@ -28,6 +28,7 @@ Legend: 🌐 public · 👤 signed-in user · 🛡 admin
 | GET     | `/v1/league/live`                | 🌐                      | `?page=`                                | `LiveLeague`                                                                                  |
 | GET     | `/v1/league/position`            | 👤                      | –                                       | `LeaguePosition` (find my team, below) · 404 when no league set                               |
 | GET     | `/v1/captain-battle`             | 🌐 (👤 adds "mine" row) | –                                       | `CaptainBattle`                                                                               |
+| GET     | `/v1/league/season-captains`     | 🌐                      | –                                       | `SeasonCaptains` (season Captain Battle leaderboard, below)                                   |
 | GET     | `/v1/league/roundup`             | 🌐 (👤 adds "mine" row) | `?event=` (default: latest official GW) | `GameweekRoundup` (Gameweek Roundup, below) · 400 event outside 1…current GW                  |
 | GET/PUT | `/v1/admin/settings`             | 🛡                       | `AdminSettings`                         | `AdminSettings`                                                                               |
 | GET/PUT | `/v1/admin/captain-battle`       | 🛡                       | `CaptainBattleConfig`                   | `CaptainBattleConfig` (GET → null when unset)                                                 |
@@ -44,6 +45,22 @@ while `live` or `finished_provisional`, `public, max-age=60, stale-while-revalid
 battle was last saved for: team-linked rows (`source: 'entry'`) read that GW's captain with no admin action. A battle
 saved for a later GW is shown for that GW. Hand-picked rows (`source: 'player'`) saved for an earlier GW come back
 with `playerId: null`, `live: null` ("not picked yet for GW n", sorted last) until the admin picks again.
+
+**Permanent captains and tags.** `community` and `fpl_lad` are the two permanent special captains: one row each per
+battle (`CaptainBattleConfig` refuses duplicates). Every row has `kind` (`community` | `fpl_lad` | `custom`, plus
+`mine` for the viewer) and an admin-chosen `tag` (badge text, trimmed, ≤ 24 chars; empty = `null` = the client's
+default for the kind/source). `GET /v1/captain-battle` always lists both permanent captains: when the latest saved
+battle has none (it predates them, or the admin deleted the row) a virtual row is added (`key` = the kind,
+default label `קפטן הקהילה` / `הקפטן של FPL Lad`, `playerId: null`, `live: null`, sorted last). The viewer's `mine` row
+has `tag: null`. A virtual row is never stored: persisting a permanent row needs a player (DB check), so the admin
+console sees only the rows it saved. With no battle saved at all the board stays empty.
+
+**Boot-time upgrade** (`upgradeCaptainKinds`, `src/league/captains.ts`, runs after the server listens): in every saved
+battle an entry labelled like `/fpl\s*-?\s*lad/i` whose kind isn't `FPL_LAD` becomes `FPL_LAD` (production had it as
+`COMMUNITY`), and of duplicates of a permanent kind the first by `order` stays, the rest become `CUSTOM`. Idempotent.
+It is code, not a migration, because a migration adds the `FPL_LAD` enum value in a transaction that cannot use it, and
+the previous release (still serving during a Render deploy) cannot read that value: nothing writes it until the new
+release is up.
 
 **Find my team** (`/v1/league/position`). `page` is the standings page (50 per page) that holds the team, and the
 same `page` works for `/v1/league/live`: FplService builds live page N from the managers of standings page N and
@@ -208,10 +225,31 @@ total = Σ (GW points − hits) from the league's `startEvent`, ranked by total 
 the league average are net of hits in both cases.
 
 **Builder version** (`GameweekRoundup.buildVersion`, `ROUNDUP_BUILD_VERSION` in `apps/api/src/league/roundup.ts`,
-currently 2; rows stored before the column existed are 1). A stored row of an older version counts as needing a
+currently 3; rows stored before the column existed are 1). A stored row of an older version counts as needing a
 rebuild for any GW, exactly like a missing one: newest first, within the same per-run budget. The rebuilt row
 replaces the old one atomically (delete of the older-version row + create, in one transaction; a current-version row
-is never replaced) and the route's cached copy of that GW is dropped. Until then the old row keeps being served (no
+is never replaced) and the route's cached copy of that GW is dropped. Version 3 = captain rows carry `tag` and the
+`fpl_lad` kind; older rows have no `tag` key (parsed as `null`) and the FPL Lad captain as `community`. Until then the old row keeps being served (no
 `building` gap). Code from before versioning never deletes or overwrites a row, so anything it writes during a
 deploy (as version 1) is healed by the next run. **Changing a roundup rule that must reach stored roundups = bump
 `ROUNDUP_BUILD_VERSION`.**
+
+## Season Captain Battle (קרב קפטנים עונתי)
+
+`GET /v1/league/season-captains` (public) ranks the configured league's teams **and** the two permanent special
+captains (community, FPL Lad) by **total captain points** over the season, not by GW wins. Computed only from the
+stored `GameweekRoundup` rows of the configured league (no FPL calls); rows of another league are ignored, rows that no
+longer parse are skipped.
+
+- A team's GW captain points = base points of its table row's `captainPlayerId` (the stored `captainPoints` map) × 3
+  when `chip === '3xc'`, else × 2. A row without a captain adds 0 and that GW is not in `gameweeks`.
+- `community` / `fpl_lad`: the sum of `captainPoints` of the stored captain rows of that kind (`name` / `tag` = the
+  latest label / tag; `gameweeks` = GWs where the row had a player; left out when that is 0). Hand-picked rows only
+  count in the GW the battle was saved for (see Gameweek Roundup), so a captain nobody picked for a GW scores 0 there.
+- `rank`: competition ranking over `points` desc, then `name` (1, 2, 2, 4). `throughEvent` = highest GW included.
+- `status`: `unavailable` (no league), `building` (no usable stored roundup yet), else `ready`.
+- Rows still at an older builder version are used as-is until the job replaces them. Version 1–2 rows keep the FPL
+  Lad captain as a `community` row: those are read as `fpl_lad` when the label matches `/fpl\s*-?\s*lad/i`; their tags
+  are `null` until rebuilt.
+- Caching: one shared body per minute (hot cache, also dropped when the job stores a roundup or the league changes),
+  `public, max-age=60, stale-while-revalidate=120`, `Vary: Accept-Encoding`, ETag. Nothing viewer-specific.

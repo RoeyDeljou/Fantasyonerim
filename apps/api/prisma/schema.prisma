@@ -20,9 +20,12 @@ enum CaptainBattleEntrySource {
   ENTRY
 }
 
+/// COMMUNITY and FPL_LAD are the two permanent special captains (one row each per battle); the rest are CUSTOM.
+/// FPL_LAD was added in 20261110120000; rows only get it from the boot-time upgrader / admin saves (src/league/captains.ts).
 enum CaptainBattleEntryKind {
   COMMUNITY
   CUSTOM
+  FPL_LAD
 }
 
 model User {
@@ -125,6 +128,8 @@ model CaptainBattleEntry {
   order    Int
   label    String
   kind     CaptainBattleEntryKind
+  /// Admin-chosen badge text (≤ 24 chars, trimmed); null = the client's default for the kind/source.
+  tag      String?
   /// PLAYER: hand-picked `playerId`. ENTRY: linked FPL team `entryId` (captain read from its picks).
   /// DB CHECK "CaptainBattleEntry_source_target_check" enforces exactly one of them per source.
   source   CaptainBattleEntrySource @default(PLAYER)

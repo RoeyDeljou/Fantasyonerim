@@ -441,7 +441,8 @@ export function useSeasonCaptains(enabled: boolean) {
     queryKey: qk.seasonCaptains,
     queryFn: enabled ? ({ signal }) => api.leagueSeasonCaptains({ signal }) : skipToken,
     staleTime: (q) => (q.state.data?.status === 'ready' ? 10 * 60_000 : 30_000),
-    refetchInterval: (q) => (q.state.data?.status === 'building' ? jittered(ROUNDUP_BUILDING_POLL_MS) : false),
+    refetchInterval: (q) =>
+      q.state.data?.status === 'building' ? jittered(ROUNDUP_BUILDING_POLL_MS) : false,
     refetchIntervalInBackground: false,
   });
 }

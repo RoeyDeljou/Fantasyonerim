@@ -152,7 +152,7 @@
     --pitch-ink: #f6f4f5;
     --bench: #1b0d27;
     --chip-label: rgb(21 10 31 / 0.88);
-  --logo-chip: #ffffff;
+    --logo-chip: #ffffff;
     --theme-color: #150a1f;
     --story-ring-seen: #5a4370;
     --src-podcast: #8b5cf6; /* brighter than the purple surface; white glyph 4.2:1 */

@@ -11,6 +11,7 @@ import type { InfiniteData } from '@tanstack/react-query';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { rankMove } from '@/lib/roundup';
 import { REFRESH_SCOPES } from '@/lib/refresh';
+import { scrollAppTo } from '@/lib/scroller';
 import { AppShell, TableShellSkeleton } from '@/components/AppShell';
 import { ArrowDownIcon, ArrowUpIcon, ClockIcon, DotIcon, TableIcon } from '@/components/icons';
 import { ChipIcon } from '@/components/team/ChipIcon';
@@ -75,7 +76,7 @@ export function NoLeague() {
   );
 }
 
-type View = 'table' | 'roundup';
+type View = 'table' | 'roundup' | 'season';
 
 /**
  * The Gameweek Roundup is its own chunk (screens/Roundup.tsx): fans opening the Table don't download it, and it is
@@ -87,23 +88,38 @@ const RoundupView = lazyWhenOpen(
   <SkeletonList rows={8} />,
 );
 
-/** League tab: the official table (default) and the Gameweek Roundup (`?view=roundup`), like Live's sub-tabs. */
+/** Season Captain Battle: its own chunk too (screens/SeasonCaptains.tsx), same loading story as the roundup. */
+const SeasonView = lazyWhenOpen(
+  () => import('./SeasonCaptains').then((m) => m.SeasonView),
+  () => true,
+  <SkeletonList rows={8} />,
+);
+
+/**
+ * Mini League tab: the official table (default), the Gameweek Roundup (`?view=roundup`) and the Season Captain
+ * Battle (`?view=season`), like Live's sub-tabs.
+ */
 function TableInner() {
   const { t } = useI18n();
   const [viewParam, setView] = useQueryParam('view');
-  const view: View = viewParam === 'roundup' ? 'roundup' : 'table';
+  const view: View = viewParam === 'roundup' || viewParam === 'season' ? viewParam : 'table';
   return (
     <div className="flex flex-col gap-3">
       <Segmented<View>
         label={t.roundup.viewsLabel}
+        byLabel
         value={view}
-        onChange={(v) => setView(v === 'roundup' ? 'roundup' : null)}
+        onChange={(v) => {
+          setView(v === 'table' ? null : v);
+          scrollAppTo(0);
+        }}
         options={[
           { value: 'table', label: t.roundup.viewTable },
           { value: 'roundup', label: t.roundup.tab },
+          { value: 'season', label: t.roundup.viewSeason },
         ]}
       />
-      {view === 'table' ? <Standings /> : <RoundupView />}
+      {view === 'table' ? <Standings /> : view === 'roundup' ? <RoundupView /> : <SeasonView />}
     </div>
   );
 }

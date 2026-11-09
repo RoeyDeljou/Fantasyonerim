@@ -199,7 +199,10 @@ describe('admin captain battle', () => {
       payload: config,
     });
     expect(put.statusCode).toBe(200);
-    expect(CaptainBattleConfigSchema.parse(put.json())).toEqual(config);
+    expect(CaptainBattleConfigSchema.parse(put.json())).toEqual({
+      ...config,
+      entries: config.entries.map((e) => ({ ...e, tag: null })),
+    });
 
     const replaced = {
       event: 9,
@@ -212,7 +215,10 @@ describe('admin captain battle', () => {
       payload: replaced,
     });
     const got = await app.inject({ method: 'GET', url: '/v1/admin/captain-battle', headers: bearer(token) });
-    expect(CaptainBattleConfigSchema.parse(got.json())).toEqual(replaced);
+    expect(CaptainBattleConfigSchema.parse(got.json())).toEqual({
+      ...replaced,
+      entries: replaced.entries.map((e) => ({ ...e, tag: null })),
+    });
     expect(await prisma.captainBattleEntry.count()).toBe(1);
 
     const pub = PublicConfigSchema.parse((await app.inject({ method: 'GET', url: '/v1/config' })).json());

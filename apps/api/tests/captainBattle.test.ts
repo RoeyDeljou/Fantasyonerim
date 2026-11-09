@@ -75,6 +75,7 @@ describe('GET /v1/captain-battle', () => {
       ["Dor's captain", 26, 2],
       ['Community captain', 12, 2],
       ["Moshe's captain", 4, 2],
+      ['הקפטן של FPL Lad', 0, 2], // permanent, nobody picked yet
     ]);
     expect(battle.rows.every((r) => r.kind !== 'mine' && r.source === 'player' && r.entryId === null)).toBe(
       true,
@@ -92,6 +93,7 @@ describe('GET /v1/captain-battle', () => {
       ["Dor's captain", 26],
       ['Community captain', 12],
       ["Moshe's captain", 4],
+      ['הקפטן של FPL Lad', 0],
     ]);
     const mine = battle.rows[0];
     expect(mine).toMatchObject({
@@ -118,15 +120,15 @@ describe('GET /v1/captain-battle', () => {
     const fan = await registerUser(app, fpl, 555);
     fpl.failPicks = upstreamDown();
     const battle = await getBattle(bearer(fan.token));
-    expect(battle.rows).toHaveLength(3);
+    expect(battle.rows).toHaveLength(4);
     expect(battle.rows.some((r) => r.key === 'me')).toBe(false);
   });
 
   it('omits the mine row for admins without a team and for invalid tokens', async () => {
     await configureBattle();
     const admin = await adminToken(app, prisma, 'other-admin');
-    expect((await getBattle(bearer(admin))).rows).toHaveLength(3);
-    expect((await getBattle(bearer('not-a-real-token-but-long-enough'))).rows).toHaveLength(3);
+    expect((await getBattle(bearer(admin))).rows).toHaveLength(4);
+    expect((await getBattle(bearer('not-a-real-token-but-long-enough'))).rows).toHaveLength(4);
   });
 
   it('uses the most recently saved battle', async () => {
@@ -143,7 +145,7 @@ describe('GET /v1/captain-battle', () => {
     });
     const battle = await getBattle();
     expect(battle.event).toBe(10);
-    expect(battle.rows.map((r) => r.label)).toEqual(['Next week']);
+    expect(battle.rows.map((r) => r.label)).toEqual(['Next week', 'קפטן הקהילה', 'הקפטן של FPL Lad']);
   });
 
   it('GW rollover with no admin save: entry rows show the new GW captains, picked rows wait', async () => {
@@ -171,6 +173,7 @@ describe('GET /v1/captain-battle', () => {
       ["Dor's team", 'entry', 2, 3, 39, false],
       ["Itay's team", 'entry', 1, 2, 12, false],
       // Hand-picked rows: "not picked yet for GW10" (no player, never last week's), sorted last.
+      ['הקפטן של FPL Lad', 'player', null, 2, 0, true],
       ['Community captain', 'player', null, 2, 0, true],
       ["Dor's captain", 'player', null, 2, 0, true],
       ["Moshe's captain", 'player', null, 2, 0, true],
@@ -197,7 +200,8 @@ describe('GET /v1/captain-battle', () => {
     });
     expect(res.statusCode).toBe(200);
     const saved = await getBattle();
-    expect(saved.rows.every((r) => r.playerId !== null)).toBe(true);
+    // Only the virtual, never-picked FPL Lad row has no player.
+    expect(saved.rows.filter((r) => r.playerId === null).map((r) => r.kind)).toEqual(['fpl_lad']);
   });
 
   it('the signed-in fan row also follows the current GW', async () => {
@@ -233,6 +237,7 @@ describe('GET /v1/captain-battle', () => {
       ['Community captain', 'player', null, 1, 2, 12],
       ["Moshe's captain", 'player', null, 3, 2, 4],
       ["Moshe's team", 'entry', 888, 3, 2, 4],
+      ['הקפטן של FPL Lad', 'player', null, null, 2, 0],
     ]);
     expect(battle.rows[0]?.live).toMatchObject({ playerId: 4, basePoints: 9 });
     // One live call for every resolved player.
@@ -244,7 +249,7 @@ describe('GET /v1/captain-battle', () => {
     fpl.picks.set('888:9', makePicks(888, 9, 3, 2));
     fpl.playerPoints.set(1, 0).set(2, 0).set(3, 0);
     await configureBattle(9, [
-      { label: 'Hidden team', source: 'entry', entryId: 777, kind: 'community' },
+      { label: 'Hidden team', source: 'entry', entryId: 777, kind: 'custom' },
       { label: 'Known team', source: 'entry', entryId: 888, kind: 'custom' },
     ]);
     const battle = await getBattle();
@@ -259,7 +264,12 @@ describe('GET /v1/captain-battle', () => {
       multiplier: 2,
     });
     // Resolved rows with 0 points still rank above the unresolved one.
-    expect(battle.rows.slice(0, -1).every((r) => r.live !== null)).toBe(true);
+    expect(battle.rows.filter((r) => r.live !== null).map((r) => r.label)).toEqual([
+      'Community captain',
+      "Dor's captain",
+      "Moshe's captain",
+      'Known team',
+    ]);
   });
 
   it('entry row survives an upstream failure on its picks (row kept, captain unknown)', async () => {
@@ -267,7 +277,7 @@ describe('GET /v1/captain-battle', () => {
     await configureBattle(9, [{ label: 'Linked', source: 'entry', entryId: 777, kind: 'custom' }]);
     fpl.failPicks = upstreamDown();
     const battle = await getBattle();
-    expect(battle.rows).toHaveLength(4);
+    expect(battle.rows).toHaveLength(5);
     expect(battle.rows.at(-1)).toMatchObject({ label: 'Linked', playerId: null, live: null });
   });
 

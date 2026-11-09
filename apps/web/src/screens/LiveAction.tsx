@@ -29,7 +29,7 @@ import { ClockIcon, ShirtIcon, TableIcon } from '@/components/icons';
 import { FixtureSheet, ManagerSheet } from '@/components/lazySheets';
 import { ChipIcon } from '@/components/team/ChipIcon';
 import { BonusBadge } from '@/components/team/BonusBadge';
-import { CaptainCard, captainKindLabel } from '@/components/team/CaptainCard';
+import { CaptainCard, useCaptainBadge } from '@/components/team/CaptainCard';
 import { rankCaptains } from '@/lib/roundup';
 import { fixtureScoreText, fixtureStatusText } from '@/components/team/fixtureText';
 import {
@@ -512,12 +512,13 @@ function CaptainRow({
   const team = player ? index.teams.get(player.teamId) : undefined;
   const live = row.live;
   const notPicked = row.playerId === null && row.source === 'player';
+  const badge = useCaptainBadge(row);
   return (
     <CaptainCard
       rank={rank}
       player={player}
       team={team}
-      kindLabel={captainKindLabel(t, row.kind, row.source)}
+      badge={badge}
       label={row.label}
       mine={row.kind === 'mine'}
       multiplier={row.multiplier}

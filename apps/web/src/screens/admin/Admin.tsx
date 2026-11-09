@@ -21,6 +21,7 @@ import {
 import type {
   AdminSettings,
   CaptainBattleEntryInput,
+  CaptainBattleEntryKind,
   FplEntryId,
   FplPlayerId,
   Gameweek,
@@ -75,6 +76,14 @@ import {
   errorMessage,
 } from '@/components/ui';
 import { CLIENT_HOSTS } from '@/lib/clientConfig';
+import {
+  MAX_TAG_LENGTH,
+  PERMANENT_KINDS,
+  defaultTagText,
+  isPermanentKind,
+  normalizeTag,
+} from '@/lib/captains';
+import type { PermanentKind } from '@/lib/captains';
 import { AdminFrame, AdminGuard } from './AdminShell';
 
 export function AdminScreen() {
@@ -562,7 +571,10 @@ function RemindersEditor({
 interface BattleRowDraft {
   uid: number;
   label: string;
-  kind: 'community' | 'custom';
+  /** community / fpl_lad = the two permanent rows (pinned on top); everything else is custom. */
+  kind: CaptainBattleEntryKind;
+  /** The badge text typed by the admin; empty = the default for the row. */
+  tag: string;
   source: 'player' | 'entry';
   playerId: FplPlayerId | null;
   /** Raw Team ID text for linked rows. */
@@ -572,13 +584,28 @@ interface BattleRowDraft {
 let uidCounter = 0;
 const nextUid = () => ++uidCounter;
 
+function permanentDraft(kind: PermanentKind, t: Messages): BattleRowDraft {
+  return {
+    uid: nextUid(),
+    label: kind === 'community' ? t.admin.defaultCommunity : t.admin.defaultFplLad,
+    kind,
+    tag: '',
+    source: 'player',
+    playerId: null,
+    entryId: '',
+  };
+}
+
 /** The client's default battle (used to prefill the editor when nothing is configured yet). */
 function defaultRows(t: Messages): BattleRowDraft[] {
   return [
+    permanentDraft('community', t),
+    permanentDraft('fpl_lad', t),
     {
       uid: nextUid(),
       label: t.admin.defaultDor,
       kind: 'custom',
+      tag: '',
       source: 'entry',
       playerId: null,
       entryId: CLIENT_HOSTS.dor.fplEntryId,
@@ -587,32 +614,25 @@ function defaultRows(t: Messages): BattleRowDraft[] {
       uid: nextUid(),
       label: t.admin.defaultItay,
       kind: 'custom',
+      tag: '',
       source: 'entry',
       playerId: null,
       entryId: CLIENT_HOSTS.itay.fplEntryId,
-    },
-    {
-      uid: nextUid(),
-      label: t.admin.defaultCommunity,
-      kind: 'community',
-      source: 'player',
-      playerId: null,
-      entryId: '',
     },
   ];
 }
 
 function toDraft(e: CaptainBattleEntryInput): BattleRowDraft {
+  const base = { uid: nextUid(), label: e.label, kind: e.kind, tag: e.tag ?? '' };
   return e.source === 'player'
-    ? { uid: nextUid(), label: e.label, kind: e.kind, source: 'player', playerId: e.playerId, entryId: '' }
-    : {
-        uid: nextUid(),
-        label: e.label,
-        kind: e.kind,
-        source: 'entry',
-        playerId: null,
-        entryId: String(e.entryId),
-      };
+    ? { ...base, source: 'player', playerId: e.playerId, entryId: '' }
+    : { ...base, source: 'entry', playerId: null, entryId: String(e.entryId) };
+}
+
+/** Loaded rows with the two permanent captains pinned on top (created when the saved config lacks them). */
+function withPermanentRows(rows: readonly BattleRowDraft[], t: Messages): BattleRowDraft[] {
+  const pinned = PERMANENT_KINDS.map((k) => rows.find((r) => r.kind === k) ?? permanentDraft(k, t));
+  return [...pinned, ...rows.filter((r) => !isPermanentKind(r.kind))];
 }
 
 function CaptainBattleEditor() {
@@ -634,7 +654,7 @@ function CaptainBattleEditor() {
     <BattleForm
       index={fpl.index}
       initialEvent={defaultEvent}
-      initialRows={battle.data ? battle.data.entries.map(toDraft) : defaultRows(t)}
+      initialRows={battle.data ? withPermanentRows(battle.data.entries.map(toDraft), t) : defaultRows(t)}
       isDefault={!battle.data}
     />
   );
@@ -675,7 +695,8 @@ function BattleForm({
       const next = [...rs];
       const a = next[i];
       const b = next[i + d];
-      if (!a || !b) return rs;
+      // The permanent rows stay pinned on top: nothing swaps with them.
+      if (!a || !b || isPermanentKind(a.kind) || isPermanentKind(b.kind)) return rs;
       next[i] = b;
       next[i + d] = a;
       return next;
@@ -692,11 +713,19 @@ function BattleForm({
       event: ev.data,
       entries: rows.map((r) =>
         r.source === 'player'
-          ? { source: 'player', label: r.label, kind: r.kind, playerId: r.playerId ?? undefined }
+          ? {
+              source: 'player',
+              label: r.label,
+              kind: r.kind,
+              tag: normalizeTag(r.tag),
+              // Permanent rows may be saved "not picked yet" (null); a custom row without a player is invalid.
+              playerId: r.playerId ?? (isPermanentKind(r.kind) ? null : undefined),
+            }
           : {
               source: 'entry',
               label: r.label,
               kind: r.kind,
+              tag: normalizeTag(r.tag),
               entryId: /^\d+$/.test(r.entryId) ? r.entryId : undefined,
             },
       ),
@@ -735,13 +764,13 @@ function BattleForm({
           value={event}
           onChange={(e) => setEvent(e.target.value.replace(/[^\d]/g, '').slice(0, 2))}
         />
-        {rows.length === 0 && <p className="text-sm text-muted">{t.admin.battleEmpty}</p>}
         <ol className="flex flex-col gap-2">
           {rows.map((r, i) => (
             <BattleRowEditor
               key={r.uid}
               row={r}
               position={i}
+              pinned={rows.filter((x) => isPermanentKind(x.kind)).length}
               count={rows.length}
               index={index}
               onChange={(patch) => update(r.uid, patch)}
@@ -757,7 +786,15 @@ function BattleForm({
           onClick={() =>
             setRows((rs) => [
               ...rs,
-              { uid: nextUid(), label: '', playerId: null, entryId: '', kind: 'custom', source: 'entry' },
+              {
+                uid: nextUid(),
+                label: '',
+                playerId: null,
+                entryId: '',
+                kind: 'custom',
+                tag: '',
+                source: 'entry',
+              },
             ])
           }
         >
@@ -792,6 +829,7 @@ function BattleForm({
 function BattleRowEditor({
   row: r,
   position: i,
+  pinned,
   count,
   index,
   onChange,
@@ -801,6 +839,8 @@ function BattleRowEditor({
 }: {
   row: BattleRowDraft;
   position: number;
+  /** How many permanent rows are pinned on top. */
+  pinned: number;
   count: number;
   index: FplIndex;
   onChange(patch: Partial<BattleRowDraft>): void;
@@ -811,8 +851,18 @@ function BattleRowEditor({
   const { t } = useI18n();
   const player = r.playerId ? index.players.get(r.playerId) : undefined;
   const team = player ? index.teams.get(player.teamId) : undefined;
+  const permanent = isPermanentKind(r.kind);
+  const defaultTag =
+    defaultTagText(r.kind, r.source, {
+      mine: t.liveAction.mine,
+      community: t.liveAction.kindCommunity,
+      linkedTeam: t.liveAction.linkedTeam,
+    }) ?? (r.kind === 'fpl_lad' ? t.admin.tagLogoOnly : t.admin.tagNone);
   return (
-    <li className="flex flex-col gap-2 rounded-xl border border-line bg-surface-2 p-3">
+    <li
+      className="flex flex-col gap-2 rounded-xl border border-line bg-surface-2 p-3"
+      data-battle-kind={r.kind}
+    >
       <div className="flex items-center gap-1">
         <span className="me-1 text-sm font-bold text-muted tabular">{i + 1}</span>
         <input
@@ -824,15 +874,23 @@ function BattleRowEditor({
           onChange={(e) => onChange({ label: e.target.value })}
           className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-start text-base text-ink focus:border-primary focus:outline-none"
         />
-        <IconButton label={t.admin.moveUp} disabled={i === 0} onClick={() => onMove(-1)}>
-          <ArrowUpIcon size={18} />
-        </IconButton>
-        <IconButton label={t.admin.moveDown} disabled={i === count - 1} onClick={() => onMove(1)}>
-          <ArrowDownIcon size={18} />
-        </IconButton>
-        <IconButton label={t.common.remove} className="text-live" onClick={onRemove}>
-          <TrashIcon size={18} />
-        </IconButton>
+        {permanent ? (
+          <Badge tone="accent" className="shrink-0">
+            {t.admin.permanent}
+          </Badge>
+        ) : (
+          <>
+            <IconButton label={t.admin.moveUp} disabled={i <= pinned} onClick={() => onMove(-1)}>
+              <ArrowUpIcon size={18} />
+            </IconButton>
+            <IconButton label={t.admin.moveDown} disabled={i === count - 1} onClick={() => onMove(1)}>
+              <ArrowDownIcon size={18} />
+            </IconButton>
+            <IconButton label={t.common.remove} className="text-live" onClick={onRemove}>
+              <TrashIcon size={18} />
+            </IconButton>
+          </>
+        )}
       </div>
       <Segmented<'entry' | 'player'>
         label={t.admin.rowSource}
@@ -865,14 +923,15 @@ function BattleRowEditor({
           )}
         </button>
       )}
-      <Segmented<'community' | 'custom'>
-        label={t.admin.kind}
-        value={r.kind}
-        onChange={(kind) => onChange({ kind })}
-        options={[
-          { value: 'community', label: t.liveAction.kindCommunity },
-          { value: 'custom', label: t.liveAction.kindCustom },
-        ]}
+      <TextField
+        label={t.admin.tag}
+        hint={t.admin.tagHelp}
+        maxLength={MAX_TAG_LENGTH}
+        dir="auto"
+        placeholder={fmt(t.admin.tagDefault, { tag: defaultTag })}
+        value={r.tag}
+        onChange={(e) => onChange({ tag: e.target.value })}
+        data-testid="battle-tag"
       />
     </li>
   );

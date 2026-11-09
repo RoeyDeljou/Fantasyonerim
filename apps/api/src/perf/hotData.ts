@@ -31,6 +31,7 @@ import type { AppSettings, PrismaClient } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
 import type { Clock } from '../context.js';
+import { DEFAULT_CAPTAIN_LABELS, kindFromDb, PERMANENT_KINDS } from '../league/captains.js';
 import { leagueNewEntryIds } from '../league/newEntries.js';
 import { fetchAllPages, LEAGUE_MAX_PAGES } from '../league/pages.js';
 import { derivedSocials, getLatestBattle, getSettings, toPublicConfig } from '../settings.js';
@@ -385,11 +386,12 @@ export class HotData {
       }
     });
 
-    const pending = battle.entries.map((e) => {
+    const saved = battle.entries.map((e) => {
       const base = {
         key: e.id,
         label: e.label,
-        kind: e.kind === 'COMMUNITY' ? 'community' : 'custom',
+        kind: kindFromDb(e.kind),
+        tag: e.tag,
       } as const;
       if (e.source === 'ENTRY' && e.entryId !== null) {
         const captain = captains.get(e.entryId) ?? null;
@@ -411,6 +413,20 @@ export class HotData {
         multiplier: 2,
       };
     });
+
+    // The two permanent captains are always on the board: one the saved battle predates shows as "not picked yet".
+    const present = new Set<string>(saved.map((r) => r.kind));
+    const virtual = PERMANENT_KINDS.filter((k) => !present.has(k)).map((kind) => ({
+      key: kind,
+      label: DEFAULT_CAPTAIN_LABELS[kind],
+      kind,
+      tag: null,
+      source: 'player' as const,
+      entryId: null,
+      playerId: null,
+      multiplier: 2,
+    }));
+    const pending = [...virtual, ...saved];
 
     const ids = [
       ...new Set(pending.flatMap((r) => (r.playerId === null ? [] : [FplPlayerIdSchema.parse(r.playerId)]))),
