@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { isFplUnavailable } from '../fplErrors.js';
 import {
   buildRoundups,
+  FRESH,
   officialEvents,
   ROUNDUP_BUILD_DELAY_MS,
   ROUNDUP_HOT_PREFIX,
@@ -73,6 +74,11 @@ export const gameweekRoundupJob: Job = {
     }
 
     try {
+      // The cached bootstrap only decides whether there is work; right before building, FPL is asked again
+      // (fresh) that these GWs are still finished + data-checked.
+      const confirmed = await fpl.getBootstrap(FRESH);
+      const stillOfficial = new Set<number>(officialEvents(confirmed));
+      const toBuild = missing.filter((gw) => stillOfficial.has(gw));
       const result = await buildRoundups(
         {
           prisma: app.prisma,
@@ -81,8 +87,8 @@ export const gameweekRoundupJob: Job = {
           onStored: (event) => app.hot.cache.invalidate(`${ROUNDUP_HOT_PREFIX}${leagueId}:${event}:`),
         },
         leagueId,
-        bootstrap,
-        missing,
+        confirmed,
+        toBuild,
       );
       return {
         summary: `league ${leagueId}: built ${result.built.map((gw) => `GW${gw}`).join(', ') || 'nothing'}, ${

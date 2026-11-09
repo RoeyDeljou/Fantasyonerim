@@ -1,7 +1,7 @@
 import { ApiErrorSchema, EntryPicksSchema, GameweekRoundupSchema, type EntryPicks } from '@fant/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { FplNotFoundError } from '@fant/fpl';
+import { FplNotFoundError, FplUnavailableError } from '@fant/fpl';
 import {
   makeBootstrap,
   makeEvents,
@@ -338,6 +338,93 @@ describe('gameweek_roundup job', () => {
     expect(body.table).toEqual([]);
     expect(await storedEvents(LEAGUE)).toEqual([1, 2]);
     expect(await storedEvents(999)).toEqual([1, 2]);
+  });
+
+  describe('fresh reads (never cached or stale-if-error data)', () => {
+    beforeEach(async () => {
+      seedLeague();
+      setBootstrap(2, 1);
+      await setLeague(LEAGUE);
+      fpl.addEntry(77);
+      fpl.picks.set('77:1', makePicks(77, 1, 2));
+      await prisma.captainBattle.create({
+        data: {
+          event: 1,
+          entries: {
+            create: [
+              { order: 0, label: 'Community captain', kind: 'COMMUNITY', source: 'PLAYER', playerId: 1 },
+              { order: 1, label: "Itay's captain", kind: 'CUSTOM', source: 'ENTRY', entryId: 12 },
+              { order: 2, label: "Dor's captain", kind: 'CUSTOM', source: 'ENTRY', entryId: 77 },
+            ],
+          },
+        },
+      });
+      expect(await runJob()).toBe('ok'); // GW1 first seen official: waiting
+      clock.advance(ROUNDUP_BUILD_DELAY_MS);
+    });
+
+    it('passes { fresh: true } on every FPL read behind a stored roundup', async () => {
+      fpl.reads = [];
+      expect(await runJob()).toBe('ok');
+      expect(await storedEvents()).toEqual([1]);
+      const [decision, ...build] = fpl.reads;
+      // Only the "is there work?" check reads the cached bootstrap; it is re-read fresh before building.
+      expect(decision).toEqual({ call: 'getBootstrap', fresh: false });
+      expect(build.filter((r) => !r.fresh)).toEqual([]);
+      const kinds = new Set(build.map((r) => r.call.split(':')[0]));
+      expect([...kinds].sort()).toEqual(
+        [
+          'getBootstrap',
+          'getEntryHistory',
+          'getEntryPicks',
+          'getEntryTransfers',
+          'getEventPoints',
+          'getLeagueInfo',
+          'getLeagueStandings',
+        ].sort(),
+      );
+      // The captain row's non-member team was read fresh too.
+      expect(build).toContainEqual({ call: 'getEntryPicks:77:1', fresh: true });
+    });
+
+    it('stores the official data even when the cache holds stale copies (captain blanked → vice)', async () => {
+      // Live-GW copy of team 12's picks: captain Palmer (3) still ×2. Official: Palmer blanked, Saka (4) ×2.
+      fpl.staleData.set('getEntryPicks:12:1', makePicks(12, 1, 3));
+      fpl.picks.set('12:1', vicePicks(12, 1, 3, 4));
+      fpl.staleData.set('getEntryHistory:11', makeHistory(11, [{ event: 1, points: 1 }]));
+      fpl.staleData.set('getEventPoints:1', new Map());
+      expect(await runJob()).toBe('ok');
+      const { body } = await getRoundup('?event=1');
+      expect(body.table.map((r) => [r.entryId, r.eventPoints, r.captainPlayerId])).toEqual([
+        [11, 60, 2],
+        [12, 50, 4],
+      ]);
+      expect(body.captains.map((c) => [c.label, c.playerId, c.captainPoints])).toEqual([
+        ["Dor's captain", 2, 26],
+        ["Itay's captain", 4, 18],
+        ['Community captain', 1, 12],
+      ]);
+    });
+
+    it.each([
+      ['503', () => upstreamDown()],
+      ['backoff', () => new FplUnavailableError('FPL backing off', null, 'backoff')],
+    ])('a fresh read failing (%s) stores nothing, even with a stale copy available', async (_kind, error) => {
+      fpl.staleData.set('getEntryHistory:12', fpl.histories.get(12));
+      fpl.failHistoryFor.set(12, error());
+      expect(await runJob()).toBe('failed');
+      expect(await prisma.gameweekRoundup.count()).toBe(0);
+
+      fpl.failHistoryFor.clear();
+      fpl.staleData.set('getEntryPicks:77:1', makePicks(77, 1, 1));
+      fpl.failPicksFor.set(77, error()); // the captain row's team
+      expect(await runJob()).toBe('failed');
+      expect(await prisma.gameweekRoundup.count()).toBe(0);
+
+      fpl.failPicksFor.clear();
+      expect(await runJob()).toBe('ok');
+      expect(await storedEvents()).toEqual([1]);
+    });
   });
 
   describe('captain rows', () => {

@@ -144,7 +144,7 @@ export function roundupRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth)
 
     if (leagueId === null) {
       reply.header('cache-control', viewer === null ? CACHE_CONTROL.roundup : CACHE_CONTROL.private);
-      reply.header('vary', 'authorization');
+      reply.header('vary', 'accept-encoding, authorization');
       return serialize(GameweekRoundupSchema, emptyRoundup(event, 'unavailable', events), 'GameweekRoundup');
     }
 

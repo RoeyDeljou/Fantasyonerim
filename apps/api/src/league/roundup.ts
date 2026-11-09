@@ -7,6 +7,7 @@ import {
   type EntryHistory,
   type EntryTransfer,
   type EventPoints,
+  type FplReadOptions,
   type FplService,
   type RoundupCore,
 } from '@fant/fpl';
@@ -33,6 +34,12 @@ import { allStandingRows, fetchAllPages } from './pages.js';
  * time, history + transfers fetched once per member and reused for every GW built in the same run, a member's
  * 404 → null, any other failure aborts the run with nothing stored for the GW being built.
  */
+
+/**
+ * Every FPL read behind a stored roundup is `fresh`: straight from FPL, never a cached copy (a live-GW picks copy
+ * from before auto-subs / vice promotion) and never stale-if-error data. Failures throw and abort the build.
+ */
+export const FRESH: FplReadOptions = { fresh: true };
 
 /** Build a GW only this long after we first saw it `finished && dataChecked` (history cache TTL, 5 min). */
 export const ROUNDUP_BUILD_DELAY_MS = FPL_CACHE_TTL.history;
@@ -150,7 +157,7 @@ export async function roundupCaptainRows(
   ];
   const extraPicks = new Map<number, EntryPicks | null>();
   await mapAbortable(linked, async (entryId) => {
-    extraPicks.set(entryId, await orNull(fpl.getEntryPicks(FplEntryIdSchema.parse(entryId), event)));
+    extraPicks.set(entryId, await orNull(fpl.getEntryPicks(FplEntryIdSchema.parse(entryId), event, FRESH)));
   });
 
   const rows: RoundupCaptain[] = [];
@@ -216,8 +223,8 @@ export async function buildRoundups(
 ): Promise<RoundupBuildResult> {
   const { prisma, fpl } = deps;
   if (events.length === 0) return { built: [], remaining: 0 };
-  const info = await fpl.getLeagueInfo(leagueId);
-  const rows = allStandingRows(await fetchAllPages((page) => fpl.getLeagueStandings(leagueId, page)));
+  const info = await fpl.getLeagueInfo(leagueId, FRESH);
+  const rows = allStandingRows(await fetchAllPages((page) => fpl.getLeagueStandings(leagueId, page, FRESH)));
   const batch = events.slice(0, roundupGwsPerRun(rows.length));
 
   // History + transfers once per member, reused for every GW of the batch (not needed before the league began).
@@ -225,20 +232,20 @@ export async function buildRoundups(
   const seasons: MemberSeason[] = needMembers
     ? await mapAbortable(rows, async (row) => ({
         row,
-        history: await orNull(fpl.getEntryHistory(row.entryId)),
-        transfers: await orNull(fpl.getEntryTransfers(row.entryId)),
+        history: await orNull(fpl.getEntryHistory(row.entryId, FRESH)),
+        transfers: await orNull(fpl.getEntryTransfers(row.entryId, FRESH)),
       }))
     : [];
 
   const built: Gameweek[] = [];
   for (const event of batch) {
-    const playerPoints = await fpl.getEventPoints(event);
+    const playerPoints = await fpl.getEventPoints(event, FRESH);
     // A member without a history row for this GW (team created later, or 404) isn't in its table: no picks.
     const inGw = (s: MemberSeason) => s.history?.events.some((e) => e.event === event) ?? false;
     const picks = new Map<number, EntryPicks | null>();
     if (event >= info.startEvent) {
       await mapAbortable(seasons.filter(inGw), async (s) => {
-        picks.set(s.row.entryId, await orNull(fpl.getEntryPicks(s.row.entryId, event)));
+        picks.set(s.row.entryId, await orNull(fpl.getEntryPicks(s.row.entryId, event, FRESH)));
       });
     }
     const core: RoundupCore = buildGameweekRoundup({

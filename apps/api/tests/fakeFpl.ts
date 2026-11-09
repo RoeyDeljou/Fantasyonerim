@@ -7,6 +7,7 @@ import {
   type EntryHistory,
   type EntryTransfer,
   type EventPoints,
+  type FplReadOptions,
   type FplService,
   type LeagueInfo,
   type PlayerEventPoints,
@@ -34,6 +35,7 @@ import {
   type FplPlayerId,
   type Gameweek,
   type PlayerLive,
+  type LeagueStandings,
   FplPlayerIdSchema,
   type GameweekInfo,
 } from '@fant/shared';
@@ -279,13 +281,30 @@ export class FakeFplService implements FplService {
     return this;
   }
 
+  /** Every read that takes FplReadOptions, with whether it was `fresh` (in call order). */
+  reads: { call: string; fresh: boolean }[] = [];
+  /**
+   * Stale copies by call key (e.g. `getEntryPicks:12:1`): served to NON-fresh reads only, like FplService's cache
+   * and stale-if-error data. Fresh reads always get the current fixture data.
+   */
+  staleData = new Map<string, unknown>();
+
+  /** Records a read and returns the stale copy a non-fresh read would get, if any. */
+  private read<T>(call: string, options: FplReadOptions | undefined): T | undefined {
+    const fresh = options?.fresh === true;
+    this.reads.push({ call, fresh });
+    this.check(call);
+    return fresh ? undefined : (this.staleData.get(call) as T | undefined);
+  }
+
   private check(call: string): void {
     this.calls.push(call);
     if (this.failAll) throw this.failAll;
   }
 
-  async getBootstrap(): Promise<Bootstrap> {
-    this.check('getBootstrap');
+  async getBootstrap(options?: FplReadOptions): Promise<Bootstrap> {
+    const stale = this.read<Bootstrap>('getBootstrap', options);
+    if (stale !== undefined) return stale;
     return this.bootstrap;
   }
 
@@ -309,8 +328,9 @@ export class FakeFplService implements FplService {
     return entry;
   }
 
-  async getEntryPicks(entryId: FplEntryId, event: Gameweek): Promise<EntryPicks> {
-    this.check(`getEntryPicks:${entryId}:${event}`);
+  async getEntryPicks(entryId: FplEntryId, event: Gameweek, options?: FplReadOptions): Promise<EntryPicks> {
+    const stale = this.read<EntryPicks>(`getEntryPicks:${entryId}:${event}`, options);
+    if (stale !== undefined) return stale;
     if (this.failPicks) throw this.failPicks;
     const failure = this.failPicksFor.get(entryId);
     if (failure) throw failure;
@@ -339,8 +359,9 @@ export class FakeFplService implements FplService {
     });
   }
 
-  async getLeagueStandings(leagueId: FplLeagueId, page: number) {
-    this.check(`getLeagueStandings:${leagueId}:${page}`);
+  async getLeagueStandings(leagueId: FplLeagueId, page: number, options?: FplReadOptions) {
+    const stale = this.read<LeagueStandings>(`getLeagueStandings:${leagueId}:${page}`, options);
+    if (stale !== undefined) return stale;
     const league = this.leagues.get(leagueId);
     if (!league) throw new FplNotFoundError(`league ${leagueId}`);
     return LeagueStandingsSchema.parse({
@@ -408,8 +429,9 @@ export class FakeFplService implements FplService {
     return (this.newEntries.get(leagueId) ?? []).map((id) => FplEntryIdSchema.parse(id));
   }
 
-  async getEntryHistory(entryId: FplEntryId): Promise<EntryHistory> {
-    this.check(`getEntryHistory:${entryId}`);
+  async getEntryHistory(entryId: FplEntryId, options?: FplReadOptions): Promise<EntryHistory> {
+    const stale = this.read<EntryHistory>(`getEntryHistory:${entryId}`, options);
+    if (stale !== undefined) return stale;
     const failure = this.failHistoryFor.get(entryId);
     if (failure) throw failure;
     const history = this.histories.get(entryId);
@@ -417,13 +439,15 @@ export class FakeFplService implements FplService {
     return history;
   }
 
-  async getEntryTransfers(entryId: FplEntryId): Promise<EntryTransfer[]> {
-    this.check(`getEntryTransfers:${entryId}`);
+  async getEntryTransfers(entryId: FplEntryId, options?: FplReadOptions): Promise<EntryTransfer[]> {
+    const stale = this.read<EntryTransfer[]>(`getEntryTransfers:${entryId}`, options);
+    if (stale !== undefined) return stale;
     return this.transfers.get(entryId) ?? [];
   }
 
-  async getEventPoints(event: Gameweek): Promise<EventPoints> {
-    this.check(`getEventPoints:${event}`);
+  async getEventPoints(event: Gameweek, options?: FplReadOptions): Promise<EventPoints> {
+    const stale = this.read<EventPoints>(`getEventPoints:${event}`, options);
+    if (stale !== undefined) return stale;
     if (this.failEventPoints) throw this.failEventPoints;
     const points = this.eventPoints.get(event) ?? this.playerPoints;
     return new Map<ReturnType<typeof FplPlayerIdSchema.parse>, PlayerEventPoints>(
@@ -431,8 +455,9 @@ export class FakeFplService implements FplService {
     );
   }
 
-  async getLeagueInfo(leagueId: FplLeagueId): Promise<LeagueInfo> {
-    this.check(`getLeagueInfo:${leagueId}`);
+  async getLeagueInfo(leagueId: FplLeagueId, options?: FplReadOptions): Promise<LeagueInfo> {
+    const stale = this.read<LeagueInfo>(`getLeagueInfo:${leagueId}`, options);
+    if (stale !== undefined) return stale;
     const league = this.leagues.get(leagueId);
     if (!league) throw new FplNotFoundError(`league ${leagueId}`);
     return LeagueInfoSchema.parse({ ...league, startEvent: this.leagueStartEvents.get(leagueId) ?? 1 });

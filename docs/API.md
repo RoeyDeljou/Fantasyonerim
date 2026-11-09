@@ -184,7 +184,9 @@ its first run of a GW only records a baseline. Pushes: urgency high, TTL 1 h, a 
 
 **Job `gameweek_roundup`** (every 5 min, lease 15 min, also via `/internal/jobs/tick`). Builds every official GW
 without a stored roundup for the configured league, newest first, then back-fills older ones. The newest official GW
-is built only 5 minutes (`FPL_CACHE_TTL.history`) after the job first saw it official; older GWs right away. Per run:
+is built only 5 minutes (`FPL_CACHE_TTL.history`) after the job first saw it official; older GWs right away. Every FPL read behind a stored roundup is
+`{ fresh: true }` (never a cached copy, e.g. live-GW picks from before auto-subs, and never stale-if-error data); the
+cached bootstrap only decides whether there is work and is re-read fresh right before building. Per run:
 league info + all standings pages, then history + transfers once per member (reused for every GW of the run), then
 per GW one `event/{gw}/live/` and one picks request per member, all at concurrency 4 (`ROUNDUP_FETCH_CONCURRENCY`).
 The run is bounded by a budget of 1,000 FPL requests: `max(1, ⌊(1000 − 2N) / (N + 1)⌋)` GWs for N members, i.e. 3 GWs
