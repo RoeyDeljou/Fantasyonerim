@@ -196,3 +196,13 @@ is stored and the next run retries; while FplService is backing off (`getHealth(
 A member's 404 (history or picks) leaves that member, or that data, blank. GWs before the league's `startEvent`
 are stored with blank sections (captain rows still computed). Members are the league's current standings (FPL has no
 historical member list).
+
+**Ranks and totals**: official FPL standings for the newest GW at build time; older GWs reconstructed from each
+team's history. When the job builds the newest official GW, `rank`, `lastRank` (FPL `last_rank` 0 = joined since the
+last update → null) and `total` come from FPL's classic standings (read fresh), the table is ordered by official rank,
+and biggest climb / drop are recomputed from them (places, then higher GW points, then table order). Guard: if fewer
+than 90% of the official totals equal the reconstructed ones, FPL's table has moved on to a newer GW and the
+reconstructed values are kept. Back-filled GWs (FPL keeps no historical league tables) are always reconstructed:
+total = Σ (GW points − hits) from the league's `startEvent`, ranked by total then fewer transfers. `eventPoints` and
+the league average are net of hits in both cases. Stored roundups are never replaced; the migration
+`20261110090000_roundup_rebuild_official_ranks` deleted those built before official ranks were used, so all are rebuilt.

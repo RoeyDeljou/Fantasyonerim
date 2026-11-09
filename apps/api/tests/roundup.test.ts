@@ -427,6 +427,95 @@ describe('gameweek_roundup job', () => {
     });
   });
 
+  describe('official FPL standings for the newest GW', () => {
+    /** FPL's table after GW2 (totals = GW1 + GW2 net points): 13 joined in GW2 → last_rank 0. */
+    const officialAfterGw2 = (shift = 0) => [
+      {
+        rank: 1,
+        lastRank: 3,
+        entryId: 12,
+        entryName: 'Bravo',
+        managerName: 'Itay',
+        total: 130 + shift,
+        eventTotal: 84,
+      },
+      {
+        rank: 2,
+        lastRank: 1,
+        entryId: 11,
+        entryName: 'Alpha',
+        managerName: 'Dor',
+        total: 130 + shift,
+        eventTotal: 70,
+      },
+      {
+        rank: 3,
+        lastRank: 0,
+        entryId: 13,
+        entryName: 'Charlie',
+        managerName: 'Moshe',
+        total: 55 + shift,
+        eventTotal: 55,
+      },
+    ];
+
+    it('uses the official rank / last rank / total and recomputes climb and drop; older GWs stay computed', async () => {
+      seedLeague();
+      fpl.standingsRows = officialAfterGw2();
+      await setLeague(LEAGUE);
+      await buildAll();
+
+      const gw2 = (await getRoundup('?event=2')).body;
+      expect(
+        gw2.table.map((r) => [r.entryId, r.rank, r.lastRank, r.total, r.eventPoints, r.transferCost]),
+      ).toEqual([
+        [12, 1, 3, 130, 80, 4],
+        [11, 2, 1, 130, 70, 0],
+        [13, 3, null, 55, 55, 0],
+      ]);
+      expect(gw2.biggestClimb).toEqual({
+        entryId: 12,
+        entryName: 'Bravo',
+        managerName: 'Itay',
+        places: 2,
+        eventPoints: 80,
+      });
+      expect(gw2.biggestDrop).toEqual({
+        entryId: 11,
+        entryName: 'Alpha',
+        managerName: 'Dor',
+        places: 1,
+        eventPoints: 70,
+      });
+      // Points stay net of hits; the league average is unchanged.
+      expect(gw2.averages).toEqual({ league: 68.3, world: 52 });
+      expect(gw2.king?.entryId).toBe(12);
+
+      // GW1 was back-filled: FPL has no GW1 table any more, so it is rebuilt from each team's history.
+      const gw1 = (await getRoundup('?event=1')).body;
+      expect(gw1.table.map((r) => [r.entryId, r.rank, r.lastRank, r.total])).toEqual([
+        [11, 1, null, 60],
+        [12, 2, null, 50],
+      ]);
+      expect([gw1.biggestClimb, gw1.biggestDrop]).toEqual([null, null]);
+    });
+
+    it('keeps the computed table when the official standings have moved on to a newer GW', async () => {
+      seedLeague();
+      fpl.standingsRows = officialAfterGw2(40); // GW3 points already in FPL's totals
+      await setLeague(LEAGUE);
+      await buildAll();
+      const gw2 = (await getRoundup('?event=2')).body;
+      expect(gw2.table.map((r) => [r.entryId, r.rank, r.lastRank, r.total])).toEqual([
+        [11, 1, 1, 130],
+        [12, 2, 2, 130],
+        [13, 3, null, 55],
+      ]);
+      expect([gw2.biggestClimb, gw2.biggestDrop]).toEqual([null, null]);
+      expect(gw2.averages).toEqual({ league: 68.3, world: 52 });
+    });
+  });
+
   describe('captain rows', () => {
     beforeEach(async () => {
       seedLeague();
