@@ -34,9 +34,13 @@ model User {
   role             Role      @default(USER)
   /// "he" | "en" (validated with LocaleSchema on read).
   locale           String    @default("he")
-  /// argon2id hash of the normalized recovery code (verification).
+  /// Sign-in email (with the Team ID: POST /v1/auth/email-login). Stored trimmed + lower-cased (EmailSchema).
+  /// Null for accounts made before email was required (the app asks once) and for admin-only accounts.
+  email            String?   @unique
+  /// DEPRECATED (Nov 2026: recovery codes removed, sign-in is email + Team ID). Unused; kept only so an instance
+  /// still running the old code during a deploy doesn't break. Drop in a later migration.
   recoveryCodeHash String?
-  /// AES-256-GCM ciphertext of the recovery code (so Profile can show it). Never logged.
+  /// DEPRECATED — see recoveryCodeHash. Unused; drop in a later migration.
   recoveryCodeEnc  String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt

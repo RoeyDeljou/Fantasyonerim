@@ -64,12 +64,22 @@ async function list() {
 const preview = (token: string) =>
   app.inject({ method: 'POST', url: '/v1/admin-invites/preview', payload: { token } });
 
-function register(entryId: number, inviteToken?: string, name = `Host ${entryId}`) {
+function register(
+  entryId: number,
+  inviteToken?: string,
+  name = `Host ${entryId}`,
+  email = `host${entryId}@example.test`,
+) {
   if (!fpl.entries.has(entryId)) fpl.addEntry(entryId);
   return app.inject({
     method: 'POST',
     url: '/v1/auth/register',
-    payload: { name, entryId, ...(inviteToken === undefined ? {} : { inviteToken }) },
+    payload: {
+      name,
+      entryId,
+      email,
+      ...(inviteToken === undefined ? {} : { inviteToken }),
+    },
   });
 }
 
@@ -250,19 +260,23 @@ describe('request logging never contains invite tokens or query strings', () => 
 });
 
 describe('POST /v1/auth/register with an invite', () => {
-  it('creates the account as an admin with a recovery code and marks the invite used', async () => {
+  it('creates the account as an admin with its email and marks the invite used', async () => {
     const inv = await createInvite('Dor');
     const res = await register(11597, inv.token, 'Dor Dabush');
     expect(res.statusCode).toBe(201);
     const auth = AuthResponseSchema.parse(res.json());
     expect(auth.user.role).toBe('admin');
     expect(auth.user.entryId).toBe(11597);
-    const code = await app.inject({
-      method: 'GET',
-      url: '/v1/me/recovery-code',
-      headers: bearer(auth.token),
+    expect(auth.user.email).toBe('host11597@example.test');
+    // No recovery code any more; the invited admin signs back in with email + Team ID like everyone else.
+    const row0 = await prisma.user.findUniqueOrThrow({ where: { id: auth.user.id } });
+    expect(row0.recoveryCodeHash).toBeNull();
+    const login = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/email-login',
+      payload: { email: 'host11597@example.test', entryId: 11597 },
     });
-    expect(code.json().recoveryCode).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+    expect(login.statusCode).toBe(200);
     const row = await prisma.adminInvite.findUniqueOrThrow({ where: { id: inv.invite.id } });
     expect(row).toMatchObject({ usedById: auth.user.id, usedByName: 'Dor Dabush' });
     expect(row.usedAt).not.toBeNull();
@@ -321,6 +335,19 @@ describe('POST /v1/auth/register with an invite', () => {
     const inv = await createInvite();
     const dup = await register(70, inv.token);
     expect(dup.statusCode).toBe(409);
+    expect((await prisma.adminInvite.findUniqueOrThrow({ where: { id: inv.invite.id } })).usedAt).toBeNull();
+  });
+
+  it('an email already on another account → 409 and the invite stays unused', async () => {
+    expect((await register(72)).statusCode).toBe(201);
+    const inv = await createInvite();
+    const dup = await register(73, inv.token, 'Host 73', ' HOST72@Example.test ');
+    expect(dup.statusCode).toBe(409);
+    expect(dup.json().error).toEqual({
+      code: 'conflict',
+      message: 'This email is already used by another account.',
+    });
+    expect(await prisma.user.count({ where: { entryId: 73 } })).toBe(0);
     expect((await prisma.adminInvite.findUniqueOrThrow({ where: { id: inv.invite.id } })).usedAt).toBeNull();
   });
 });

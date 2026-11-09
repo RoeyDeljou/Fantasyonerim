@@ -11,6 +11,7 @@ export function toMe(user: User): Me {
       name: user.name,
       entryId: user.entryId,
       teamName: user.teamName,
+      email: user.email,
       role: user.role === 'ADMIN' ? 'admin' : 'user',
       locale: locale.success ? locale.data : 'he',
       canPost: user.bannedAt === null,

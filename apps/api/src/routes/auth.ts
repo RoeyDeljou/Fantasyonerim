@@ -1,31 +1,40 @@
 import {
   AdminLoginBodySchema,
   AuthResponseSchema,
-  RecoverBodySchema,
+  EmailLoginBodySchema,
   RegisterBodySchema,
   type EntrySummary,
 } from '@fant/shared';
 import { Prisma } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
-import { hashSecret, verifyAgainstDummy, verifySecret } from '../auth/passwords.js';
+import { verifyAgainstDummy, verifySecret } from '../auth/passwords.js';
 import { claimInvite } from '../auth/invites.js';
 import type { Auth } from '../auth/session.js';
-import { generateRecoveryCode, normalizeRecoveryCode } from '../auth/tokens.js';
 import type { AppContext } from '../context.js';
 import { conflict, notFound, unauthorized } from '../errors.js';
 import { isFplNotFound } from '../fplErrors.js';
-import { encryptSecret } from '../secrets.js';
 import { toMe } from '../serializers.js';
 import { parseInput, serialize } from '../validate.js';
+import { EMAIL_TAKEN, isUniqueViolationOn } from './email.js';
 
-const ALREADY_REGISTERED =
-  'This Team ID is already registered. Sign in on this device with your recovery code (Profile → Recovery code on your other device).';
+const ALREADY_REGISTERED = 'This Team ID is already registered. Sign in with your email and Team ID.';
+/** One message for every email-login miss: never reveal whether the email or the Team ID was wrong. */
+const EMAIL_LOGIN_FAILED = 'Email or Team ID is incorrect';
 
 export function authRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, strictLimit: object): void {
   const { prisma } = ctx;
 
   app.post('/v1/auth/register', { config: { rateLimit: strictLimit } }, async (request, reply) => {
     const body = parseInput(RegisterBodySchema, request.body);
+
+    // Cheap uniqueness checks first (no FPL call for a request that can't succeed); the unique indexes below
+    // still decide any race.
+    if (await prisma.user.findUnique({ where: { email: body.email }, select: { id: true } })) {
+      throw conflict(EMAIL_TAKEN);
+    }
+    if (await prisma.user.findUnique({ where: { entryId: body.entryId }, select: { id: true } })) {
+      throw conflict(ALREADY_REGISTERED);
+    }
 
     let entry: EntrySummary;
     try {
@@ -39,12 +48,6 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, st
       throw err;
     }
 
-    if (await prisma.user.findUnique({ where: { entryId: body.entryId }, select: { id: true } })) {
-      throw conflict(ALREADY_REGISTERED);
-    }
-
-    const recoveryCode = generateRecoveryCode();
-    const recoveryCodeHash = await hashSecret(recoveryCode);
     const inviteToken = body.inviteToken;
     let user;
     try {
@@ -55,17 +58,17 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, st
           data: {
             name: body.name,
             entryId: body.entryId,
+            email: body.email,
             teamName: entry.teamName,
             locale: body.locale ?? 'he',
             role: inviteToken === undefined ? 'USER' : 'ADMIN',
-            recoveryCodeHash,
-            recoveryCodeEnc: encryptSecret(ctx.config.secretsKey, recoveryCode),
           },
         });
         if (inviteToken !== undefined) await claimInvite(tx, inviteToken, created, ctx.clock.now());
         return created;
       });
     } catch (err) {
+      if (isUniqueViolationOn(err, 'email')) throw conflict(EMAIL_TAKEN);
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw conflict(ALREADY_REGISTERED);
       }
@@ -76,14 +79,14 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, st
     return reply.code(201).send(serialize(AuthResponseSchema, { token, user: toMe(user) }));
   });
 
-  app.post('/v1/auth/recover', { config: { rateLimit: strictLimit } }, async (request) => {
-    const body = parseInput(RecoverBodySchema, request.body);
-    const code = normalizeRecoveryCode(body.recoveryCode);
-    const user = await prisma.user.findUnique({ where: { entryId: body.entryId } });
-    const ok = user?.recoveryCodeHash
-      ? await verifySecret(user.recoveryCodeHash, code)
-      : await verifyAgainstDummy(code);
-    if (!user || !ok) throw unauthorized('Team ID or recovery code is incorrect');
+  // Sign back in (new device, after signing out): the account's email AND its Team ID must both match. Banned users
+  // may sign in (read-only, as everywhere). Admin-only accounts have no Team ID, so they can't match here.
+  app.post('/v1/auth/email-login', { config: { rateLimit: strictLimit } }, async (request) => {
+    const body = parseInput(EmailLoginBodySchema, request.body);
+    const user = await prisma.user.findUnique({ where: { email: body.email } });
+    if (user === null || user.entryId === null || user.entryId !== body.entryId) {
+      throw unauthorized(EMAIL_LOGIN_FAILED);
+    }
     const token = await auth.issueSession(user.id, request);
     return serialize(AuthResponseSchema, { token, user: toMe(user) });
   });

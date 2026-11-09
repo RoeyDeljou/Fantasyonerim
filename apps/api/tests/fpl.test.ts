@@ -157,7 +157,7 @@ describe('FPL proxy routes', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/auth/register',
-      payload: { name: 'Roey', entryId: 42 },
+      payload: { name: 'Roey', entryId: 42, email: 'roey@example.test' },
     });
     expect(res.statusCode).toBe(503);
     expect(await prisma.user.count()).toBe(0);

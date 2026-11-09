@@ -147,7 +147,7 @@ ID. In App Store Connect → App Review Information, write:
 
 Pick a real, public FPL team for the demo ID (e.g. one of the hosts' teams from `docs/CLIENT_ACCOUNTS.md`) — the
 reviewer only reads it. If that team is already registered, the reviewer would hit "already registered", so use
-a dedicated demo team ID that is never registered in production, or give them a recovery code for a demo account.
+a dedicated demo team ID that is never registered in production, or give them the email + Team ID of a demo account.
 
 **User-generated content (Guideline 1.2).** Apple requires a way to report content, to block abusive users, and
 to act on reports. Already built: report on every post/comment (reason + note) → admin reports queue → remove
@@ -183,7 +183,7 @@ users" lists them with unblock. Mention both report and block in the review note
 - [ ] Universal Links / App Links: `.well-known` files on the web host, Associated Domains, intent filter
 - [ ] Icons + splash via `@capacitor/assets` from `public/brand/logo.png`
 - [ ] `NEXT_PUBLIC_API_URL=… npm run build -w @fant/web && npx cap sync`, test on a real iPhone and Android phone
-      (sign-up, recovery code, Listen opens Spotify/Apple, push arrives and opens the right screen, photo upload)
+      (sign-up, email sign-in, Listen opens Spotify/Apple, push arrives and opens the right screen, photo upload)
 - [ ] Store listings (Hebrew + English), screenshots (6.7" and 5.5" iPhone, Android phone), privacy forms
 - [ ] Review notes with the demo Team ID; `/terms/` URL as the EULA / community rules link
 - [x] In-app account deletion (Profile) and user-level block ("⋯" menu + Profile list) — built

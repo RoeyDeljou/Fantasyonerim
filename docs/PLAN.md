@@ -25,13 +25,13 @@ and the client's league 4611._
 3. TTL cache + in-flight dedupe; 503/429 → `FplUnavailableError`; 404 → `FplNotFoundError`.
 
 **apps/api** 4. Fastify app with `/health`, `/v1/*`, Zod-validated env, CORS, rate limits, uniform `ApiError` responses. 5. Prisma/Postgres schema + migrations: User, Session, AdminCredential, AppSettings, CaptainBattle(+entries). 6. `POST /v1/auth/register` (name + Team ID, verified against FPL, 409 if team already registered),
-`POST /v1/auth/recover`, `POST /v1/auth/admin-login`, `POST /v1/auth/logout`, `GET/PATCH /v1/me`,
-`GET /v1/me/recovery-code`. Tokens hashed at rest; sliding 1-year expiry. 7. FPL proxy routes: bootstrap, fixtures, entry summary, picks, live — served from FplService cache. 8. `GET /v1/config`, `GET /v1/league/standings`, `GET /v1/league/live`, `GET /v1/captain-battle` (admin-chosen
+`POST /v1/auth/email-login` (email + Team ID; replaced recovery codes, Nov 2026), `POST /v1/auth/admin-login`,
+`POST /v1/auth/logout`, `GET/PATCH /v1/me`. Tokens hashed at rest; sliding 1-year expiry. 7. FPL proxy routes: bootstrap, fixtures, entry summary, picks, live — served from FplService cache. 8. `GET /v1/config`, `GET /v1/league/standings`, `GET /v1/league/live`, `GET /v1/captain-battle` (admin-chosen
 captains + the viewer's own captain, sorted by live captain points). 9. Admin: `GET/PUT /v1/admin/settings` (league ID, reminder offsets, social links),
 `GET/PUT /v1/admin/captain-battle`, `GET/POST /v1/admin/admins`. Non-admins get 403. 10. First admin bootstrapped from `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD`.
 
 **apps/web** 11. Static-export Next.js PWA: manifest + icons from the logo, service worker registered, installable. 12. Onboarding: name + Team ID (with "where do I find my Team ID?" help), Team preview before confirming,
-stays signed in across reloads/app restarts; recovery-code sign-in on a new device. 13. Bottom tab bar: News · Community · My Team · Table · Live Action (News/Community show "coming in the next
+stays signed in across reloads/app restarts; email + Team ID sign-in on a new device. 13. Bottom tab bar: News · Community · My Team · Table · Live Action (News/Community show "coming in the next
 update" empty states only in this phase). 14. My Team: pitch view of the XI + bench, captain/vice badges, active chip, chips used/available, GW points, bank,
 value, transfers/hits, rank; GW selector. **Live** sub-tab: live points per player, auto-subs, provisional
 bonus, players played / yet to play, auto-refresh while matches are live. 15. Table: admin's league standings with pagination; tapping a row opens a sheet with that manager's team. 16. Live Action: live league table (live GW points, re-ranked, captain, chip) + PL fixtures with live scores;

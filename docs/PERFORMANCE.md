@@ -203,7 +203,7 @@ rows, and flat as the log grows. (A `text_pattern_ops` index on `key` would also
 that operator class: every later `migrate dev` would try to recreate it.) Settings are memoized for 15 s (the old
 `getSettings` was an upsert — a write — on every league request); the job scheduler reads all leases in one query
 and skips jobs that aren't due (one query per idle tick instead of two per job); community and news serializers
-select only the columns they show (no `User` row with recovery-code hashes per post). No N+1: likes and blocks are
+select only the columns they show (no full `User` row per post). No N+1: likes and blocks are
 one query per page each.
 
 **Prisma pool**: `connection_limit` defaults to `DB_POOL_SIZE` = 5 (Prisma's default is 2 × the host's CPUs + 1,

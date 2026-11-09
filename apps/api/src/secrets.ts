@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
 /**
- * AES-256-GCM encryption for secrets at rest (recovery codes now; social tokens and WhatsApp auth
+ * AES-256-GCM encryption for secrets at rest (social tokens and WhatsApp auth
  * state later). Payload format: `v1.<iv>.<tag>.<ciphertext>` (base64url parts).
  */
 const VERSION = 'v1';

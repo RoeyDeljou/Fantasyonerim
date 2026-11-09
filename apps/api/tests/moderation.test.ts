@@ -1,5 +1,8 @@
 import {
   AdminUserListSchema,
+  AdminUserSchema,
+  AuthResponseSchema,
+  MeSchema,
   ApiErrorSchema,
   CommunityPageSchema,
   HiddenNewsListSchema,
@@ -71,14 +74,15 @@ describe('admin-only enforcement', () => {
       ['GET', '/v1/admin/users'],
       ['POST', `/v1/admin/users/${fan.user.id}/ban`],
       ['DELETE', `/v1/admin/users/${fan.user.id}/ban`],
-      ['POST', `/v1/admin/users/${fan.user.id}/recovery-code`],
+      ['PUT', `/v1/admin/users/${fan.user.id}/email`],
       ['GET', '/v1/admin/news/hidden'],
       ['POST', '/v1/admin/news/abc/restore'],
     ];
     for (const [method, url] of routes) {
-      const anon = await call(method, url, null, method === 'POST' ? {} : undefined);
+      const body = method === 'POST' || method === 'PUT' ? {} : undefined;
+      const anon = await call(method, url, null, body);
       expect(anon.statusCode, `${method} ${url}`).toBe(401);
-      const asFan = await call(method, url, fan.token, method === 'POST' ? {} : undefined);
+      const asFan = await call(method, url, fan.token, body);
       expect(asFan.statusCode, `${method} ${url}`).toBe(403);
       expect(errorOf(asFan).code).toBe('forbidden');
     }
@@ -91,33 +95,79 @@ describe('admin-only enforcement', () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------
-describe('admin: new recovery code for a user who lost theirs', () => {
-  it('issues a new code once: it signs in, the old one stops working, existing sessions stay', async () => {
+describe('admin: PUT /v1/admin/users/:id/email', () => {
+  const EMAIL_TAKEN = 'This email is already used by another account.';
+
+  it('sets a normalized email, returns the AdminUser; the user sees it at once and signs in with it', async () => {
     const admin = await adminToken(app, prisma);
-    const dor = await registerUser(app, fpl, 1201, 'Dor');
-    const oldCode = (await call('GET', '/v1/me/recovery-code', dor.token)).json().recoveryCode as string;
-    const res = await call('POST', `/v1/admin/users/${dor.user.id}/recovery-code`, admin);
+    const dor = await registerUser(app, fpl, 1201, 'Dor', 'dor@exmaple.test'); // a typo
+    // Cache Dor's session (GET reads may be served from the session cache).
+    expect(MeSchema.parse((await call('GET', '/v1/me', dor.token)).json()).email).toBe('dor@exmaple.test');
+
+    const res = await call('PUT', `/v1/admin/users/${dor.user.id}/email`, admin, {
+      email: ' Dor@Example.test ',
+    });
     expect(res.statusCode).toBe(200);
-    const { recoveryCode } = res.json() as { recoveryCode: string };
-    expect(recoveryCode).not.toBe(oldCode);
-    const recover = (code: string) =>
-      call('POST', '/v1/auth/recover', null, { entryId: 1201, recoveryCode: code });
-    expect((await recover(oldCode)).statusCode).toBe(401);
-    expect((await recover(recoveryCode)).statusCode).toBe(200);
-    // Their own Profile shows the new code, and the phone that was signed in stays signed in.
-    const mine = await call('GET', '/v1/me/recovery-code', dor.token);
-    expect(mine.statusCode).toBe(200);
-    expect(mine.json().recoveryCode).toBe(recoveryCode);
+    expect(AdminUserSchema.parse(res.json())).toMatchObject({
+      id: dor.user.id,
+      name: 'Dor',
+      entryId: 1201,
+      email: 'dor@example.test',
+      role: 'user',
+    });
+    // Cache invalidated: Dor's next read shows the fixed email.
+    expect(MeSchema.parse((await call('GET', '/v1/me', dor.token)).json()).email).toBe('dor@example.test');
+    const login = await call('POST', '/v1/auth/email-login', null, {
+      email: 'dor@example.test',
+      entryId: 1201,
+    });
+    expect(login.statusCode).toBe(200);
+    expect(AuthResponseSchema.parse(login.json()).user.id).toBe(dor.user.id);
+    const old = await call('POST', '/v1/auth/email-login', null, {
+      email: 'dor@exmaple.test',
+      entryId: 1201,
+    });
+    expect(old.statusCode).toBe(401);
+    // Setting the same email again is a no-op success.
+    const again = await call('PUT', `/v1/admin/users/${dor.user.id}/email`, admin, {
+      email: 'dor@example.test',
+    });
+    expect(again.statusCode).toBe(200);
   });
 
-  it('404 for an unknown user, 400 for an account without a Team ID', async () => {
+  it('null clears the email (the app asks the user for it again)', async () => {
     const admin = await adminToken(app, prisma);
-    const unknown = await call('POST', '/v1/admin/users/nope/recovery-code', admin);
+    const dor = await registerUser(app, fpl, 1201, 'Dor');
+    await call('GET', '/v1/me', dor.token);
+    const res = await call('PUT', `/v1/admin/users/${dor.user.id}/email`, admin, { email: null });
+    expect(res.statusCode).toBe(200);
+    expect(AdminUserSchema.parse(res.json()).email).toBeNull();
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: dor.user.id } })).email).toBeNull();
+    expect(MeSchema.parse((await call('GET', '/v1/me', dor.token)).json()).email).toBeNull();
+  });
+
+  it('409 when another account has the email; 404 unknown user; 400 invalid body', async () => {
+    const admin = await adminToken(app, prisma);
+    const dor = await registerUser(app, fpl, 1201, 'Dor');
+    await registerUser(app, fpl, 1202, 'Dana', 'dana@example.test');
+    const dup = await call('PUT', `/v1/admin/users/${dor.user.id}/email`, admin, {
+      email: 'DANA@example.test',
+    });
+    expect(dup.statusCode).toBe(409);
+    expect(errorOf(dup)).toEqual({ code: 'conflict', message: EMAIL_TAKEN });
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: dor.user.id } })).email).toBe(
+      'fan1201@example.test',
+    );
+
+    const unknown = await call('PUT', '/v1/admin/users/nope/email', admin, { email: 'x@example.test' });
     expect(unknown.statusCode).toBe(404);
-    const adminUser = await prisma.user.findFirstOrThrow({ where: { role: 'ADMIN', entryId: null } });
-    const noTeam = await call('POST', `/v1/admin/users/${adminUser.id}/recovery-code`, admin);
-    expect(noTeam.statusCode).toBe(400);
-    expect(errorOf(noTeam).code).toBe('bad_request');
+    expect(errorOf(unknown).code).toBe('not_found');
+
+    for (const body of [{}, { email: 'not-an-email' }, { email: 5 }, undefined]) {
+      const res = await call('PUT', `/v1/admin/users/${dor.user.id}/email`, admin, body);
+      expect(res.statusCode, JSON.stringify(body)).toBe(400);
+      expect(errorOf(res).code).toBe('bad_request');
+    }
   });
 });
 
@@ -218,10 +268,10 @@ describe('bans', () => {
 
 // ---------------------------------------------------------------------------------------------------------
 describe('admin users list', () => {
-  it('searches by name, team name or exact Team ID and counts live posts', async () => {
+  it('searches by name, team name, email or exact Team ID and counts live posts', async () => {
     const admin = await adminToken(app, prisma);
     fpl.addEntry(1201, 'Haaland Hunters');
-    const dana = await registerUser(app, fpl, 1201, 'Dana Levi');
+    const dana = await registerUser(app, fpl, 1201, 'Dana Levi', 'dana.levi@example.test');
     const yossi = await registerUser(app, fpl, 1202, 'Yossi');
     await createPost(app, dana.token);
     const gone = await createPost(app, dana.token);
@@ -245,16 +295,23 @@ describe('admin users list', () => {
       name: 'Dana Levi',
       entryId: 1201,
       teamName: 'Haaland Hunters',
+      email: 'dana.levi@example.test',
       role: 'user',
       postCount: 2,
       bannedAt: null,
       banReason: null,
     });
     expect(all.find((u) => u.id === yossi.user.id)).toMatchObject({ banReason: 'abuse', postCount: 0 });
-    expect(all.find((u) => u.role === 'admin')).toMatchObject({ entryId: null });
+    expect(all.find((u) => u.role === 'admin')).toMatchObject({ entryId: null, email: null });
 
     expect((await list('dana')).map((u) => u.id)).toEqual([dana.user.id]);
     expect((await list('HUNTERS')).map((u) => u.id)).toEqual([dana.user.id]);
+    // Email: case-insensitive contains.
+    expect((await list('LEVI@EXAMPLE')).map((u) => u.id)).toEqual([dana.user.id]);
+    expect((await list('fan1202@')).map((u) => u.id)).toEqual([yossi.user.id]);
+    expect((await list('example.test')).map((u) => u.id).sort()).toEqual(
+      [dana.user.id, yossi.user.id].sort(),
+    );
     expect((await list('1202')).map((u) => u.id)).toEqual([yossi.user.id]);
     expect((await list('1201')).map((u) => u.id)).toEqual([dana.user.id]);
     expect(await list('99')).toEqual([]); // Team ID must match exactly

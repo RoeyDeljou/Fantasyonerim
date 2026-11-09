@@ -8,31 +8,30 @@ Legend: 🌐 public · 👤 signed-in user · 🛡 admin
 
 ## Phase 1
 
-| Method  | Path                             | Auth                    | Body / query                | Response                                                                 |
-| ------- | -------------------------------- | ----------------------- | --------------------------- | ------------------------------------------------------------------------ |
-| GET     | `/health`                        | 🌐                      | –                           | `{ ok: true, fpl?: 'ok'\|'degraded'\|'updating' }` (no error details)    |
-| GET     | `/v1/config`                     | 🌐                      | –                           | `PublicConfig`                                                           |
-| POST    | `/v1/auth/register`              | 🌐                      | `RegisterBody`              | `AuthResponse` (201) · 404 unknown Team ID · 409 team already registered |
-| POST    | `/v1/auth/recover`               | 🌐                      | `RecoverBody`               | `AuthResponse` · 401 wrong code                                          |
-| POST    | `/v1/auth/admin-login`           | 🌐                      | `AdminLoginBody`            | `AuthResponse` · 401                                                     |
-| POST    | `/v1/auth/logout`                | 👤                      | –                           | 204                                                                      |
-| GET     | `/v1/me`                         | 👤                      | –                           | `Me`                                                                     |
-| PATCH   | `/v1/me`                         | 👤                      | `UpdateMeBody`              | `Me`                                                                     |
-| GET     | `/v1/me/recovery-code`           | 👤                      | –                           | `{ recoveryCode }`                                                       |
-| GET     | `/v1/fpl/bootstrap`              | 🌐                      | –                           | `Bootstrap`                                                              |
-| GET     | `/v1/fpl/fixtures`               | 🌐                      | `?event=`                   | `Fixture[]`                                                              |
-| GET     | `/v1/fpl/fixtures/:fixtureId`    | 🌐                      | –                           | `FixtureDetail` (match sheet) · 404 unknown fixture · 400 invalid id     |
-| GET     | `/v1/fpl/entries/:entryId`       | 🌐                      | –                           | `EntrySummary`                                                           |
-| GET     | `/v1/fpl/entries/:entryId/picks` | 🌐                      | `?event=` (default current) | `EntryPicks`                                                             |
-| GET     | `/v1/fpl/entries/:entryId/live`  | 🌐                      | `?event=` (default current) | `EntryLive`                                                              |
-| GET     | `/v1/league/standings`           | 🌐                      | `?page=`                    | `LeagueStandings` · 404 when no league configured                        |
-| GET     | `/v1/league/live`                | 🌐                      | `?page=`                    | `LiveLeague`                                                             |
-| GET     | `/v1/league/position`            | 👤                      | –                           | `LeaguePosition` (find my team, below) · 404 when no league set          |
-| GET     | `/v1/captain-battle`             | 🌐 (👤 adds "mine" row) | –                           | `CaptainBattle`                                                          |
-| GET/PUT | `/v1/admin/settings`             | 🛡                       | `AdminSettings`             | `AdminSettings`                                                          |
-| GET/PUT | `/v1/admin/captain-battle`       | 🛡                       | `CaptainBattleConfig`       | `CaptainBattleConfig` (GET → null when unset)                            |
-| GET     | `/v1/admin/admins`               | 🛡                       | –                           | `AdminAccount[]`                                                         |
-| POST    | `/v1/admin/admins`               | 🛡                       | `CreateAdminBody`           | `AdminAccount` (201)                                                     |
+| Method  | Path                             | Auth                    | Body / query                   | Response                                                                                      |
+| ------- | -------------------------------- | ----------------------- | ------------------------------ | --------------------------------------------------------------------------------------------- |
+| GET     | `/health`                        | 🌐                      | –                              | `{ ok: true, fpl?: 'ok'\|'degraded'\|'updating' }` (no error details)                         |
+| GET     | `/v1/config`                     | 🌐                      | –                              | `PublicConfig`                                                                                |
+| POST    | `/v1/auth/register`              | 🌐                      | `RegisterBody` (incl. `email`) | `AuthResponse` (201) · 404 unknown Team ID · 409 team already registered / email already used |
+| POST    | `/v1/auth/email-login`           | 🌐                      | `EmailLoginBody`               | `AuthResponse` · 401 "Email or Team ID is incorrect" (same for every miss)                    |
+| POST    | `/v1/auth/admin-login`           | 🌐                      | `AdminLoginBody`               | `AuthResponse` · 401                                                                          |
+| POST    | `/v1/auth/logout`                | 👤                      | –                              | 204                                                                                           |
+| GET     | `/v1/me`                         | 👤                      | –                              | `Me`                                                                                          |
+| PATCH   | `/v1/me`                         | 👤                      | `UpdateMeBody`                 | `Me` · 409 email already used by another account                                              |
+| GET     | `/v1/fpl/bootstrap`              | 🌐                      | –                              | `Bootstrap`                                                                                   |
+| GET     | `/v1/fpl/fixtures`               | 🌐                      | `?event=`                      | `Fixture[]`                                                                                   |
+| GET     | `/v1/fpl/fixtures/:fixtureId`    | 🌐                      | –                              | `FixtureDetail` (match sheet) · 404 unknown fixture · 400 invalid id                          |
+| GET     | `/v1/fpl/entries/:entryId`       | 🌐                      | –                              | `EntrySummary`                                                                                |
+| GET     | `/v1/fpl/entries/:entryId/picks` | 🌐                      | `?event=` (default current)    | `EntryPicks`                                                                                  |
+| GET     | `/v1/fpl/entries/:entryId/live`  | 🌐                      | `?event=` (default current)    | `EntryLive`                                                                                   |
+| GET     | `/v1/league/standings`           | 🌐                      | `?page=`                       | `LeagueStandings` · 404 when no league configured                                             |
+| GET     | `/v1/league/live`                | 🌐                      | `?page=`                       | `LiveLeague`                                                                                  |
+| GET     | `/v1/league/position`            | 👤                      | –                              | `LeaguePosition` (find my team, below) · 404 when no league set                               |
+| GET     | `/v1/captain-battle`             | 🌐 (👤 adds "mine" row) | –                              | `CaptainBattle`                                                                               |
+| GET/PUT | `/v1/admin/settings`             | 🛡                       | `AdminSettings`                | `AdminSettings`                                                                               |
+| GET/PUT | `/v1/admin/captain-battle`       | 🛡                       | `CaptainBattleConfig`          | `CaptainBattleConfig` (GET → null when unset)                                                 |
+| GET     | `/v1/admin/admins`               | 🛡                       | –                              | `AdminAccount[]`                                                                              |
+| POST    | `/v1/admin/admins`               | 🛡                       | `CreateAdminBody`              | `AdminAccount` (201)                                                                          |
 
 Upstream FPL failures map to `503 upstream_unavailable`.
 
@@ -116,7 +115,8 @@ Schemas: `packages/shared/src/community.ts`. Banned users get 403 on every write
 | POST        | `/v1/uploads`                         | 👤                           | multipart `file` (jpeg/png/webp/heic ≤ 10 MB) | `UploadResponse` (201) — re-encoded to webp/jpeg ≤ 2048 px, EXIF stripped · 413 / 415                           |
 | GET         | `/v1/admin/reports`                   | 🛡                            | `?status=open`                                | `ReportList`                                                                                                    |
 | POST        | `/v1/admin/reports/:targetId/resolve` | 🛡                            | `ResolveReportBody`                           | 204                                                                                                             |
-| GET         | `/v1/admin/users`                     | 🛡                            | `?query=`                                     | `AdminUserList`                                                                                                 |
+| GET         | `/v1/admin/users`                     | 🛡                            | `?query=` (name / team / Team ID / email)     | `AdminUserList`                                                                                                 |
+| PUT         | `/v1/admin/users/:id/email`           | 🛡                            | `AdminUserEmailBody` (`null` clears)          | `AdminUser` (200) · 404 unknown user · 409 email already used by another account                                |
 | POST/DELETE | `/v1/admin/users/:id/ban`             | 🛡                            | `BanBody` (POST)                              | 204 — admins can't be banned                                                                                    |
 | GET         | `/v1/admin/news/hidden`               | 🛡                            | –                                             | `HiddenNewsList`                                                                                                |
 | POST        | `/v1/admin/news/:id/restore`          | 🛡                            | –                                             | 204 — un-hides a News item                                                                                      |

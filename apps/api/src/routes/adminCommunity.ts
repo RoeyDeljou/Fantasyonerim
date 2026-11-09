@@ -1,19 +1,18 @@
 import {
+  AdminUserEmailBodySchema,
   AdminUserListSchema,
+  AdminUserSchema,
   BanBodySchema,
   ReportListSchema,
-  RecoveryCodeResponseSchema,
   ReportReasonSchema,
   ResolveReportBodySchema,
   UserIdSchema,
   type ReportReason,
 } from '@fant/shared';
-import type { Prisma, Report, ReportTargetKind } from '@prisma/client';
+import { Prisma, type Report, type ReportTargetKind, type User } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { hashSecret } from '../auth/passwords.js';
 import type { Auth } from '../auth/session.js';
-import { generateRecoveryCode } from '../auth/tokens.js';
 import {
   decodeTargetId,
   encodeTargetId,
@@ -25,9 +24,9 @@ import {
 import { COMMENT_INCLUDE, POST_INCLUDE, toComment, toPosts } from '../community/serialize.js';
 import { cleanPlainText } from '../community/text.js';
 import type { AppContext } from '../context.js';
-import { badRequest, notFound } from '../errors.js';
-import { encryptSecret } from '../secrets.js';
+import { badRequest, conflict, notFound } from '../errors.js';
 import { parseInput, serialize } from '../validate.js';
+import { EMAIL_TAKEN, isUniqueViolationOn } from './email.js';
 import { cleanQuery } from './query.js';
 
 // Query/param wrappers (the contract has no query DTOs for these).
@@ -38,6 +37,21 @@ const UserParamsSchema = z.object({ id: UserIdSchema });
 
 export const ADMIN_USERS_PAGE = 50;
 export const MAX_REPORT_GROUPS = 200;
+
+function toAdminUser(u: User, postCount: number) {
+  return {
+    id: u.id,
+    name: u.name,
+    entryId: u.entryId,
+    teamName: u.teamName,
+    email: u.email,
+    role: u.role === 'ADMIN' ? ('admin' as const) : ('user' as const),
+    bannedAt: u.bannedAt === null ? null : u.bannedAt.toISOString(),
+    banReason: u.banReason,
+    postCount,
+    createdAt: u.createdAt.toISOString(),
+  };
+}
 
 /** Moderation: report queue, users list, bans. Every route re-checks the ADMIN role first. */
 export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth): void {
@@ -157,6 +171,7 @@ export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth
         const or: Prisma.UserWhereInput[] = [
           { name: { contains: query, mode: 'insensitive' } },
           { teamName: { contains: query, mode: 'insensitive' } },
+          { email: { contains: query, mode: 'insensitive' } },
         ];
         if (/^\d{1,8}$/.test(query)) or.push({ entryId: Number(query) });
         where.OR = or;
@@ -168,17 +183,7 @@ export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth
         include: { _count: { select: { posts: { where: { deletedAt: null } } } } },
       });
       return serialize(AdminUserListSchema, {
-        items: users.map((u) => ({
-          id: u.id,
-          name: u.name,
-          entryId: u.entryId,
-          teamName: u.teamName,
-          role: u.role === 'ADMIN' ? 'admin' : 'user',
-          bannedAt: u.bannedAt === null ? null : u.bannedAt.toISOString(),
-          banReason: u.banReason,
-          postCount: u._count.posts,
-          createdAt: u.createdAt.toISOString(),
-        })),
+        items: users.map((u) => toAdminUser(u, u._count.posts)),
       });
     });
 
@@ -197,29 +202,36 @@ export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth
       return reply.code(204).send();
     });
 
-    // A user lost their recovery code (e.g. signed up in Safari, then opened the home-screen app): an admin issues a
-    // new one and sends it to them. The old code stops working; their signed-in devices stay signed in. Shown once.
-    admin.post('/v1/admin/users/:id/recovery-code', async (request) => {
+    // An admin fixes a user's sign-in email (a typo, or a fan who can't get back in). Null clears it. Returns the
+    // updated AdminUser (200).
+    admin.put('/v1/admin/users/:id/email', async (request) => {
       const { user: by } = await auth.requireAdmin(request);
       const { id } = parseInput(UserParamsSchema, request.params);
-      const target = await prisma.user.findUnique({ where: { id } });
+      const { email } = parseInput(AdminUserEmailBodySchema, request.body);
+      const target = await prisma.user.findUnique({ where: { id }, select: { id: true } });
       if (target === null) throw notFound('This user does not exist');
-      if (target.entryId === null) {
-        throw badRequest(
-          'This account has no FPL Team ID, so it signs in with a username and password instead',
-        );
+      if (email !== null) {
+        const owner = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+        if (owner !== null && owner.id !== id) throw conflict(EMAIL_TAKEN);
       }
-      const recoveryCode = generateRecoveryCode();
-      await prisma.user.update({
-        where: { id },
-        data: {
-          recoveryCodeHash: await hashSecret(recoveryCode),
-          recoveryCodeEnc: encryptSecret(ctx.config.secretsKey, recoveryCode),
-        },
-      });
+      let updated;
+      try {
+        updated = await prisma.user.update({
+          where: { id },
+          data: { email },
+          include: { _count: { select: { posts: { where: { deletedAt: null } } } } },
+        });
+      } catch (err) {
+        if (isUniqueViolationOn(err, 'email')) throw conflict(EMAIL_TAKEN);
+        // Deleted between the check and the update.
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+          throw notFound('This user does not exist');
+        }
+        throw err;
+      }
       ctx.forgetUser(id);
-      request.log.info({ userId: id, by: by.id }, 'admin issued a new recovery code');
-      return serialize(RecoveryCodeResponseSchema, { recoveryCode });
+      request.log.info({ userId: id, by: by.id }, 'admin changed a user email');
+      return serialize(AdminUserSchema, toAdminUser(updated, updated._count.posts));
     });
 
     admin.delete('/v1/admin/users/:id/ban', async (request, reply) => {

@@ -98,15 +98,16 @@ deleted | removed`).
 
 ## Auth
 
-- **Fans**: `POST /v1/auth/register` with name + FPL Team ID (verified via `FplService.getEntry`). One account
-  per Team ID (409 otherwise). A recovery code `XXXX-XXXX` is generated, stored argon2id-hashed (for
-  verification) and AES-256-GCM-encrypted (so Profile can show it via `GET /v1/me/recovery-code`).
-  `POST /v1/auth/recover` with Team ID + code signs in on a new device.
+- **Fans**: `POST /v1/auth/register` with name + FPL Team ID (verified via `FplService.getEntry`) + email. One
+  account per Team ID and per email (409 otherwise; emails are stored trimmed + lower-cased, not verified).
+  `POST /v1/auth/email-login` with email + Team ID signs back in (new device / after signing out); every miss is
+  the same 401. Older accounts add their email with `PATCH /v1/me`; admins fix one with
+  `PUT /v1/admin/users/:id/email`. (Recovery codes were removed; their columns are deprecated, unused.)
 - **Sessions**: 32-byte random bearer tokens, only the SHA-256 is stored. Each authenticated request slides
   expiry to now + 365 days (DB write throttled to once per hour per session).
 - **Admins**: username + argon2id password (`POST /v1/auth/admin-login`). The first admin comes from
   `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD`. Every `/v1/admin/*` route re-checks the role.
-- Register / recover / admin-login are limited to 10 requests per minute per IP; everything else 600/min.
+- Register / email-login / admin-login are limited to 10 requests per minute per IP; everything else 600/min.
 
 ## Environment
 

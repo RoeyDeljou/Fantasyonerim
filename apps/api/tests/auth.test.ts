@@ -1,4 +1,4 @@
-import { ApiErrorSchema, AuthResponseSchema, MeSchema, RecoveryCodeResponseSchema } from '@fant/shared';
+import { ApiErrorSchema, AuthResponseSchema, MeSchema } from '@fant/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { bootstrapAdmin } from '../src/auth/bootstrapAdmin.js';
@@ -31,6 +31,13 @@ afterAll(async () => {
 });
 
 const errorCode = (body: unknown) => ApiErrorSchema.parse(body).error.code;
+const errorMessage = (body: unknown) => ApiErrorSchema.parse(body).error.message;
+
+const EMAIL_TAKEN = 'This email is already used by another account.';
+const TEAM_TAKEN = 'This Team ID is already registered. Sign in with your email and Team ID.';
+const LOGIN_FAILED = 'Email or Team ID is incorrect';
+
+const getEntryCalls = () => fpl.calls.filter((c) => c.startsWith('getEntry')).length;
 
 describe('POST /v1/auth/register', () => {
   it('creates the account and returns a token + Me', async () => {
@@ -38,7 +45,7 @@ describe('POST /v1/auth/register', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/auth/register',
-      payload: { name: '  Roey ', entryId: '123456', locale: 'en' },
+      payload: { name: '  Roey ', entryId: '123456', email: '  Roey.K@Example.TEST ', locale: 'en' },
     });
     expect(res.statusCode).toBe(201);
     const body = AuthResponseSchema.parse(res.json());
@@ -46,12 +53,16 @@ describe('POST /v1/auth/register', () => {
       name: 'Roey',
       entryId: 123456,
       teamName: 'Salah Days',
+      email: 'roey.k@example.test',
       role: 'user',
       locale: 'en',
     });
 
     const user = await prisma.user.findUniqueOrThrow({ where: { entryId: 123456 } });
-    expect(user.recoveryCodeHash).toMatch(/^\$argon2id\$/);
+    // Stored normalized (trimmed + lower-case); no recovery code any more.
+    expect(user.email).toBe('roey.k@example.test');
+    expect(user.recoveryCodeHash).toBeNull();
+    expect(user.recoveryCodeEnc).toBeNull();
     // Token is stored hashed only.
     const session = await prisma.session.findFirstOrThrow({ where: { userId: user.id } });
     expect(session.tokenHash).toBe(hashToken(body.token));
@@ -68,7 +79,7 @@ describe('POST /v1/auth/register', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/auth/register',
-      payload: { name: 'Roey', entryId: 999 },
+      payload: { name: 'Roey', entryId: 999, email: 'roey@example.test' },
     });
     expect(res.statusCode).toBe(404);
     const body = ApiErrorSchema.parse(res.json());
@@ -77,26 +88,66 @@ describe('POST /v1/auth/register', () => {
     expect(await prisma.user.count()).toBe(0);
   });
 
-  it('409s when the team is already registered and points to the recovery code', async () => {
+  it('409s when the team is already registered and points to email sign-in', async () => {
     await registerUser(app, fpl, 42);
     const res = await app.inject({
       method: 'POST',
       url: '/v1/auth/register',
-      payload: { name: 'Other', entryId: 42 },
+      payload: { name: 'Other', entryId: 42, email: 'other@example.test' },
     });
     expect(res.statusCode).toBe(409);
     const body = ApiErrorSchema.parse(res.json());
     expect(body.error.code).toBe('conflict');
-    expect(body.error.message.toLowerCase()).toContain('recovery code');
+    expect(body.error.message).toBe(TEAM_TAKEN);
+  });
+
+  it('409s when the email is on another account (any case), before calling FPL', async () => {
+    await registerUser(app, fpl, 42, 'Dana', 'dana@example.test');
+    fpl.addEntry(43);
+    const before = getEntryCalls();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/register',
+      payload: { name: 'Other', entryId: 43, email: ' DANA@example.TEST' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(errorCode(res.json())).toBe('conflict');
+    expect(errorMessage(res.json())).toBe(EMAIL_TAKEN);
+    expect(getEntryCalls()).toBe(before);
+    expect(await prisma.user.count()).toBe(1);
+  });
+
+  it('a concurrent race for the same email → exactly one account, the other gets the email 409', async () => {
+    fpl.addEntry(51);
+    fpl.addEntry(52);
+    const [a, b] = await Promise.all(
+      [51, 52].map((entryId) =>
+        app.inject({
+          method: 'POST',
+          url: '/v1/auth/register',
+          payload: { name: `Fan ${entryId}`, entryId, email: 'same@example.test' },
+        }),
+      ),
+    );
+    const results = [a, b].map((r) => r?.statusCode).sort();
+    expect(results).toEqual([201, 409]);
+    const loser = [a, b].find((r) => r?.statusCode === 409);
+    expect(errorMessage(loser?.json())).toBe(EMAIL_TAKEN);
+    expect(await prisma.user.count({ where: { email: 'same@example.test' } })).toBe(1);
   });
 
   it.each([
     ['missing body', undefined],
-    ['short name', { name: 'R', entryId: 1 }],
-    ['angle brackets', { name: '<script>', entryId: 1 }],
-    ['non-numeric team', { name: 'Roey', entryId: 'abc' }],
-    ['negative team', { name: 'Roey', entryId: -5 }],
-    ['bad locale', { name: 'Roey', entryId: 1, locale: 'fr' }],
+    ['missing email', { name: 'Roey', entryId: 1 }],
+    ['invalid email', { name: 'Roey', entryId: 1, email: 'not-an-email' }],
+    ['email with spaces', { name: 'Roey', entryId: 1, email: 'ro ey@example.test' }],
+    ['null email', { name: 'Roey', entryId: 1, email: null }],
+    ['too-long email', { name: 'Roey', entryId: 1, email: `${'a'.repeat(250)}@example.test` }],
+    ['short name', { name: 'R', entryId: 1, email: 'r@example.test' }],
+    ['angle brackets', { name: '<script>', entryId: 1, email: 'r@example.test' }],
+    ['non-numeric team', { name: 'Roey', entryId: 'abc', email: 'r@example.test' }],
+    ['negative team', { name: 'Roey', entryId: -5, email: 'r@example.test' }],
+    ['bad locale', { name: 'Roey', entryId: 1, email: 'r@example.test', locale: 'fr' }],
   ])('400s on invalid body (%s)', async (_label, payload) => {
     const res = await app.inject({
       method: 'POST',
@@ -202,66 +253,219 @@ describe('profile', () => {
     expect(bad.statusCode).toBe(400);
   });
 
-  it('GET /v1/me/recovery-code returns an XXXX-XXXX code stored encrypted', async () => {
+  it('PATCH /v1/me adds an email (normalized), shows it on /v1/me at once (cache invalidated)', async () => {
+    // An account from before email was required.
     const auth = await registerUser(app, fpl, 5);
-    const res = await app.inject({ method: 'GET', url: '/v1/me/recovery-code', headers: bearer(auth.token) });
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['cache-control']).toBe('no-store');
-    const { recoveryCode } = RecoveryCodeResponseSchema.parse(res.json());
-    expect(recoveryCode).toMatch(/^[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}$/);
-    const user = await prisma.user.findUniqueOrThrow({ where: { entryId: 5 } });
-    expect(user.recoveryCodeEnc).not.toContain(recoveryCode);
-    expect(JSON.stringify(user)).not.toContain(recoveryCode);
+    await prisma.user.update({ where: { id: auth.user.id }, data: { email: null } });
+    // This read caches the session with email = null; the PATCH must evict it.
+    const me0 = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer(auth.token) });
+    expect(MeSchema.parse(me0.json()).email).toBeNull();
 
-    const anon = await app.inject({ method: 'GET', url: '/v1/me/recovery-code' });
-    expect(anon.statusCode).toBe(401);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/me',
+      headers: bearer(auth.token),
+      payload: { email: ' New.Mail@Example.test ' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(MeSchema.parse(res.json()).email).toBe('new.mail@example.test');
+    const me = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer(auth.token) });
+    expect(MeSchema.parse(me.json()).email).toBe('new.mail@example.test');
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: auth.user.id } })).email).toBe(
+      'new.mail@example.test',
+    );
+    // Re-sending your own email is fine.
+    const same = await app.inject({
+      method: 'PATCH',
+      url: '/v1/me',
+      headers: bearer(auth.token),
+      payload: { email: 'NEW.MAIL@example.test' },
+    });
+    expect(same.statusCode).toBe(200);
+  });
+
+  it('PATCH /v1/me with an email used by another account → 409, nothing changes', async () => {
+    await registerUser(app, fpl, 5, 'Dana', 'dana@example.test');
+    const other = await registerUser(app, fpl, 6);
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/me',
+      headers: bearer(other.token),
+      payload: { email: 'Dana@Example.test', name: 'Renamed' },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(errorMessage(res.json())).toBe(EMAIL_TAKEN);
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: other.user.id } });
+    expect(row).toMatchObject({ email: 'fan6@example.test', name: 'Fan 6' });
+  });
+
+  it('PATCH /v1/me email race between two accounts → one 200, one 409', async () => {
+    const a = await registerUser(app, fpl, 5);
+    const b = await registerUser(app, fpl, 6);
+    const results = await Promise.all(
+      [a, b].map((u) =>
+        app.inject({
+          method: 'PATCH',
+          url: '/v1/me',
+          headers: bearer(u.token),
+          payload: { email: 'race@example.test' },
+        }),
+      ),
+    );
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 409]);
+    const loser = results.find((r) => r.statusCode === 409);
+    expect(errorMessage(loser?.json())).toBe(EMAIL_TAKEN);
+    expect(await prisma.user.count({ where: { email: 'race@example.test' } })).toBe(1);
+  });
+
+  it('PATCH /v1/me: a banned user may still set their email', async () => {
+    const auth = await registerUser(app, fpl, 5);
+    await prisma.user.update({
+      where: { id: auth.user.id },
+      data: { bannedAt: clock.now(), banReason: 'x' },
+    });
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/me',
+      headers: bearer(auth.token),
+      payload: { email: 'still.me@example.test' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(MeSchema.parse(res.json())).toMatchObject({ email: 'still.me@example.test', canPost: false });
+  });
+
+  it.each([
+    ['invalid email', { email: 'nope' }],
+    ['null email', { email: null }],
+    ['numeric email', { email: 5 }],
+  ])('PATCH /v1/me 400s on %s', async (_label, payload) => {
+    const auth = await registerUser(app, fpl, 5);
+    const res = await app.inject({ method: 'PATCH', url: '/v1/me', headers: bearer(auth.token), payload });
+    expect(res.statusCode).toBe(400);
+    expect(errorCode(res.json())).toBe('bad_request');
   });
 });
 
-describe('POST /v1/auth/recover', () => {
-  async function codeFor(token: string): Promise<string> {
-    const res = await app.inject({ method: 'GET', url: '/v1/me/recovery-code', headers: bearer(token) });
-    return RecoveryCodeResponseSchema.parse(res.json()).recoveryCode;
-  }
-
-  it('issues a new session with the right code (case-insensitive)', async () => {
-    const first = await registerUser(app, fpl, 77, 'Moshe');
-    const code = await codeFor(first.token);
-    const res = await app.inject({
+describe('recovery codes are gone', () => {
+  it('the old recovery routes no longer exist (404)', async () => {
+    const auth = await registerUser(app, fpl, 5);
+    const admin = await adminLogin();
+    const recover = await app.inject({
       method: 'POST',
       url: '/v1/auth/recover',
-      payload: { entryId: 77, recoveryCode: code.toLowerCase() },
+      payload: { entryId: 5, recoveryCode: 'AAAA-AAAA' },
     });
+    expect(recover.statusCode).toBe(404);
+    const mine = await app.inject({
+      method: 'GET',
+      url: '/v1/me/recovery-code',
+      headers: bearer(auth.token),
+    });
+    expect(mine.statusCode).toBe(404);
+    const issued = await app.inject({
+      method: 'POST',
+      url: `/v1/admin/users/${auth.user.id}/recovery-code`,
+      headers: bearer(admin),
+    });
+    expect(issued.statusCode).toBe(404);
+  });
+});
+
+async function adminLogin(): Promise<string> {
+  await bootstrapAdmin(prisma, 'boss', 'super-secret-pw');
+  const res = await app.inject({
+    method: 'POST',
+    url: '/v1/auth/admin-login',
+    payload: { username: 'boss', password: 'super-secret-pw' },
+  });
+  return AuthResponseSchema.parse(res.json()).token;
+}
+
+describe('POST /v1/auth/email-login', () => {
+  const login = (payload: unknown) =>
+    app.inject({ method: 'POST', url: '/v1/auth/email-login', payload: payload as Record<string, unknown> });
+
+  it('issues a new session with the right email + Team ID (email case/space-insensitive)', async () => {
+    const first = await registerUser(app, fpl, 77, 'Moshe', 'moshe@example.test');
+    const res = await login({ email: '  MOSHE@Example.Test ', entryId: '77' });
     expect(res.statusCode).toBe(200);
     const body = AuthResponseSchema.parse(res.json());
     expect(body.token).not.toBe(first.token);
-    expect(body.user.name).toBe('Moshe');
+    expect(body.user).toMatchObject({ name: 'Moshe', entryId: 77, email: 'moshe@example.test' });
     // Both devices stay signed in.
     for (const token of [first.token, body.token]) {
       const me = await app.inject({ method: 'GET', url: '/v1/me', headers: bearer(token) });
       expect(me.statusCode).toBe(200);
     }
+    expect(await prisma.session.count({ where: { userId: first.user.id } })).toBe(2);
   });
 
-  it('401s with a wrong code or unknown team', async () => {
-    await registerUser(app, fpl, 77);
-    for (const payload of [
-      { entryId: 77, recoveryCode: 'AAAA-AAAA' },
-      { entryId: 78, recoveryCode: 'AAAA-AAAA' },
-    ]) {
-      const res = await app.inject({ method: 'POST', url: '/v1/auth/recover', payload });
+  it('works again after signing out', async () => {
+    const first = await registerUser(app, fpl, 77);
+    await app.inject({ method: 'POST', url: '/v1/auth/logout', headers: bearer(first.token) });
+    const res = await login({ email: 'fan77@example.test', entryId: 77 });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("every miss is the same 401 (wrong team, unknown email, someone else's team, no email on file)", async () => {
+    await registerUser(app, fpl, 77, 'Moshe', 'moshe@example.test');
+    await registerUser(app, fpl, 78, 'Dana', 'dana@example.test');
+    const legacy = await registerUser(app, fpl, 79);
+    await prisma.user.update({ where: { id: legacy.user.id }, data: { email: null } });
+    const misses = [
+      { email: 'moshe@example.test', entryId: 76 }, // wrong Team ID
+      { email: 'nobody@example.test', entryId: 77 }, // unknown email
+      { email: 'moshe@example.test', entryId: 78 }, // another account's Team ID
+      { email: 'nobody@example.test', entryId: 999 }, // both unknown
+      { email: 'fan79@example.test', entryId: 79 }, // account has no email yet
+    ];
+    for (const payload of misses) {
+      const res = await login(payload);
+      expect(res.statusCode, JSON.stringify(payload)).toBe(401);
+      expect(ApiErrorSchema.parse(res.json()).error).toEqual({
+        code: 'unauthorized',
+        message: LOGIN_FAILED,
+      });
+    }
+    expect(await prisma.session.count()).toBe(3); // only the three registrations
+  });
+
+  it('a banned user can sign in (read-only)', async () => {
+    const auth = await registerUser(app, fpl, 77);
+    await prisma.user.update({
+      where: { id: auth.user.id },
+      data: { bannedAt: clock.now(), banReason: 'x' },
+    });
+    const res = await login({ email: 'fan77@example.test', entryId: 77 });
+    expect(res.statusCode).toBe(200);
+    expect(AuthResponseSchema.parse(res.json()).user.canPost).toBe(false);
+  });
+
+  it('an admin-only account (no Team ID) cannot use it', async () => {
+    await bootstrapAdmin(prisma, 'boss', 'super-secret-pw');
+    await prisma.user.updateMany({ where: { role: 'ADMIN' }, data: { email: 'boss@example.test' } });
+    for (const entryId of [1, 77]) {
+      const res = await login({ email: 'boss@example.test', entryId });
       expect(res.statusCode).toBe(401);
-      expect(errorCode(res.json())).toBe('unauthorized');
+      expect(errorMessage(res.json())).toBe(LOGIN_FAILED);
     }
   });
 
-  it('400s on a malformed code', async () => {
+  it.each([
+    ['missing body', undefined],
+    ['missing email', { entryId: 77 }],
+    ['missing team', { email: 'a@example.test' }],
+    ['invalid email', { email: 'a@b', entryId: 77 }],
+    ['non-numeric team', { email: 'a@example.test', entryId: 'abc' }],
+    ['zero team', { email: 'a@example.test', entryId: 0 }],
+  ])('400s on invalid body (%s)', async (_label, payload) => {
     const res = await app.inject({
       method: 'POST',
-      url: '/v1/auth/recover',
-      payload: { entryId: 77, recoveryCode: 'nope' },
+      url: '/v1/auth/email-login',
+      ...(payload === undefined ? {} : { payload }),
     });
     expect(res.statusCode).toBe(400);
+    expect(errorCode(res.json())).toBe('bad_request');
   });
 });
 
@@ -320,8 +524,8 @@ describe('rate limits', () => {
       for (let i = 0; i < 3; i++) {
         const res = await limited.app.inject({
           method: 'POST',
-          url: '/v1/auth/recover',
-          payload: { entryId: 1, recoveryCode: 'AAAA-AAAA' },
+          url: '/v1/auth/email-login',
+          payload: { email: 'nobody@example.test', entryId: 1 },
         });
         codes.push(res.statusCode);
         if (res.statusCode === 429) expect(errorCode(res.json())).toBe('rate_limited');

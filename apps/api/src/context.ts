@@ -20,7 +20,7 @@ export interface RateLimitConfig {
   globalMax: number;
   /** Ceiling per IP for anonymous requests (no valid token). Mobile carriers put many users behind one IP. */
   anonymousMax: number;
-  /** Requests per window per IP for register / recover / admin-login. */
+  /** Requests per window per IP for register / email-login / admin-login. */
   authMax: number;
   /** Requests per window for other writes (push subscriptions/devices, likes, reports; per user when signed in). */
   writeMax: number;

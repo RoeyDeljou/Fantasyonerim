@@ -1,7 +1,6 @@
 import {
   DeleteAccountBodySchema,
   MeSchema,
-  RecoveryCodeResponseSchema,
   RedeemAdminInviteBodySchema,
   UpdateMeBodySchema,
 } from '@fant/shared';
@@ -10,10 +9,10 @@ import { deleteAccount } from '../account/deleteAccount.js';
 import type { FastifyInstance } from 'fastify';
 import type { Auth } from '../auth/session.js';
 import type { AppContext } from '../context.js';
-import { conflict, forbidden, notFound } from '../errors.js';
-import { decryptSecret } from '../secrets.js';
+import { conflict, forbidden } from '../errors.js';
 import { toMe } from '../serializers.js';
 import { parseInput, serialize } from '../validate.js';
+import { EMAIL_TAKEN, isUniqueViolationOn } from './email.js';
 
 export function meRoutes(
   app: FastifyInstance,
@@ -33,13 +32,26 @@ export function meRoutes(
     // A banned user's name shows on all their (still visible) content: they can't change it while banned.
     if (body.name !== undefined && user.bannedAt !== null)
       throw forbidden("Your account can't change its name right now");
-    const updated = await ctx.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        ...(body.name !== undefined ? { name: body.name } : {}),
-        ...(body.locale !== undefined ? { locale: body.locale } : {}),
-      },
-    });
+    // Email (the one-time pop-up for older accounts, or a change in Profile): allowed while banned — it only
+    // affects how the user signs back in. Unique across accounts; the unique index decides any race.
+    if (body.email !== undefined && body.email !== user.email) {
+      const owner = await ctx.prisma.user.findUnique({ where: { email: body.email }, select: { id: true } });
+      if (owner !== null && owner.id !== user.id) throw conflict(EMAIL_TAKEN);
+    }
+    let updated;
+    try {
+      updated = await ctx.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          ...(body.name !== undefined ? { name: body.name } : {}),
+          ...(body.locale !== undefined ? { locale: body.locale } : {}),
+          ...(body.email !== undefined ? { email: body.email } : {}),
+        },
+      });
+    } catch (err) {
+      if (isUniqueViolationOn(err, 'email')) throw conflict(EMAIL_TAKEN);
+      throw err;
+    }
     ctx.forgetUser(user.id);
     return serialize(MeSchema, toMe(updated));
   });
@@ -65,14 +77,5 @@ export function meRoutes(
     });
     ctx.forgetUser(user.id);
     return serialize(MeSchema, toMe(updated));
-  });
-
-  app.get('/v1/me/recovery-code', async (request, reply) => {
-    const { user } = await auth.requireUser(request);
-    if (!user.recoveryCodeEnc) throw notFound('This account has no recovery code');
-    reply.header('cache-control', 'no-store');
-    return serialize(RecoveryCodeResponseSchema, {
-      recoveryCode: decryptSecret(ctx.config.secretsKey, user.recoveryCodeEnc),
-    });
   });
 }

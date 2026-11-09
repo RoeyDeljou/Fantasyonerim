@@ -206,7 +206,7 @@ describe('DELETE /v1/me', () => {
     const again = await app.inject({
       method: 'POST',
       url: '/v1/auth/register',
-      payload: { name: 'Back again', entryId: 201 },
+      payload: { name: 'Back again', entryId: 201, email: 'fan201@example.test' },
     });
     expect(again.statusCode).toBe(201);
   });

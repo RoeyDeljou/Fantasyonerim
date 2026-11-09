@@ -116,9 +116,14 @@ export async function registerUser(
   fpl: FakeFplService,
   entryId: number,
   name = `Fan ${entryId}`,
+  email = `fan${entryId}@example.test`,
 ): Promise<AuthResponse> {
   if (!fpl.entries.has(entryId)) fpl.addEntry(entryId);
-  const res = await app.inject({ method: 'POST', url: '/v1/auth/register', payload: { name, entryId } });
+  const res = await app.inject({
+    method: 'POST',
+    url: '/v1/auth/register',
+    payload: { name, entryId, email },
+  });
   if (res.statusCode !== 201) throw new Error(`register failed: ${res.statusCode} ${res.body}`);
   return AuthResponseSchema.parse(res.json());
 }
