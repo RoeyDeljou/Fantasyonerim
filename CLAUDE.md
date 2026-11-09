@@ -50,7 +50,9 @@ npm run test         # needs Postgres: see apps/api/.env.example (TEST_DATABASE_
 6. **Accounts = name + FPL Team ID + email.** No password for fans. Sessions are long-lived (sliding 1 year) so
    users register once and stay signed in. To sign back in (new device, after signing out) a fan enters their email +
    Team ID (owner decision, Nov 2026: no email verification, no recovery codes). Older accounts without an email are
-   asked for it once (pop-up). An admin can fix a user's email in Admin → Users.
+   asked for it once (pop-up). An admin can fix a user's email in Admin → Users. Admins made by invite link sign
+   back in the same way and get the admin console (owner accepted this risk, Nov 2026); password admins keep
+   admin-login.
 7. **Secrets never reach the client.** Social tokens (Instagram, X, Spotify, WhatsApp session) are stored
    encrypted at rest (`SECRETS_KEY`) and never returned by any endpoint.
 8. **No half-finished work.** A phase is complete only when every acceptance criterion in `docs/PLAN.md` passes

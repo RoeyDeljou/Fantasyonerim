@@ -29,6 +29,8 @@ import {
   StoriesSchema,
   VapidKeySchema,
   AdminUserListSchema,
+  AdminUserSchema,
+  EMAIL_TAKEN_MESSAGE,
   CommentPageSchema,
   CommentSchema,
   CommunityPageSchema,
@@ -146,10 +148,11 @@ export function isApiError(e: unknown, code?: ClientErrorCode): e is ApiRequestE
 
 /**
  * A 409 about the email (register / PATCH /v1/me / admin email edit): "This email is already used by another
- * account." Register can also 409 for an already-registered Team ID — the message tells them apart.
+ * account." Register can also 409 for an already-registered Team ID (whose message also mentions email), so this
+ * compares with the exact shared message.
  */
 export function isEmailTaken(e: unknown): boolean {
-  return isApiError(e, 'conflict') && /email/i.test(e.message);
+  return isApiError(e, 'conflict') && e.message === EMAIL_TAKEN_MESSAGE;
 }
 
 interface Parser<T> {
@@ -429,8 +432,8 @@ export const api = {
     ban: (id: UserId, reason: string): Promise<void> =>
       request('POST', `/v1/admin/users/${encodeURIComponent(id)}/ban`, noContent, { body: { reason } }),
     /** Fix a user's sign-in email (null clears it). 204 or 200 — the body isn't used. 409 = taken. */
-    setUserEmail: (id: UserId, body: AdminUserEmailBody): Promise<void> =>
-      request('PUT', `/v1/admin/users/${encodeURIComponent(id)}/email`, noContent, { body }),
+    setUserEmail: (id: UserId, body: AdminUserEmailBody): Promise<AdminUser> =>
+      request('PUT', `/v1/admin/users/${encodeURIComponent(id)}/email`, AdminUserSchema, { body }),
     unban: (id: UserId): Promise<void> =>
       request('DELETE', `/v1/admin/users/${encodeURIComponent(id)}/ban`, noContent),
     hiddenNews: (o: Signal = {}): Promise<HiddenNewsList> =>

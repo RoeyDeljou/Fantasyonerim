@@ -62,6 +62,12 @@ export const EmailSchema = z
     z.regex(/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]{2,}$/, 'must be an email address'),
   );
 
+/**
+ * The exact 409 message when an email is already on another account (register, PATCH /v1/me, admin edit). Register
+ * can also 409 for an already-registered Team ID; clients tell the two apart by comparing with this constant.
+ */
+export const EMAIL_TAKEN_MESSAGE = 'This email is already used by another account.';
+
 export const MeSchema = z.object({
   id: UserIdSchema,
   /** Output: any stored name (input rules may tighten over time); inputs use DisplayNameSchema. */

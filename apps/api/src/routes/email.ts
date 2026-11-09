@@ -1,7 +1,8 @@
+import { EMAIL_TAKEN_MESSAGE } from '@fant/shared';
 import { Prisma } from '@prisma/client';
 
 /** 409 message whenever an email is already on another account (register, PATCH /v1/me, admin edit). */
-export const EMAIL_TAKEN = 'This email is already used by another account.';
+export const EMAIL_TAKEN = EMAIL_TAKEN_MESSAGE;
 
 /**
  * True when `err` is a unique-constraint violation (P2002) on the given User column. Prisma reports the target as

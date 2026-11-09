@@ -747,6 +747,24 @@ async function journeys(browser) {
     },
   );
 
+  await step(
+    'signing up again with a registered Team ID (new email) offers email sign-in, not "email taken"',
+    async () => {
+      const ctx = await newContext(browser);
+      const p = await ctx.newPage();
+      watch(p, 'team-conflict');
+      await p.goto(`${WEB}/onboarding/`);
+      await p.getByRole('button', { name: 'בואו נתחיל' }).click();
+      await p.getByLabel('איך לקרוא לכם?').fill('E2E Again');
+      await p.getByLabel('אימייל').fill('someone.new@example.test');
+      await p.getByLabel('Team ID של FPL').fill(DEMO.tripleCaptain);
+      await p.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
+      await p.getByRole('button', { name: 'כן, זו הקבוצה שלי' }).click();
+      await p.getByText('הקבוצה הזו כבר רשומה').waitFor();
+      await ctx.close();
+    },
+  );
+
   await step('reload keeps the session', async () => {
     await page.reload();
     await page.waitForURL('**/news/');
