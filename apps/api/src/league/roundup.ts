@@ -22,6 +22,8 @@ import {
   type Gameweek,
   type LeagueStandingRow,
   type RoundupCaptain,
+  type RoundupMover,
+  type RoundupRow,
 } from '@fant/shared';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
@@ -40,6 +42,14 @@ import { allStandingRows, fetchAllPages } from './pages.js';
  * from before auto-subs / vice promotion) and never stale-if-error data. Failures throw and abort the build.
  */
 export const FRESH: FplReadOptions = { fresh: true };
+
+/**
+ * Version of the roundup rules stored with every row. Bump it whenever a rule change must reach roundups already
+ * stored: the job then rebuilds every older row (newest GW first, within its per-run budget) and replaces it
+ * atomically; the old row is served until then. 1 = ranks reconstructed for every GW; 2 = the newest official GW
+ * uses FPL's official standings.
+ */
+export const ROUNDUP_BUILD_VERSION = 2;
 
 /** Build a GW only this long after we first saw it `finished && dataChecked` (history cache TTL, 5 min). */
 export const ROUNDUP_BUILD_DELAY_MS = FPL_CACHE_TTL.history;
@@ -237,6 +247,7 @@ export async function buildRoundups(
       }))
     : [];
 
+  const newestOfficial = officialEvents(bootstrap)[0];
   const built: Gameweek[] = [];
   for (const event of batch) {
     const playerPoints = await fpl.getEventPoints(event, FRESH);
@@ -248,7 +259,7 @@ export async function buildRoundups(
         picks.set(s.row.entryId, await orNull(fpl.getEntryPicks(s.row.entryId, event, FRESH)));
       });
     }
-    const core: RoundupCore = buildGameweekRoundup({
+    const computed: RoundupCore = buildGameweekRoundup({
       event,
       startEvent: info.startEvent,
       playerPoints,
@@ -265,26 +276,37 @@ export async function buildRoundups(
             }))
           : [],
     });
+    // The newest official GW: FPL's own league table (read fresh above) is exactly this GW's table, so its ranks,
+    // last ranks and totals win over the reconstruction (FPL leaves late joiners out of last_rank). Older GWs have
+    // no official table left on FPL and keep the values rebuilt from each team's history.
+    // Only while FPL's current GW is still this one: once the next GW starts, its table is no longer this GW's.
+    const core =
+      event === newestOfficial && bootstrap.currentEvent === event
+        ? (applyOfficialStandings(computed, rows) ?? computed)
+        : computed;
     const captains = await roundupCaptainRows(prisma, fpl, event, playerPoints, picks);
     const captainPoints: Record<string, number> = {};
     for (const r of core.table) {
       if (r.captainPlayerId !== null)
         captainPoints[r.captainPlayerId] = playerPoints.get(r.captainPlayerId)?.points ?? 0;
     }
-    // Idempotent: a roundup already stored for (league, GW) is never replaced.
-    const stored = await prisma.gameweekRoundup.createMany({
-      data: [
-        {
-          leagueId,
-          event,
-          leagueName: info.name,
-          data: core as unknown as Prisma.InputJsonObject,
-          captains: captains as unknown as Prisma.InputJsonArray,
-          captainPoints,
-          builtAt: deps.now(),
-        },
-      ],
-      skipDuplicates: true,
+    // Replaces only a row of an older builder version (delete + create in one transaction); a current-version row
+    // (another instance was faster) is never replaced. Old code never deletes, so anything it writes is healed later.
+    const data = {
+      leagueId,
+      event,
+      leagueName: info.name,
+      data: core as unknown as Prisma.InputJsonObject,
+      captains: captains as unknown as Prisma.InputJsonArray,
+      captainPoints,
+      builtAt: deps.now(),
+      buildVersion: ROUNDUP_BUILD_VERSION,
+    };
+    const stored = await prisma.$transaction(async (tx) => {
+      await tx.gameweekRoundup.deleteMany({
+        where: { leagueId, event, buildVersion: { lt: ROUNDUP_BUILD_VERSION } },
+      });
+      return tx.gameweekRoundup.createMany({ data: [data], skipDuplicates: true });
     });
     if (stored.count > 0) {
       built.push(event);
@@ -292,6 +314,66 @@ export async function buildRoundups(
     }
   }
   return { built, remaining: events.length - batch.length };
+}
+
+/**
+ * Share of the table whose official total must equal the reconstructed total before the official standings are
+ * trusted for a GW. Below it FPL's table has already moved on (a newer GW is being scored), so it isn't this GW's.
+ */
+export const OFFICIAL_STANDINGS_MIN_MATCH = 0.9;
+
+/**
+ * The roundup with FPL's official league table for its GW: `rank`, `lastRank` (FPL `last_rank` 0 = joined since the
+ * last update → null) and `total` from the standings, the table re-ordered by official rank (then official order),
+ * and biggest climb / drop recomputed from them (places, then higher GW points, then table order — the builder's
+ * rules). Table rows FPL doesn't list keep their values (after the listed ones). Returns null — keep the computed
+ * roundup — when the standings don't match this GW (fewer than OFFICIAL_STANDINGS_MIN_MATCH of the totals agree).
+ */
+export function applyOfficialStandings(
+  core: RoundupCore,
+  standings: readonly LeagueStandingRow[],
+): RoundupCore | null {
+  const official = new Map(standings.map((row, index) => [row.entryId as number, { row, index }]));
+  const listed = core.table.filter((r) => official.has(r.entryId));
+  if (listed.length === 0) return null;
+  const matching = listed.filter((r) => official.get(r.entryId)?.row.total === r.total).length;
+  if (matching / listed.length < OFFICIAL_STANDINGS_MIN_MATCH) return null;
+
+  const order = (entryId: number) => official.get(entryId)?.index ?? Number.MAX_SAFE_INTEGER;
+  const table: RoundupRow[] = core.table
+    .map((r) => {
+      const o = official.get(r.entryId)?.row;
+      if (o === undefined) return r;
+      return { ...r, rank: o.rank, lastRank: o.lastRank > 0 ? o.lastRank : null, total: o.total };
+    })
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const la = official.has(a.row.entryId) ? 0 : 1;
+      const lb = official.has(b.row.entryId) ? 0 : 1;
+      return (
+        la - lb || a.row.rank - b.row.rank || order(a.row.entryId) - order(b.row.entryId) || a.index - b.index
+      );
+    })
+    .map((x) => x.row);
+
+  const mover = (direction: 1 | -1): RoundupMover | null => {
+    let top: { row: RoundupRow; places: number } | null = null;
+    for (const row of table) {
+      const places = row.lastRank === null ? 0 : (row.lastRank - row.rank) * direction;
+      if (places <= 0) continue;
+      if (
+        top === null ||
+        places > top.places ||
+        (places === top.places && row.eventPoints > top.row.eventPoints)
+      )
+        top = { row, places };
+    }
+    if (top === null) return null;
+    const { entryId, entryName, managerName, eventPoints } = top.row;
+    return { entryId, entryName, managerName, places: top.places, eventPoints };
+  };
+
+  return RoundupCoreSchema.parse({ ...core, table, biggestClimb: mover(1), biggestDrop: mover(-1) });
 }
 
 // ---------- reading ----------

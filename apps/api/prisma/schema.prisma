@@ -152,6 +152,9 @@ model GameweekRoundup {
   /// { "<playerId>": base GW points } for every captain in `data.table` (the viewer's "mine" row).
   captainPoints Json
   builtAt       DateTime
+  /// Builder version (ROUNDUP_BUILD_VERSION in src/league/roundup.ts). The job rebuilds rows older than the current
+  /// version and replaces them atomically; the old row is served until then.
+  buildVersion  Int      @default(1)
 
   @@unique([leagueId, event])
 }
