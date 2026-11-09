@@ -24,6 +24,7 @@ import {
 import { ContentMenu } from './ContentMenu';
 import { AuthorAvatar, AuthorLine, BannedNotice, canBlock, useNotify } from './parts';
 import { PostCard, PostCardSkeleton } from './PostCard';
+import { scrollAppTo } from '@/lib/scroller';
 
 const COMMENT_MAX = 500;
 
@@ -36,7 +37,7 @@ export function Thread({ postId, onBack }: { postId: PostId; onBack(): void }) {
   const post = usePost(postId);
 
   useEffect(() => {
-    window.scrollTo({ top: 0 });
+    scrollAppTo(0);
   }, [postId]);
 
   return (

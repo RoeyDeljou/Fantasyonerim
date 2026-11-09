@@ -51,6 +51,7 @@ import {
   cx,
   errorMessage,
 } from '@/components/ui';
+import { scrollAppTo } from '@/lib/scroller';
 
 /** Same cap as the contract (`BroadcastBodySchema.text`). X has its own weighted 280 on top. */
 export const BROADCAST_MAX = 1000;
@@ -111,7 +112,7 @@ export function BroadcastView() {
           onNew={() => {
             setResult(null);
             setFormKey((k) => k + 1);
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            scrollAppTo(0, 'smooth');
           }}
         />
       ) : (
@@ -221,7 +222,7 @@ function Composer({ onSent }: { onSent(r: BroadcastResult): void }) {
         setText('');
         setConfirm(false);
         onSent(r);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        scrollAppTo(0, 'smooth');
       },
       onError: () => setConfirm(false),
     });

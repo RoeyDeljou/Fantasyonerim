@@ -24,6 +24,7 @@ import {
 import { AuthorAvatar, BannedNotice, useNotify } from './parts';
 import { TeamPreview } from './TeamSnapshot';
 import type { TeamView } from './TeamSnapshot';
+import { scrollAppTo } from '@/lib/scroller';
 
 export const POST_MAX = 1000;
 
@@ -92,7 +93,7 @@ function ComposerForm({ me, onDone }: { me: Me; onDone(): void }) {
         onSuccess: () => {
           setText('');
           notify(c.posted);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+          scrollAppTo(0, 'smooth');
           onDone();
         },
       },

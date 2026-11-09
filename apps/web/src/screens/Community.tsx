@@ -26,6 +26,7 @@ import {
   Spinner,
   errorMessage,
 } from '@/components/ui';
+import { appScroller, scrollAppTo } from '@/lib/scroller';
 
 export function CommunityScreen() {
   const { t } = useI18n();
@@ -159,7 +160,8 @@ function Feed() {
       (entries) => {
         if (entries.some((e) => e.isIntersecting) && !isFetchingNextPage) void fetchNextPage();
       },
-      { rootMargin: '800px 0px' },
+      // The shell's scroller is the viewport here: against the window the margin would be clipped away.
+      { root: appScroller(), rootMargin: '800px 0px' },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -184,12 +186,12 @@ function Feed() {
   return (
     <>
       {hasNewer && (
-        <div className="pointer-events-none sticky top-[calc(4rem+var(--app-top))] z-20 -mb-12 flex justify-center">
+        <div className="pointer-events-none sticky top-2 z-20 -mb-12 flex justify-center">
           <button
             type="button"
             data-testid="new-posts"
             onClick={() => {
-              window.scrollTo({ top: 0, behavior: 'smooth' });
+              scrollAppTo(0, 'smooth');
               void feed.refetch().then(() => head.refetch());
             }}
             className="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-bold text-on-primary shadow-card"

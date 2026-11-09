@@ -6,6 +6,8 @@ import { fmt, useI18n } from '@/i18n';
 import { useLeaguePosition, useMe } from '@/lib/queries';
 import { LocateIcon, TableIcon } from '@/components/icons';
 import { JoinLink, useJoinLeague } from '@/components/JoinLeague';
+import { ShellDock } from '@/components/ShellDock';
+import { appScroller } from '@/lib/scroller';
 
 /** How long the row pulses after a jump (matches `.row-pulse` in globals.css). */
 const PULSE_MS = 1_600;
@@ -93,10 +95,12 @@ export function FindMyTeam({
       setRowVisible(false);
       return;
     }
-    // The sticky header (taller with the join-league strip) and the tab bar cover the top / bottom edges.
-    const top = Math.round(document.querySelector('header')?.getBoundingClientRect().height ?? 64);
+    // The shell's scroller: the header and the tab bar sit outside it; the floating button covers its bottom edge.
+    const root = appScroller();
+    const top = root ? 0 : Math.round(document.querySelector('header')?.getBoundingClientRect().height ?? 64);
     const io = new IntersectionObserver((entries) => setRowVisible(entries.some((e) => e.isIntersecting)), {
-      rootMargin: `-${top}px 0px -96px 0px`,
+      root,
+      rootMargin: `-${top}px 0px -${root ? 32 : 96}px 0px`,
     });
     io.observe(el);
     return () => io.disconnect();
@@ -112,19 +116,21 @@ export function FindMyTeam({
   // Not in the league (or a guest): the same spot invites them to join instead (JoinLeague.tsx).
   if (join) {
     return (
-      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20">
-        <FabSpace />
-        <div className="mx-auto flex max-w-xl justify-end px-4">
-          <JoinLink
-            join={join}
-            data-testid="join-league"
-            className="join-pulse pointer-events-auto inline-flex min-h-11 max-w-full items-center gap-2 rounded-full bg-primary px-4 text-sm font-extrabold text-on-primary shadow-card transition-transform active:scale-95"
-          >
-            <TableIcon width={20} height={20} className="shrink-0" />
-            <span className="truncate">{t.join.button}</span>
-          </JoinLink>
+      <ShellDock>
+        <div className="pointer-events-none absolute inset-x-0 bottom-full mb-3">
+          <FabSpace />
+          <div className="mx-auto flex max-w-xl justify-end px-4">
+            <JoinLink
+              join={join}
+              data-testid="join-league"
+              className="join-pulse pointer-events-auto inline-flex min-h-11 max-w-full items-center gap-2 rounded-full bg-primary px-4 text-sm font-extrabold text-on-primary shadow-card transition-transform active:scale-95"
+            >
+              <TableIcon width={20} height={20} className="shrink-0" />
+              <span className="truncate">{t.join.button}</span>
+            </JoinLink>
+          </div>
         </div>
-      </div>
+      </ShellDock>
     );
   }
 
@@ -157,22 +163,24 @@ export function FindMyTeam({
   return (
     <>
       <Announcer text={announce} />
-      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20">
-        <FabSpace />
-        <div className="mx-auto flex max-w-xl justify-end px-4">
-          <button
-            type="button"
-            onClick={() => void jump()}
-            aria-busy={busy}
-            title={t.table.findMyTeamLabel}
-            data-testid="find-my-team"
-            className="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-bold text-on-primary shadow-card transition-transform active:scale-95"
-          >
-            <LocateIcon size={20} />
-            {t.table.findMyTeam}
-          </button>
+      <ShellDock>
+        <div className="pointer-events-none absolute inset-x-0 bottom-full mb-3">
+          <FabSpace />
+          <div className="mx-auto flex max-w-xl justify-end px-4">
+            <button
+              type="button"
+              onClick={() => void jump()}
+              aria-busy={busy}
+              title={t.table.findMyTeamLabel}
+              data-testid="find-my-team"
+              className="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-4 text-sm font-bold text-on-primary shadow-card transition-transform active:scale-95"
+            >
+              <LocateIcon size={20} />
+              {t.table.findMyTeam}
+            </button>
+          </div>
         </div>
-      </div>
+      </ShellDock>
     </>
   );
 }

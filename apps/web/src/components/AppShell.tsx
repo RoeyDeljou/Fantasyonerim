@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ComponentType, ReactNode, SVGProps } from 'react';
 import { useT } from '@/i18n';
@@ -16,6 +16,8 @@ import { JoinLeagueBar } from './JoinLeague';
 import { CommunityIcon, LiveIcon, NewsIcon, ShirtIcon, TableIcon } from './icons';
 import { initials } from '@/lib/text';
 import { Skeleton, cx } from './ui';
+import { ShellDockProvider } from './ShellDock';
+import { rememberScroll, watchHistoryScroll } from '@/lib/scroller';
 
 type TabKey = 'news' | 'community' | 'myTeam' | 'table' | 'live';
 
@@ -55,7 +57,7 @@ export function TopBar({
 }) {
   const t = useT();
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-canvas/90 pt-[env(safe-area-inset-top)] backdrop-blur supports-[backdrop-filter]:bg-canvas/80">
+    <header className="sticky top-0 z-30 shrink-0 border-b border-line bg-canvas/90 pt-[env(safe-area-inset-top)] backdrop-blur supports-[backdrop-filter]:bg-canvas/80">
       {joinBar && <JoinLeagueBar />}
       <div className="mx-auto flex h-14 max-w-xl items-center gap-3 ps-4 pe-2">
         <Link href={ROUTES.home} className="flex min-w-0 items-center gap-2.5" aria-label={t.app.name}>
@@ -101,7 +103,8 @@ function TabBar() {
   return (
     <nav
       aria-label={t.tabs.label}
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur"
+      data-tab-bar=""
+      className="relative z-30 shrink-0 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur"
     >
       <ul className="mx-auto grid h-16 max-w-xl grid-cols-5">
         {TABS.map(({ key, href, Icon }) => {
@@ -161,6 +164,11 @@ function usePrefetchTab(ready: boolean) {
 }
 
 /**
+ * The tabs' frame: one screen tall (`.app-shell`, globals.css), never scrolling itself — header on top, the content
+ * area as the ONLY scroller (lib/scroller.ts), the dock (components/ShellDock.tsx) and the tab bar at the bottom as
+ * plain flex children. Nothing here is `position: fixed` over a scrolling document, which iOS 26 WebKit misplaces
+ * (the tab bar used to end up mid-screen while scrolling).
+ *
  * `refresh` = the query-key prefixes this screen shows: adds the header refresh button and touch
  * pull-to-refresh (lib/refresh.ts).
  */
@@ -180,8 +188,10 @@ export function AppShell({
   usePrefetchTab(ready);
   const r = useRefresh(refresh ?? NO_SCOPE);
   const canRefresh = ready && !!refresh;
+  const [dock, setDock] = useState<HTMLElement | null>(null);
+  useEffect(watchHistoryScroll, []);
   return (
-    <div className="min-h-dvh">
+    <div className="app-shell flex flex-col overflow-hidden">
       <TopBar
         title={title}
         joinBar={ready}
@@ -200,12 +210,19 @@ export function AppShell({
           <RefreshDone state={r.state} />
         </>
       )}
-      <main
-        id="main"
-        className="mx-auto w-full max-w-xl px-4 pt-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))]"
-      >
-        {ready ? children : (skeleton ?? <ShellSkeleton />)}
-      </main>
+      <ShellDockProvider value={dock}>
+        <div
+          data-app-scroller=""
+          className="app-scroller isolate min-h-0 flex-1"
+          onScroll={(e) => rememberScroll(e.currentTarget.scrollTop)}
+        >
+          {/* The end clears a floating button over the content (`--fab-space`, ShellDock). */}
+          <main id="main" className="mx-auto w-full max-w-xl px-4 pt-4 pb-[calc(1.5rem+var(--fab-space))]">
+            {ready ? children : (skeleton ?? <ShellSkeleton />)}
+          </main>
+        </div>
+        <div ref={setDock} data-shell-dock="" className="relative z-20 shrink-0" />
+      </ShellDockProvider>
       <TabBar />
     </div>
   );

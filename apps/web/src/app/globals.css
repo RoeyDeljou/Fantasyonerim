@@ -118,6 +118,30 @@ body {
   display: none;
 }
 
+/* The tabs' shell (components/AppShell.tsx): exactly one screen tall, and the document never scrolls — only the
+   content area does (lib/scroller.ts). iOS 26 WebKit misplaces `position: fixed` elements while the DOCUMENT
+   scrolls (the tab bar ended up mid-screen), so on the tabs nothing scrolls the document. `svh` / `vh` are fallbacks
+   for engines without `dvh`. Pages without the shell (onboarding, terms, admin) keep a normally scrolling page. */
+.app-shell {
+  height: 100vh;
+  height: 100svh;
+  height: 100dvh;
+}
+html:has(.app-shell),
+html:has(.app-shell) body {
+  height: 100%;
+  overflow: hidden;
+  /* no page-level bounce exposing a gap above / below the shell */
+  overscroll-behavior: none;
+}
+.app-scroller {
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* rubber-band inside the scroller, but never chain to the page (and no browser pull-to-reload) */
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -273,7 +297,8 @@ html:has(dialog.story[open]) {
 .news-highlight {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
-  scroll-margin-top: calc(4.5rem + env(safe-area-inset-top));
+  /* the header sits above the scroller (AppShell), not over it */
+  scroll-margin-top: 1rem;
 }
 
 /* ---------- Community ---------- */
