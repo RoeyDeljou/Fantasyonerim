@@ -49,6 +49,19 @@ export const DisplayNameSchema = z.string().check(
   z.regex(/^[^\u202A-\u202E\u2066-\u2069]*$/, 'no direction-control characters'),
 );
 
+/**
+ * An email address, normalized (trimmed, lower-cased). Used to sign back in together with the FPL Team ID. Not
+ * verified (owner decision, Nov 2026): typos are fixed by an admin in Admin → Users.
+ */
+export const EmailSchema = z
+  .string()
+  .check(
+    z.trim(),
+    z.toLowerCase(),
+    z.maxLength(254),
+    z.regex(/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]{2,}$/, 'must be an email address'),
+  );
+
 export const MeSchema = z.object({
   id: UserIdSchema,
   /** Output: any stored name (input rules may tighten over time); inputs use DisplayNameSchema. */
@@ -57,6 +70,8 @@ export const MeSchema = z.object({
   entryId: z.nullable(FplEntryIdSchema),
   /** FPL team name, cached at registration and refreshed in the background. */
   teamName: z.nullable(z.string()),
+  /** Null for accounts made before email was required: the app asks for it once (pop-up). */
+  email: z.nullable(z.string()),
   role: RoleSchema,
   locale: LocaleSchema,
   /** False while banned: the user can read but not post, comment, like, report or upload. */
@@ -65,25 +80,23 @@ export const MeSchema = z.object({
 });
 export type Me = z.infer<typeof MeSchema>;
 
-/** POST /v1/auth/register — the only signup: name + FPL Team ID. No email, no password. */
+/** POST /v1/auth/register — the only signup: name + FPL Team ID + email. No password. */
 export const RegisterBodySchema = z.object({
   name: DisplayNameSchema,
   entryId: FplEntryIdSchema,
+  email: EmailSchema,
   locale: z.optional(LocaleSchema),
   /** From an admin invite link (`/onboarding/?invite=<token>`): the new account is created as an admin. */
   inviteToken: z.optional(z.string().check(z.minLength(20), z.maxLength(200))),
 });
 export type RegisterBody = z.infer<typeof RegisterBodySchema>;
 
-/**
- * Sign back in on a new device. The recovery code is shown to the user in Profile; it is the only
- * secret tying a person to their account.
- */
-export const RecoverBodySchema = z.object({
+/** POST /v1/auth/email-login — sign back in (new device, after signing out): the account's email + its Team ID. */
+export const EmailLoginBodySchema = z.object({
+  email: EmailSchema,
   entryId: FplEntryIdSchema,
-  recoveryCode: z.string().check(z.trim(), z.toUpperCase(), z.regex(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/)),
 });
-export type RecoverBody = z.infer<typeof RecoverBodySchema>;
+export type EmailLoginBody = z.infer<typeof EmailLoginBodySchema>;
 
 export const AdminLoginBodySchema = z.object({
   username: z.string().check(z.trim(), z.minLength(3), z.maxLength(40)),
@@ -91,18 +104,17 @@ export const AdminLoginBodySchema = z.object({
 });
 export type AdminLoginBody = z.infer<typeof AdminLoginBodySchema>;
 
-/** Returned by register / recover / admin-login. Token is long-lived (sliding 1 year). */
+/** Returned by register / email-login / admin-login. Token is long-lived (sliding 1 year). */
 export const AuthResponseSchema = z.object({ token: z.string().check(z.minLength(20)), user: MeSchema });
 export type AuthResponse = z.infer<typeof AuthResponseSchema>;
 
 export const UpdateMeBodySchema = z.object({
   name: z.optional(DisplayNameSchema),
   locale: z.optional(LocaleSchema),
+  /** Add or change the account's email (the pop-up for older accounts, Profile). */
+  email: z.optional(EmailSchema),
 });
 export type UpdateMeBody = z.infer<typeof UpdateMeBodySchema>;
-
-export const RecoveryCodeResponseSchema = z.object({ recoveryCode: z.string() });
-export type RecoveryCodeResponse = z.infer<typeof RecoveryCodeResponseSchema>;
 
 // ---------- app config (public) ----------
 /** Only https links are accepted for anything we render as a link (blocks javascript:, http:, data:). */

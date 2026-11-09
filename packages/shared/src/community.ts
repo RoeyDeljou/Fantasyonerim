@@ -1,7 +1,7 @@
 import * as z from 'zod/mini';
 import { ChipSchema, PickSchema } from './fpl.js';
 import { CommentIdSchema, FplEntryIdSchema, GameweekSchema, PostIdSchema, UserIdSchema } from './ids.js';
-import { RoleSchema } from './api.js';
+import { EmailSchema, RoleSchema } from './api.js';
 
 /**
  * Phase 3 contract: the Community tab (fan posts, shared teams, comments, likes, reports, moderation).
@@ -162,6 +162,8 @@ export const AdminUserSchema = z.object({
   name: z.string(),
   entryId: z.nullable(FplEntryIdSchema),
   teamName: z.nullable(z.string()),
+  /** Admin-only view of the sign-in email (null = not given yet). */
+  email: z.nullable(z.string()),
   role: RoleSchema,
   bannedAt: z.nullable(z.string().check(z.iso.datetime({ offset: true }))),
   banReason: z.nullable(z.string()),
@@ -169,8 +171,12 @@ export const AdminUserSchema = z.object({
   createdAt: z.string().check(z.iso.datetime({ offset: true })),
 });
 export type AdminUser = z.infer<typeof AdminUserSchema>;
-/** GET /v1/admin/users?query= (name / team name / Team ID) */
+/** GET /v1/admin/users?query= (name / team name / Team ID / email) */
 export const AdminUserListSchema = z.object({ items: z.array(AdminUserSchema) });
+
+/** PUT /v1/admin/users/:id/email — an admin fixes a user's sign-in email (e.g. a typo). Null clears it. */
+export const AdminUserEmailBodySchema = z.object({ email: z.nullable(EmailSchema) });
+export type AdminUserEmailBody = z.infer<typeof AdminUserEmailBodySchema>;
 
 /** POST /v1/admin/users/:id/ban — banned users can read but not post/comment/like/report. DELETE unbans. */
 export const BanBodySchema = z.object({

@@ -47,8 +47,10 @@ npm run test         # needs Postgres: see apps/api/.env.example (TEST_DATABASE_
 5. **Native-ready.** Auth is a bearer token (no cookies), the web app is a static export (no server components
    that need a Node server), push goes through a `PushProvider` interface (web-push now, FCM/APNs later), and
    API base URL is config. Nothing may assume it is running on a website.
-6. **Accounts = name + FPL Team ID.** No email, no password for fans. Sessions are long-lived (sliding 1 year) so
-   users register once and stay signed in. A recovery code (Profile screen) moves an account to a new device.
+6. **Accounts = name + FPL Team ID + email.** No password for fans. Sessions are long-lived (sliding 1 year) so
+   users register once and stay signed in. To sign back in (new device, after signing out) a fan enters their email +
+   Team ID (owner decision, Nov 2026: no email verification, no recovery codes). Older accounts without an email are
+   asked for it once (pop-up). An admin can fix a user's email in Admin → Users.
 7. **Secrets never reach the client.** Social tokens (Instagram, X, Spotify, WhatsApp session) are stored
    encrypted at rest (`SECRETS_KEY`) and never returned by any endpoint.
 8. **No half-finished work.** A phase is complete only when every acceptance criterion in `docs/PLAN.md` passes
