@@ -8,7 +8,9 @@ import { ThemeProvider } from '@/lib/theme';
 import { SessionProvider, useSession } from '@/lib/session';
 import { resyncPush, shareWithWorker } from '@/lib/push';
 import { onResume } from '@/lib/resume';
-import { makeQueryClient, qk } from '@/lib/queries';
+import { makeQueryClient, qk, useMe } from '@/lib/queries';
+import { usePathname } from 'next/navigation';
+import { lazyWhenOpen } from '@/components/lazy';
 import { scheduleMeRevalidation } from '@/lib/meRevalidate';
 import { isPersistedKey, persistOptions, wirePersistFlush } from '@/lib/persist';
 import { wireWarmUp } from '@/lib/warmup';
@@ -58,6 +60,7 @@ export function Providers({ children }: { children: ReactNode }) {
         <ThemeProvider>
           <SessionProvider>
             <PushSync />
+            <EmailPromptGate />
             {children}
             <FlashToast />
             <UpdateToast />
@@ -82,6 +85,35 @@ function PushSync() {
     return onResume(() => void resyncPush());
   }, [status]);
   return null;
+}
+
+/** Page load: a `me` restored from the device is older than this, so it doesn't count until revalidated. */
+const BOOT_AT = Date.now();
+
+const EmailPrompt = lazyWhenOpen(
+  () => import('@/components/EmailPrompt').then((m) => m.EmailPrompt),
+  (p: { open: boolean }) => p.open,
+);
+
+/**
+ * Accounts made before email was required are asked for it once, on app load (blocking pop-up). Only a signed-in
+ * fan (has a Team ID — admin-only accounts sign in with a password) and only on a `me` the API answered during this
+ * page load — a stale copy restored from the device must not flash the pop-up at someone who already added one.
+ * It reads the shared `me` query (never fetches it ahead of the boot path) and stays out of onboarding.
+ */
+function EmailPromptGate() {
+  const { status } = useSession();
+  const me = useMe(status === 'signedIn');
+  const pathname = usePathname();
+  const user = me.data;
+  const open =
+    status === 'signedIn' &&
+    !pathname.startsWith('/onboarding') &&
+    user !== undefined &&
+    me.dataUpdatedAt >= BOOT_AT &&
+    user.entryId !== null &&
+    user.email === null;
+  return <EmailPrompt open={open} />;
 }
 
 /** App-wide one-shot toast (`flash()` in lib/flash.ts). */

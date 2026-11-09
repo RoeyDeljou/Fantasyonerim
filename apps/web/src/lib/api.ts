@@ -16,7 +16,6 @@ import {
   LiveLeagueSchema,
   MeSchema,
   PublicConfigSchema,
-  RecoveryCodeResponseSchema,
   AdminPushResultSchema,
   IntegrationListSchema,
   IntegrationStatusSchema,
@@ -68,7 +67,8 @@ import type {
   LiveLeague,
   Me,
   PublicConfig,
-  RecoverBody,
+  EmailLoginBody,
+  AdminUserEmailBody,
   RegisterBody,
   UpdateMeBody,
   AdminNewsBody,
@@ -142,6 +142,14 @@ export class ApiRequestError extends Error {
 
 export function isApiError(e: unknown, code?: ClientErrorCode): e is ApiRequestError {
   return e instanceof ApiRequestError && (code === undefined || e.code === code);
+}
+
+/**
+ * A 409 about the email (register / PATCH /v1/me / admin email edit): "This email is already used by another
+ * account." Register can also 409 for an already-registered Team ID — the message tells them apart.
+ */
+export function isEmailTaken(e: unknown): boolean {
+  return isApiError(e, 'conflict') && /email/i.test(e.message);
 }
 
 interface Parser<T> {
@@ -300,8 +308,9 @@ export const api = {
 
   register: (body: RegisterBody): Promise<AuthResponse> =>
     request('POST', '/v1/auth/register', AuthResponseSchema, { body }),
-  recover: (body: RecoverBody): Promise<AuthResponse> =>
-    request('POST', '/v1/auth/recover', AuthResponseSchema, { body }),
+  /** Sign back in with the account's email + Team ID. 401 = no account with that pair (not "session ended"). */
+  emailLogin: (body: EmailLoginBody): Promise<AuthResponse> =>
+    request('POST', '/v1/auth/email-login', AuthResponseSchema, { body, credentialCheck: true }),
   adminLogin: (body: AdminLoginBody): Promise<AuthResponse> =>
     request('POST', '/v1/auth/admin-login', AuthResponseSchema, { body }),
   logout: (): Promise<void> => request('POST', '/v1/auth/logout', noContent),
@@ -317,8 +326,6 @@ export const api = {
   /** A signed-in user redeems an invite → the upgraded Me. 400 invalid · 409 already an admin. */
   redeemAdminInvite: (token: string): Promise<Me> =>
     request('POST', '/v1/me/admin-invite', MeSchema, { body: { token } }),
-  recoveryCode: (o: Signal = {}): Promise<string> =>
-    request('GET', '/v1/me/recovery-code', RecoveryCodeResponseSchema, o).then((r) => r.recoveryCode),
 
   bootstrap: (o: Signal = {}): Promise<Bootstrap> => request('GET', '/v1/fpl/bootstrap', BootstrapSchema, o),
   fixtures: (event: Gameweek, o: Signal = {}): Promise<Fixture[]> =>
@@ -421,12 +428,9 @@ export const api = {
       }).then((r) => r.items),
     ban: (id: UserId, reason: string): Promise<void> =>
       request('POST', `/v1/admin/users/${encodeURIComponent(id)}/ban`, noContent, { body: { reason } }),
-    newRecoveryCode: (id: UserId): Promise<string> =>
-      request(
-        'POST',
-        `/v1/admin/users/${encodeURIComponent(id)}/recovery-code`,
-        RecoveryCodeResponseSchema,
-      ).then((r) => r.recoveryCode),
+    /** Fix a user's sign-in email (null clears it). 204 or 200 — the body isn't used. 409 = taken. */
+    setUserEmail: (id: UserId, body: AdminUserEmailBody): Promise<void> =>
+      request('PUT', `/v1/admin/users/${encodeURIComponent(id)}/email`, noContent, { body }),
     unban: (id: UserId): Promise<void> =>
       request('DELETE', `/v1/admin/users/${encodeURIComponent(id)}/ban`, noContent),
     hiddenNews: (o: Signal = {}): Promise<HiddenNewsList> =>

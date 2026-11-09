@@ -98,11 +98,11 @@ Detail views and sub-tabs live in query params (`/my-team/?view=live&gw=7`, `/ta
 3. starts `apps/api` on :4100 with `FPL_MODE=demo` (offline, deterministic FPL data; GW9 is "live"), its own
    bootstrap admin and `CORS_ORIGINS=http://localhost:5100`, and serves the export on :5100;
 4. runs these journeys in Chromium at 390×844 and fails on any unexpected console error or horizontal scroll:
-   register with demo Team ID 1000003 → reload stays signed in → My Team shows the Triple Captain chip and the
+   register with a name, an email and demo Team ID 1000003 → reload stays signed in → My Team shows the Triple Captain chip and the
    pitch → Live sub-view → Table/Live show "league not set" without calling `/v1/league/*` → non-admin is
    blocked from `/admin` → admin signs in, sets league 314159 and saves the default captain battle (two linked
    teams + a hand-picked community player) → Table shows the league and opens a manager's team → Captain Battle
-   shows the rows plus "my captain" → sign out → recover with the recovery code → admin sign-in on the fan's
+   shows the rows plus "my captain" → sign out → sign back in with email + Team ID (a wrong pair is refused) → admin sign-in on the fan's
    device keeps the fan session and restores it on admin sign-out. Phase 2 adds: News shows the seeded podcast
    cards (badge, de-duplicated title, duration, no `<audio>`), the Listen sheet has the exact Spotify/Apple hrefs
    and a single-platform episode opens directly, the story ring goes unseen → seen through the viewer, the
@@ -113,7 +113,9 @@ Detail views and sub-tabs live in query params (`/my-team/?view=live&gw=7`, `/ta
    a shared demo team (default GW 9, compact pitch, snapshot sheet) → like / unlike (optimistic + persisted) →
    comment and delete own comment → Profile "my posts" → a second fan reports the post (reason + note) → the admin
    removes it from the reports queue → the admin bans the second fan (reason required) and their composer, reply
-   bar and like are blocked with the notice → unban and they can post again → the admin hides a News episode and
+   bar and like are blocked with the notice → unban and they can post again → the admin fixes the second fan's email in Admin → Users and the fan signs in
+   with it on a new device → the admin clears it and the fan gets the blocking "add your email" pop-up on load,
+   saves one (409 shown inline) and isn't asked again → the admin hides a News episode and
    restores it from Admin → Community. Phase 4 adds: the admin home leads with the live-update card → X is
    disabled with the paid note, News + Push on by default → a template chip inserts text with its first
    placeholder selected → the X counter appears and blocks only while X is selected (X availability is simulated

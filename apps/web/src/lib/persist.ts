@@ -32,8 +32,8 @@ import {
  * "Open the app → see content now." The API sleeps when idle (a cold start takes up to a minute), so the last
  * good copy of the read-only screens is kept on the device and shown instantly while it revalidates.
  *
- * Only an allow-list is persisted: public data and the signed-in user's own read views. Never admin queries,
- * the recovery code, invite previews or anything secret. Each restored entry is re-parsed with the same Zod
+ * Only an allow-list is persisted: public data and the signed-in user's own read views. Never admin queries
+ * (e.g. other users' emails), invite previews or anything secret. Each restored entry is re-parsed with the same Zod
  * schema the API client uses; anything that doesn't parse is dropped (and the build id busts the whole cache
  * on every deploy, so a contract change never meets an old shape).
  */

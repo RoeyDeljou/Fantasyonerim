@@ -71,7 +71,6 @@ export const IDLE_POLL_MS = 5 * 60_000;
 export const qk = {
   config: ['config'] as const,
   me: ['me'] as const,
-  recoveryCode: ['me', 'recovery-code'] as const,
   bootstrap: ['fpl', 'bootstrap'] as const,
   fixtures: (event: Gameweek | null) => ['fpl', 'fixtures', event ?? 'none'] as const,
   fixtureDetail: (id: FplFixtureId) => ['fpl', 'fixture', id] as const,
@@ -403,15 +402,6 @@ export function useMe(enabled = true) {
   // Guests have no account: never ask (lib/guest.ts). A copy restored from the device (warm start) is shown as is:
   // no refetch on mount — lib/meRevalidate.ts checks it in the background once the app has painted.
   return useQuery({ ...meQuery(), enabled: enabled && !isGuest(), refetchOnMount: false });
-}
-
-export function useRecoveryCode(enabled: boolean) {
-  return useQuery({
-    queryKey: qk.recoveryCode,
-    queryFn: ({ signal }) => api.recoveryCode({ signal }),
-    enabled,
-    staleTime: Infinity,
-  });
 }
 
 export function useUpdateMe() {
@@ -868,8 +858,18 @@ export function useAdminUsers(query: string, enabled: boolean) {
   });
 }
 
-export function useNewRecoveryCode() {
-  return useMutation({ mutationFn: (id: UserId) => api.admin.newRecoveryCode(id) });
+export function useSetUserEmail() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, email }: { id: UserId; email: string | null }) =>
+      api.admin.setUserEmail(id, { email }),
+    onSuccess: (_v, { id, email }) => {
+      qc.setQueriesData<AdminUser[]>({ queryKey: ['admin', 'users'] }, (list) =>
+        list?.map((u) => (u.id === id ? { ...u, email } : u)),
+      );
+      void qc.invalidateQueries({ queryKey: ['admin', 'users'] });
+    },
+  });
 }
 
 export function useBanUser() {

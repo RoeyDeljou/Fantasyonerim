@@ -61,6 +61,17 @@ const DEMO = {
 
 const log = (...a) => console.warn('[e2e]', ...a);
 
+/** Sign-up needs an email (it signs the account back in with the Team ID). Unique per account in a run. */
+const EMAIL = {
+  tester: 'e2e.tester@example.com',
+  second: 'e2e.second@example.com',
+  guest: 'e2e.guest@example.com',
+};
+let emailSeq = 0;
+const freshEmail = (tag) => `e2e.${tag}.${++emailSeq}@example.com`;
+/** The onboarding email field (exact: other labels contain the word too). */
+const emailField = (p) => p.getByLabel('אימייל', { exact: true });
+
 function run(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, { stdio: 'inherit', ...opts });
   if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')} exited with ${r.status}`);
@@ -641,7 +652,6 @@ async function joinLeagueRoutes(ctx, position) {
 }
 
 async function journeys(browser) {
-  let recoveryCode = '';
   const user = await newContext(browser);
   await injectYouTube(user);
   const page = await user.newPage();
@@ -651,21 +661,41 @@ async function journeys(browser) {
     if (r.url().startsWith(`${API}/v1/league/`)) leagueCalls.push(r.url());
   });
 
-  await step('register with a Team ID (demo 1000003) and see the recovery code', async () => {
+  await step('register with a name, an email and a Team ID (demo 1000003)', async () => {
     await page.goto(`${WEB}/`);
     await page.waitForURL('**/onboarding/');
     await page.getByRole('button', { name: 'בואו נתחיל' }).click();
     await page.getByLabel('איך לקרוא לכם?').fill('E2E Tester');
+    // A bad email is caught on the field before anything is sent.
+    await emailField(page).fill('not-an-email');
     await page.getByLabel('Team ID של FPL').fill(DEMO.tripleCaptain);
+    await page.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
+    await page.getByText('כתובת אימייל לא תקינה').waitFor();
+    const attrs = await emailField(page).evaluate((el) => ({
+      type: el.getAttribute('type'),
+      autocomplete: el.getAttribute('autocomplete'),
+      inputmode: el.getAttribute('inputmode'),
+      dir: el.getAttribute('dir'),
+    }));
+    assert(
+      attrs.type === 'email' &&
+        attrs.autocomplete === 'email' &&
+        attrs.inputmode === 'email' &&
+        attrs.dir === 'ltr',
+      `email field attributes: ${JSON.stringify(attrs)}`,
+    );
+    await noHorizontalScroll(page, 'sign-up form with email');
+    await emailField(page).fill('  E2E.Tester@Example.com ');
     await page.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
     await page.getByText('זו הקבוצה שלכם?').waitFor();
     await page.getByRole('button', { name: 'כן, זו הקבוצה שלי' }).click();
-    const code = page.getByText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-    await code.waitFor();
-    recoveryCode = (await code.textContent())?.trim() ?? '';
-    assert(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(recoveryCode), `bad recovery code "${recoveryCode}"`);
-    await page.getByRole('button', { name: 'שמרתי, יאללה' }).click();
+    // No recovery-code screen any more: straight into the app, the email saved normalized on the account.
     await page.waitForURL('**/news/');
+    const token = await page.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+    const me = await (
+      await globalThis.fetch(`${API}/v1/me`, { headers: { authorization: `Bearer ${token}` } })
+    ).json();
+    assert(me.email === EMAIL.tester, `registered email: ${me.email}`);
   });
 
   if (process.env.E2E_ONLY_UPDATES) {
@@ -2271,10 +2301,10 @@ async function journeys(browser) {
     await fan2.goto(`${WEB}/onboarding/`);
     await fan2.getByRole('button', { name: 'בואו נתחיל' }).click();
     await fan2.getByLabel('איך לקרוא לכם?').fill('E2E Second');
+    await emailField(fan2).fill(EMAIL.second);
     await fan2.getByLabel('Team ID של FPL').fill(DEMO.vice);
     await fan2.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
     await fan2.getByRole('button', { name: 'כן, זו הקבוצה שלי' }).click();
-    await fan2.getByRole('button', { name: 'שמרתי, יאללה' }).click();
     await fan2.waitForURL('**/news/');
     await fan2.goto(threadUrl);
     await fan2.locator('[data-testid=comment]', { hasText: 'תגובה שנשארת e2e' }).waitFor();
@@ -2360,31 +2390,93 @@ async function journeys(browser) {
     await fan2.getByTestId('banned-notice').waitFor({ state: 'detached' });
   });
 
-  await step('admin issues a new sign-in code → the fan signs in with it on a new device', async () => {
+  await step(
+    'admin fixes a fan’s email in Admin → Users → the fan signs in with it on a new device',
+    async () => {
+      const row = mod.locator('[data-testid=user-row]', { hasText: 'E2E Second' });
+      await row.getByTestId('user-email').getByText(EMAIL.second).waitFor();
+      await row.getByRole('button', { name: 'האימייל של E2E Second' }).click();
+      const sheet = mod.locator('dialog[open] [data-testid=email-sheet]');
+      await sheet.waitFor();
+      assert(
+        (await emailField(sheet).inputValue()) === EMAIL.second,
+        'the sheet starts with the current email',
+      );
+      // Someone else's email is refused on the field.
+      await emailField(sheet).fill(EMAIL.tester);
+      await sheet.getByTestId('email-save').click();
+      await sheet.getByText('האימייל הזה כבר משויך לחשבון אחר.').waitFor();
+      await noHorizontalScroll(mod, 'admin email sheet');
+      const fixed = 'e2e.second.fixed@example.com';
+      await emailField(sheet).fill(fixed);
+      await sheet.getByTestId('email-save').click();
+      await sheet.waitFor({ state: 'detached' });
+      await row.getByTestId('user-email').getByText(fixed).waitFor();
+      const ctx = await newContext(browser);
+      const p = await ctx.newPage();
+      watch(p, 'fan2-new-device');
+      await p.goto(`${WEB}/onboarding/`);
+      await p.getByRole('button', { name: /התחברו עם אימייל/ }).click();
+      await emailField(p).fill(fixed);
+      await p.getByLabel('Team ID של FPL').fill(DEMO.vice);
+      await p.getByRole('button', { name: 'התחברות', exact: true }).click();
+      await p.waitForURL('**/news/');
+      await ctx.close();
+      // Their existing device stays signed in.
+      await fan2.goto(`${WEB}/profile/`);
+      await fan2.getByRole('button', { name: 'התנתקות' }).waitFor();
+    },
+  );
+
+  await step('an account without an email gets the blocking pop-up on load and saves one', async () => {
+    // The admin clears the email (as for an account made before email was required).
     const row = mod.locator('[data-testid=user-row]', { hasText: 'E2E Second' });
-    await row.getByRole('button', { name: 'קוד כניסה חדש לE2E Second' }).click();
-    const sheet = mod.getByTestId('new-code-sheet');
-    await sheet.getByTestId('new-code-confirm').click();
-    const value = sheet.getByTestId('new-code-value');
-    await value.waitFor();
-    const code = (await value.textContent())?.trim() ?? '';
-    assert(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code), `bad new code "${code}"`);
-    await sheet.getByText(DEMO.vice).waitFor();
-    await noHorizontalScroll(mod, 'new sign-in code sheet');
-    await sheet.getByRole('button', { name: 'סגירה' }).click();
-    const ctx = await newContext(browser);
-    const p = await ctx.newPage();
-    watch(p, 'fan2-new-device');
-    await p.goto(`${WEB}/onboarding/`);
-    await p.getByRole('button', { name: /התחברו עם קוד שחזור/ }).click();
-    await p.getByLabel('Team ID של FPL').fill(DEMO.vice);
-    await p.getByLabel('קוד שחזור').fill(code);
-    await p.getByRole('button', { name: 'התחברות', exact: true }).click();
-    await p.waitForURL('**/news/');
-    await ctx.close();
-    // Their existing device stays signed in.
+    await row.getByRole('button', { name: 'האימייל של E2E Second' }).click();
+    const sheet = mod.locator('dialog[open] [data-testid=email-sheet]');
+    await emailField(sheet).fill('');
+    await sheet.getByTestId('email-save').click();
+    await sheet.waitFor({ state: 'detached' });
+    await row.getByTestId('user-email').getByText('אין אימייל').waitFor();
+
+    await fan2.goto(`${WEB}/news/`);
+    const prompt = fan2.locator('dialog[open][data-testid=email-prompt]');
+    await prompt.waitFor({ timeout: 15_000 }); // the device copy of `me` still has one: shown once revalidated
+    await prompt.getByText('מעכשיו מתחברים עם אימייל ו־Team ID', { exact: false }).waitFor();
+    assert((await prompt.getByRole('button', { name: 'סגירה' }).count()) === 0, 'no close button');
+    await fan2.keyboard.press('Escape');
+    await sleep(300);
+    assert((await prompt.count()) === 1, 'Esc does not dismiss the pop-up');
+    await noHorizontalScroll(fan2, 'email pop-up');
+    await emailField(prompt).fill('nope');
+    await prompt.getByTestId('email-prompt-save').click();
+    await prompt.getByText('כתובת אימייל לא תקינה').waitFor();
+    await emailField(prompt).fill(EMAIL.tester);
+    await prompt.getByTestId('email-prompt-save').click();
+    await prompt.getByText('האימייל הזה כבר משויך לחשבון אחר.').waitFor();
+    await emailField(prompt).fill(EMAIL.second);
+    await prompt.getByTestId('email-prompt-save').click();
+    await prompt.waitFor({ state: 'detached' });
+    const token = await fan2.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+    const me = await (
+      await globalThis.fetch(`${API}/v1/me`, { headers: { authorization: `Bearer ${token}` } })
+    ).json();
+    assert(me.email === EMAIL.second, `saved email: ${me.email}`);
+    // Gone for good: not on the next load.
+    await fan2.reload();
+    await fan2.locator('[data-testid=news-card]').first().waitFor();
+    await sleep(3_000);
+    assert((await fan2.locator('dialog[open][data-testid=email-prompt]').count()) === 0, 'asked only once');
     await fan2.goto(`${WEB}/profile/`);
-    await fan2.getByRole('button', { name: 'התנתקות' }).waitFor();
+    await fan2.getByTestId('profile-email').getByText(EMAIL.second).waitFor();
+    // Never for an admin-only account (password sign-in, no Team ID).
+    await mod.goto(`${WEB}/news/`);
+    await mod.locator('[data-testid=news-card]').first().waitFor();
+    await sleep(2_500);
+    assert(
+      (await mod.locator('dialog[open][data-testid=email-prompt]').count()) === 0,
+      'no pop-up for admins',
+    );
+    await mod.goto(`${WEB}/admin/?view=community`);
   });
 
   await step('admin hides a News item, then restores it from Admin → Community', async () => {
@@ -2640,6 +2732,7 @@ async function journeys(browser) {
       await p.goto(`${WEB}/onboarding/`);
       await p.getByRole('button', { name: 'בואו נתחיל' }).click();
       await p.getByLabel('איך לקרוא לכם?').fill('Guest Tester');
+      await emailField(p).fill(EMAIL.guest);
       const field = p.getByLabel('Team ID של FPL');
       await field.fill('99999999');
       await p.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
@@ -2719,6 +2812,7 @@ async function journeys(browser) {
       await p.getByLabel('Team ID של FPL').waitFor();
       assert((await p.getByLabel('Team ID של FPL').inputValue()) === '99999999', 'Team ID prefilled');
       assert((await p.getByLabel('איך לקרוא לכם?').inputValue()) === 'Guest Tester', 'name prefilled');
+      assert((await emailField(p).inputValue()) === EMAIL.guest, 'email prefilled');
       assert(authed.length === 0, `guest requests carried an auth header: ${authed.join(', ')}`);
       const kept = await persistedKeys(p);
       assert(
@@ -2733,7 +2827,6 @@ async function journeys(browser) {
       await p.getByLabel('Team ID של FPL').fill('1000009');
       await p.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
       await p.getByRole('button', { name: 'כן, זו הקבוצה שלי' }).click();
-      await p.getByRole('button', { name: 'שמרתי, יאללה' }).click();
       await p.waitForURL('**/news/');
       assert((await draft()) === null, 'sign-up prefill cleared after registering');
       assert(
@@ -2850,10 +2943,10 @@ async function journeys(browser) {
         await fan.goto(`${WEB}/onboarding/`);
         await fan.getByRole('button', { name: 'בואו נתחיל' }).click();
         await fan.getByLabel('איך לקרוא לכם?').fill(name);
+        await emailField(fan).fill('e2e.leaver@example.com'); // freed by the deletion, so reusable
         await fan.getByLabel('Team ID של FPL').fill(DEMO.normal);
         await fan.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
         await fan.getByRole('button', { name: 'כן, זו הקבוצה שלי' }).click();
-        await fan.getByRole('button', { name: 'שמרתי, יאללה' }).click();
         await fan.waitForURL('**/news/');
       };
       await register('E2E Leaver');
@@ -2889,14 +2982,14 @@ async function journeys(browser) {
   );
 
   // ---------- admin invites (one-time links → the hosts' own accounts become admins) ----------
-  /** Registers a fan from the onboarding screen (whatever banner is showing) and confirms the recovery code. */
+  /** Registers a fan from the onboarding screen (whatever banner is showing). */
   const signUp = async (p, name, teamId) => {
     await p.getByRole('button', { name: 'בואו נתחיל' }).click();
     await p.getByLabel('איך לקרוא לכם?').fill(name);
+    await emailField(p).fill(freshEmail(teamId));
     await p.getByLabel('Team ID של FPL').fill(teamId);
     await p.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
     await p.getByRole('button', { name: 'כן, זו הקבוצה שלי' }).click();
-    await p.getByRole('button', { name: 'שמרתי, יאללה' }).click();
   };
   /** Creates an invite in the admin console and returns its link (shown once). */
   const createInvite = async (label) => {
@@ -3011,6 +3104,7 @@ async function journeys(browser) {
       await p.getByTestId('invite-banner').waitFor();
       await p.getByRole('button', { name: 'בואו נתחיל' }).click();
       await p.getByLabel('איך לקרוא לכם?').fill('E2E Late');
+      await emailField(p).fill(freshEmail('late'));
       await p.getByLabel('Team ID של FPL').fill(DEMO.lateInvitee);
       await p.getByRole('button', { name: 'מצאו את הקבוצה שלי' }).click();
       await p.getByText('זו הקבוצה שלכם?').waitFor();
@@ -3026,7 +3120,6 @@ async function journeys(browser) {
         'only the invite notice — no generic error',
       );
       await p.getByRole('button', { name: 'כן, זו הקבוצה שלי' }).click(); // now as a normal fan
-      await p.getByRole('button', { name: 'שמרתי, יאללה' }).click();
       await p.waitForURL('**/news/');
       await ctx.close();
     },
@@ -3092,10 +3185,7 @@ async function journeys(browser) {
       );
       const kept = await persistedKeys(page);
       assert(kept.includes('news,feed') && kept.includes('me'), `persisted: ${kept.join(' | ')}`);
-      assert(
-        !kept.some((k) => k.startsWith('admin') || k.includes('recovery')),
-        `never persisted: ${kept.join(' | ')}`,
-      );
+      assert(!kept.some((k) => k.startsWith('admin')), `never persisted: ${kept.join(' | ')}`);
       await slowApi(page, 10_000);
       await page.reload({ waitUntil: 'commit' });
       const t0 = Date.now();
@@ -3139,23 +3229,34 @@ async function journeys(browser) {
     await ctx.close();
   });
 
-  await step('sign out, then recover the account with the recovery code', async () => {
-    await page.goto(`${WEB}/profile/`);
-    await page.getByRole('button', { name: 'התנתקות' }).click();
-    await page.getByRole('button', { name: 'התנתקות' }).first().click();
-    await page.waitForURL('**/onboarding/');
-    // Logout forgets the device cache: nothing of the old session survives (now, or after the next save).
-    for (const wait of [0, 1_500]) {
-      await sleep(wait);
-      const left = (await persistedKeys(page)).filter((k) => PRIVATE_KEY.test(k));
-      assert(left.length === 0, `persisted after logout: ${left.join(' | ')}`);
-    }
-    await page.getByRole('button', { name: /התחברו עם קוד שחזור/ }).click();
-    await page.getByLabel('Team ID של FPL').fill(DEMO.tripleCaptain);
-    await page.getByLabel('קוד שחזור').fill(recoveryCode);
-    await page.getByRole('button', { name: 'התחברות', exact: true }).click();
-    await page.waitForURL('**/news/');
-  });
+  await step(
+    'sign out, then sign back in with email + Team ID (a wrong pair is refused clearly)',
+    async () => {
+      await page.goto(`${WEB}/profile/`);
+      await page.getByRole('button', { name: 'התנתקות' }).click();
+      await page.getByRole('button', { name: 'התנתקות' }).first().click();
+      await page.waitForURL('**/onboarding/');
+      // Logout forgets the device cache: nothing of the old session survives (now, or after the next save).
+      for (const wait of [0, 1_500]) {
+        await sleep(wait);
+        const left = (await persistedKeys(page)).filter((k) => PRIVATE_KEY.test(k));
+        assert(left.length === 0, `persisted after logout: ${left.join(' | ')}`);
+      }
+      await page.getByRole('button', { name: /התחברו עם אימייל/ }).click();
+      const form = page.getByTestId('email-signin');
+      await emailField(page).fill('nobody@example.com');
+      await page.getByLabel('Team ID של FPL').fill(DEMO.tripleCaptain);
+      await page.getByRole('button', { name: 'התחברות', exact: true }).click();
+      await form.getByText('האימייל או ה־Team ID לא נכונים', { exact: false }).waitFor();
+      assert(page.url().includes('/onboarding/'), 'still on onboarding after a wrong pair');
+      await noHorizontalScroll(page, 'email sign-in form');
+      await emailField(page).fill('E2E.Tester@example.com'); // case doesn't matter
+      await page.getByRole('button', { name: 'התחברות', exact: true }).click();
+      await page.waitForURL('**/news/');
+      await page.goto(`${WEB}/profile/`);
+      await page.getByTestId('profile-email').getByText(EMAIL.tester).waitFor();
+    },
+  );
 
   await step(
     'admin sign-in on a fan device keeps the fan session and restores it on admin sign-out',

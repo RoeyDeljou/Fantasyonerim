@@ -7,7 +7,9 @@ import type { FormEvent, ReactNode } from 'react';
 import { DisplayNameSchema } from '@fant/shared';
 import type { Locale } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
-import { useMe, useRecoveryCode, useUpdateMe } from '@/lib/queries';
+import { useMe, useUpdateMe } from '@/lib/queries';
+import { isEmailTaken } from '@/lib/api';
+import { EmailField, parseEmail } from '@/components/EmailField';
 import { useSession } from '@/lib/session';
 import { useIsGuest } from '@/lib/guest';
 import { SignUpPrompt } from '@/components/SignUpPrompt';
@@ -27,7 +29,7 @@ import {
   ChevronEndIcon,
   DocIcon,
   DownloadIcon,
-  KeyIcon,
+  MailIcon,
   LogOutIcon,
   ShieldIcon,
 } from '@/components/icons';
@@ -35,7 +37,6 @@ import {
   Badge,
   Button,
   Card,
-  CopyButton,
   ErrorState,
   InlineError,
   SectionTitle,
@@ -131,6 +132,8 @@ function ProfileInner() {
             </span>
           </Row>
         </div>
+        {/* The sign-in email (with the Team ID). Admin-only accounts sign in with a password instead. */}
+        {user.entryId !== null && <EmailEditor current={user.email} />}
       </Card>
 
       {user.role === 'admin' && (
@@ -164,7 +167,6 @@ function ProfileInner() {
 
       <NotificationsCard />
       <BlockedUsersCard />
-      <RecoveryCard />
       <InstallCard />
 
       <Link
@@ -345,38 +347,95 @@ function NameEditor({ current, locked }: { current: string; locked: boolean }) {
   );
 }
 
-function RecoveryCard() {
+/** The account's sign-in email: shown LTR-isolated, edited in place (PATCH /v1/me). 409 = another account has it. */
+function EmailEditor({ current }: { current: string | null }) {
   const { t } = useI18n();
-  const [revealed, setRevealed] = useState(false);
-  const code = useRecoveryCode(revealed);
-  return (
-    <Card className="flex flex-col gap-3">
-      <div className="flex items-start gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-on-primary-soft">
-          <KeyIcon size={20} />
-        </span>
-        <div>
-          <h2 className="font-bold text-ink">{t.profile.recoveryTitle}</h2>
-          <p className="text-sm text-muted">{t.profile.recoveryBody}</p>
+  const update = useUpdateMe();
+  const [editing, setEditing] = useState(false);
+  const [email, setEmail] = useState(current ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    const mail = parseEmail(email);
+    if (!mail) {
+      setError(t.onboarding.emailInvalid);
+      return;
+    }
+    update.mutate(
+      { email: mail },
+      {
+        onSuccess: () => {
+          setEditing(false);
+          setSaved(true);
+          window.setTimeout(() => setSaved(false), 2500);
+        },
+        onError: (err) => {
+          if (isEmailTaken(err)) setError(t.onboarding.emailTaken);
+        },
+      },
+    );
+  }
+
+  if (!editing) {
+    return (
+      <div className="mt-2 flex items-center gap-3 border-t border-line pt-3" data-testid="profile-email">
+        <MailIcon size={20} className="shrink-0 text-primary" />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="text-xs text-muted">{t.profile.email}</span>
+          {current ? (
+            <bdi dir="ltr" className="text-start font-semibold break-all text-ink">
+              {current}
+            </bdi>
+          ) : (
+            <span className="font-semibold text-muted">{t.profile.noEmail}</span>
+          )}
+          {saved && (
+            <span className="flex items-center gap-1 text-xs font-semibold text-success" role="status">
+              <CheckIcon size={14} />
+              {t.profile.emailSaved}
+            </span>
+          )}
         </div>
-      </div>
-      {!revealed ? (
-        <Button variant="secondary" onClick={() => setRevealed(true)}>
-          {t.profile.reveal}
+        <Button
+          variant="secondary"
+          aria-label={t.profile.editEmail}
+          onClick={() => {
+            setEmail(current ?? '');
+            setError(null);
+            update.reset();
+            setEditing(true);
+          }}
+        >
+          {t.common.edit}
         </Button>
-      ) : code.isPending ? (
-        <Skeleton className="h-14" />
-      ) : code.isError ? (
-        <ErrorState error={code.error} onRetry={() => code.refetch()} />
-      ) : (
-        <div className="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-3 py-2">
-          <span dir="ltr" className="font-mono text-xl font-bold tracking-[0.15em] text-ink select-all">
-            {code.data}
-          </span>
-          <CopyButton value={code.data} />
-        </div>
-      )}
-    </Card>
+      </div>
+    );
+  }
+  return (
+    <form onSubmit={submit} className="mt-2 flex flex-col gap-2 border-t border-line pt-3" noValidate>
+      <EmailField
+        label={t.profile.editEmail}
+        value={email}
+        autoFocus
+        error={error}
+        onChange={(e) => {
+          setEmail(e.target.value);
+          setError(null);
+        }}
+      />
+      {update.isError && !error && <InlineError>{errorMessage(t, update.error)}</InlineError>}
+      <div className="flex gap-2">
+        <Button type="submit" className="flex-1" disabled={update.isPending}>
+          {update.isPending && <Spinner />}
+          {t.common.save}
+        </Button>
+        <Button variant="ghost" className="flex-1" onClick={() => setEditing(false)}>
+          {t.common.cancel}
+        </Button>
+      </div>
+    </form>
   );
 }
 

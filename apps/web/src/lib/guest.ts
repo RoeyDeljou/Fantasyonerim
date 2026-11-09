@@ -43,12 +43,17 @@ export function useIsGuest(): boolean {
 export interface SignUpDraft {
   name: string;
   teamId: string;
+  email: string;
 }
 
 export function saveSignUpDraft(d: SignUpDraft): void {
   writePref(
     DRAFT_KEY,
-    JSON.stringify({ name: d.name.slice(0, 40), teamId: d.teamId.replace(/\D/g, '').slice(0, 8) }),
+    JSON.stringify({
+      name: d.name.slice(0, 40),
+      teamId: d.teamId.replace(/\D/g, '').slice(0, 8),
+      email: d.email.trim().slice(0, 254),
+    }),
   );
 }
 
@@ -58,8 +63,12 @@ export function readSignUpDraft(): SignUpDraft | null {
   try {
     const v = JSON.parse(raw) as unknown;
     if (typeof v !== 'object' || v === null) return null;
-    const { name, teamId } = v as { name?: unknown; teamId?: unknown };
-    return { name: typeof name === 'string' ? name : '', teamId: typeof teamId === 'string' ? teamId : '' };
+    const { name, teamId, email } = v as { name?: unknown; teamId?: unknown; email?: unknown };
+    return {
+      name: typeof name === 'string' ? name : '',
+      teamId: typeof teamId === 'string' ? teamId : '',
+      email: typeof email === 'string' ? email : '',
+    };
   } catch {
     return null;
   }

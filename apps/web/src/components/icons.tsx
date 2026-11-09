@@ -250,6 +250,13 @@ export const KeyIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const MailIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="m3.5 6.5 8.5 6.5 8.5-6.5" />
+  </Svg>
+);
+
 export const HeadphonesIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M4 16v-3a8 8 0 0 1 16 0v3" />

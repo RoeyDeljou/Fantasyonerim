@@ -11,10 +11,12 @@ import {
   useAdminUsers,
   useBanUser,
   useHiddenNews,
-  useNewRecoveryCode,
   useResolveReport,
   useRestoreNews,
+  useSetUserEmail,
 } from '@/lib/queries';
+import { isEmailTaken } from '@/lib/api';
+import { EmailField, parseEmail } from '@/components/EmailField';
 import { BottomSheet } from '@/components/BottomSheet';
 import {
   BanIcon,
@@ -23,7 +25,7 @@ import {
   EyeOffIcon,
   FlagIcon,
   ImageIcon,
-  KeyIcon,
+  MailIcon,
   SearchIcon,
   ShirtIcon,
   TrashIcon,
@@ -37,7 +39,6 @@ import {
   Badge,
   Button,
   Card,
-  CopyButton,
   EmptyState,
   InlineError,
   Skeleton,
@@ -261,7 +262,7 @@ function UsersSection({ onDone }: { onDone(msg: string): void }) {
   const q = useDebounced(query.trim(), 300);
   const users = useAdminUsers(q, true);
   const [target, setTarget] = useState<AdminUser | null>(null);
-  const [codeFor, setCodeFor] = useState<AdminUser | null>(null);
+  const [emailFor, setEmailFor] = useState<AdminUser | null>(null);
 
   return (
     <Collapsible
@@ -291,64 +292,72 @@ function UsersSection({ onDone }: { onDone(msg: string): void }) {
           data-testid="users"
         >
           {users.data.map((u) => (
-            <li key={u.id} className="flex items-center gap-3 px-3 py-2.5" data-testid="user-row">
-              <AuthorAvatar author={u} size={32} />
-              <div className="flex min-w-0 flex-1 flex-col leading-tight">
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <bdi dir="auto" className="truncate font-bold text-ink">
-                    {u.name}
-                  </bdi>
-                  {u.role === 'admin' && <Badge tone="primary">{m.adminBadge}</Badge>}
-                  {u.bannedAt && <Badge tone="live">{m.bannedBadge}</Badge>}
-                </span>
-                <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted">
-                  {u.teamName && (
-                    <bdi dir="auto" className="truncate">
-                      {u.teamName}
+            <li key={u.id} className="flex flex-col gap-1 px-3 py-2.5" data-testid="user-row">
+              <div className="flex items-center gap-3">
+                <AuthorAvatar author={u} size={32} />
+                <div className="flex min-w-0 flex-1 flex-col leading-tight">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <bdi dir="auto" className="truncate font-bold text-ink">
+                      {u.name}
                     </bdi>
-                  )}
-                  {u.entryId !== null && (
-                    <bdi dir="ltr" className="tabular">
-                      #{u.entryId}
-                    </bdi>
-                  )}
-                  {(u.teamName || u.entryId !== null) && <span aria-hidden="true">·</span>}
-                  <span>{plural(u.postCount, m.postCountOne, m.postCount)}</span>
-                </span>
-                {u.bannedAt && u.banReason && (
-                  <span dir="auto" className="name-start mt-0.5 truncate text-xs text-live">
-                    {fmt(m.bannedReason, { reason: u.banReason })}
+                    {u.role === 'admin' && <Badge tone="primary">{m.adminBadge}</Badge>}
+                    {u.bannedAt && <Badge tone="live">{m.bannedBadge}</Badge>}
                   </span>
+                  <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-muted">
+                    {u.teamName && (
+                      <bdi dir="auto" className="truncate">
+                        {u.teamName}
+                      </bdi>
+                    )}
+                    {u.entryId !== null && (
+                      <bdi dir="ltr" className="tabular">
+                        #{u.entryId}
+                      </bdi>
+                    )}
+                    {(u.teamName || u.entryId !== null) && <span aria-hidden="true">·</span>}
+                    <span>{plural(u.postCount, m.postCountOne, m.postCount)}</span>
+                  </span>
+                  {u.bannedAt && u.banReason && (
+                    <span dir="auto" className="name-start mt-0.5 truncate text-xs text-live">
+                      {fmt(m.bannedReason, { reason: u.banReason })}
+                    </span>
+                  )}
+                </div>
+                {u.entryId !== null && (
+                  <Button
+                    variant="secondary"
+                    className="shrink-0 px-2.5"
+                    aria-label={fmt(m.editEmailFor, { name: u.name })}
+                    title={m.editEmail}
+                    onClick={() => setEmailFor(u)}
+                    data-testid="edit-email"
+                  >
+                    <MailIcon size={18} />
+                  </Button>
+                )}
+                {u.role !== 'admin' && (
+                  <Button
+                    variant={u.bannedAt ? 'secondary' : 'danger'}
+                    className="shrink-0 px-3 text-sm"
+                    onClick={() => setTarget(u)}
+                  >
+                    {u.bannedAt ? <UndoIcon size={16} className="rtl:-scale-x-100" /> : <BanIcon size={16} />}
+                    {u.bannedAt ? m.unban : m.ban}
+                  </Button>
                 )}
               </div>
+              {/* The sign-in email in full (admins fix typos here); admin-only accounts sign in with a password. */}
               {u.entryId !== null && (
-                <Button
-                  variant="secondary"
-                  className="shrink-0 px-2.5"
-                  aria-label={fmt(m.newCodeFor, { name: u.name })}
-                  title={m.newCode}
-                  onClick={() => setCodeFor(u)}
-                  data-testid="new-code"
-                >
-                  <KeyIcon size={18} />
-                </Button>
-              )}
-              {u.role !== 'admin' && (
-                <Button
-                  variant={u.bannedAt ? 'secondary' : 'danger'}
-                  className="shrink-0 px-3 text-sm"
-                  onClick={() => setTarget(u)}
-                >
-                  {u.bannedAt ? <UndoIcon size={16} className="rtl:-scale-x-100" /> : <BanIcon size={16} />}
-                  {u.bannedAt ? m.unban : m.ban}
-                </Button>
+                <p className="ps-11 text-xs break-all text-muted" data-testid="user-email">
+                  {u.email ? <bdi dir="ltr">{u.email}</bdi> : <span className="italic">{m.noEmail}</span>}
+                </p>
               )}
             </li>
           ))}
         </ul>
       )}
       <BanSheet user={target} onClose={() => setTarget(null)} onDone={onDone} />
-      <NewCodeSheet user={codeFor} onClose={() => setCodeFor(null)} />
+      <EmailSheet user={emailFor} onClose={() => setEmailFor(null)} onDone={onDone} />
     </Collapsible>
   );
 }
@@ -471,66 +480,96 @@ function BanSheet({
   );
 }
 
-/** A user lost their recovery code: issue a new one (old one stops working) for the admin to send them. */
-function NewCodeSheet({ user, onClose }: { user: AdminUser | null; onClose(): void }) {
+/** Fix a user's sign-in email (a typo at signup). Empty = remove it: the app asks them for one on next open. */
+function EmailSheet({
+  user,
+  onClose,
+  onDone,
+}: {
+  user: AdminUser | null;
+  onClose(): void;
+  onDone(msg: string): void;
+}) {
+  const { t } = useI18n();
+  return (
+    <BottomSheet
+      open={user !== null}
+      onClose={onClose}
+      title={fmt(t.moderation.editEmailFor, { name: user?.name ?? '' })}
+    >
+      {/* Keyed by user: the field starts with their current email on the very first frame. */}
+      {user && <EmailForm key={user.id} user={user} onClose={onClose} onDone={onDone} />}
+    </BottomSheet>
+  );
+}
+
+function EmailForm({
+  user,
+  onClose,
+  onDone,
+}: {
+  user: AdminUser;
+  onClose(): void;
+  onDone(msg: string): void;
+}) {
   const { t } = useI18n();
   const m = t.moderation;
-  const issue = useNewRecoveryCode();
+  const save = useSetUserEmail();
+  const [email, setEmail] = useState(user.email ?? '');
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    issue.reset();
-  }, [user?.id]);
+  const submit = () => {
+    const raw = email.trim();
+    const mail = raw === '' ? null : parseEmail(raw);
+    if (raw !== '' && mail === null) {
+      setError(t.onboarding.emailInvalid);
+      return;
+    }
+    save.mutate(
+      { id: user.id, email: mail },
+      {
+        onSuccess: () => {
+          onClose();
+          onDone(m.emailSaved);
+        },
+        onError: (e) => {
+          if (isEmailTaken(e)) setError(t.onboarding.emailTaken);
+        },
+      },
+    );
+  };
 
   return (
-    <BottomSheet open={user !== null} onClose={onClose} title={fmt(m.newCodeFor, { name: user?.name ?? '' })}>
-      <div className="flex flex-col gap-3" data-testid="new-code-sheet">
-        {issue.isSuccess ? (
-          <>
-            <p className="text-sm text-muted">{m.newCodeReady}</p>
-            <div className="flex items-center justify-between gap-2 rounded-xl bg-surface-2 px-3 py-2">
-              <span
-                dir="ltr"
-                className="font-mono text-xl font-bold tracking-[0.15em] text-ink select-all"
-                data-testid="new-code-value"
-              >
-                {issue.data}
-              </span>
-              <CopyButton value={issue.data} />
-            </div>
-            {user && user.entryId !== null && (
-              <p className="text-sm text-muted">
-                {m.newCodeTeamId}{' '}
-                <bdi dir="ltr" className="tabular font-semibold text-ink">
-                  {user.entryId}
-                </bdi>
-              </p>
-            )}
-            <Button variant="secondary" onClick={onClose}>
-              {t.common.close}
-            </Button>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-muted">{m.newCodeBody}</p>
-            {issue.isError && <InlineError>{errorMessage(t, issue.error)}</InlineError>}
-            <div className="flex gap-2">
-              <Button
-                className="flex-1"
-                disabled={issue.isPending || !user}
-                onClick={() => user && issue.mutate(user.id)}
-                data-testid="new-code-confirm"
-              >
-                {issue.isPending ? <Spinner /> : <KeyIcon size={18} />}
-                {m.newCode}
-              </Button>
-              <Button variant="ghost" className="flex-1" onClick={onClose}>
-                {t.common.cancel}
-              </Button>
-            </div>
-          </>
-        )}
+    <form
+      className="flex flex-col gap-3"
+      data-testid="email-sheet"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+      noValidate
+    >
+      <p className="text-sm text-muted">{m.editEmailBody}</p>
+      <EmailField
+        label={t.onboarding.emailLabel}
+        value={email}
+        error={error}
+        onChange={(e) => {
+          setEmail(e.target.value);
+          setError(null);
+        }}
+      />
+      {save.isError && !error && <InlineError>{errorMessage(t, save.error)}</InlineError>}
+      <div className="flex gap-2">
+        <Button type="submit" className="flex-1" disabled={save.isPending} data-testid="email-save">
+          {save.isPending && <Spinner />}
+          {t.common.save}
+        </Button>
+        <Button variant="ghost" className="flex-1" onClick={onClose}>
+          {t.common.cancel}
+        </Button>
       </div>
-    </BottomSheet>
+    </form>
   );
 }
 

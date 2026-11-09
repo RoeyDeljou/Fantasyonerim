@@ -53,7 +53,7 @@ export const localStorageTokenStore: TokenStore = {
 //
 // On iOS a home-screen app gets its own, empty localStorage, but Safari's cookies are copied into it once, when
 // "Add to Home Screen" is tapped. So the signed-in account is mirrored into a cookie and the home-screen app adopts
-// it on its first launch — nobody has to type a recovery code after installing. The cookie is scoped to
+// it on its first launch — nobody has to sign in again after installing. The cookie is scoped to
 // /handoff/ (a tiny static page): it is never sent with app, API, /cdn or /media requests, and it is read through
 // a hidden same-origin iframe of that page. Auth itself stays a bearer token.
 
@@ -80,7 +80,7 @@ function writeHandoffCookie(token: string | null): void {
         ? `${HANDOFF_COOKIE}=; Path=${HANDOFF_PATH}; Max-Age=0; SameSite=Strict${secure}`
         : `${HANDOFF_COOKIE}=${encodeURIComponent(token)}; Path=${HANDOFF_PATH}; Max-Age=${YEAR_S}; SameSite=Strict${secure}`;
   } catch {
-    // cookies blocked — the recovery code still works
+    // cookies blocked — signing in with email + Team ID still works
   }
 }
 

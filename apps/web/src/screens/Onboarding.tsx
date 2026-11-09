@@ -5,40 +5,26 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { DisplayNameSchema, FplEntryIdSchema, RecoverBodySchema, RegisterBodySchema } from '@fant/shared';
-import type { EntrySummary, FplEntryId } from '@fant/shared';
+import { DisplayNameSchema, EmailLoginBodySchema, FplEntryIdSchema, RegisterBodySchema } from '@fant/shared';
+import type { EmailLoginBody, EntrySummary, FplEntryId } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
-import { api, isApiError } from '@/lib/api';
+import { api, isApiError, isEmailTaken } from '@/lib/api';
 import { ROUTES, useSession } from '@/lib/session';
-import { qk, useMe, useRedeemInvite } from '@/lib/queries';
+import { useMe, useRedeemInvite } from '@/lib/queries';
 import { flash } from '@/lib/flash';
 import { clearInviteToken, takeInviteToken } from '@/lib/invite';
 import { Logo } from '@/components/AppShell';
 import { TermsAgreeLine } from './Terms';
-import { ChevronDownIcon, ChevronStartIcon, ExternalIcon, InfoIcon, KeyIcon } from '@/components/icons';
+import { ChevronDownIcon, ChevronStartIcon, ExternalIcon, InfoIcon, MailIcon } from '@/components/icons';
+import { EmailField, parseEmail } from '@/components/EmailField';
 import { openExternal } from '@/lib/external';
 import { readSignUpDraft, saveSignUpDraft } from '@/lib/guest';
-import {
-  Button,
-  Card,
-  CopyButton,
-  ErrorState,
-  InlineError,
-  Spinner,
-  TextField,
-  errorMessage,
-} from '@/components/ui';
+import { Button, Card, InlineError, Spinner, TextField, errorMessage } from '@/components/ui';
 
-type Step = 'welcome' | 'form' | 'preview' | 'conflict' | 'recover' | 'code' | 'redeem';
+type Step = 'welcome' | 'form' | 'preview' | 'conflict' | 'signin' | 'redeem';
 
-/** Formats free text into XXXX-XXXX as the user types. */
-function formatRecoveryCode(raw: string): string {
-  const clean = raw
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '')
-    .slice(0, 8);
-  return clean.length > 4 ? `${clean.slice(0, 4)}-${clean.slice(4)}` : clean;
-}
+const isTeamIdText = (raw: string) =>
+  /^\d+$/.test(raw.trim()) && FplEntryIdSchema.safeParse(raw.trim()).success;
 
 export function OnboardingScreen() {
   const { t, f, locale } = useI18n();
@@ -47,12 +33,11 @@ export function OnboardingScreen() {
   const [step, setStep] = useState<Step>('welcome');
   const [name, setName] = useState('');
   const [teamId, setTeamId] = useState('');
-  const [code, setCode] = useState('');
+  const [email, setEmail] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
   const [teamError, setTeamError] = useState<string | null>(null);
-  const [codeError, setCodeError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [preview, setPreview] = useState<EntrySummary | null>(null);
-  const [becameAdmin, setBecameAdmin] = useState(false);
   /** FPL answered "no such team": offer try again / create a team / continue as guest. */
   const [notFound, setNotFound] = useState(false);
   const teamField = useRef<HTMLDivElement>(null);
@@ -65,6 +50,7 @@ export function OnboardingScreen() {
     if (draft) {
       setName(draft.name);
       setTeamId(draft.teamId);
+      setEmail(draft.email);
     }
     setStep((s) => (s === 'welcome' ? 'form' : s));
   }, [status]);
@@ -95,6 +81,7 @@ export function OnboardingScreen() {
         RegisterBodySchema.parse({
           name: name.trim(),
           entryId,
+          email,
           locale,
           ...((invite.state === 'valid' || invite.state === 'error') && invite.token
             ? { inviteToken: invite.token }
@@ -103,14 +90,21 @@ export function OnboardingScreen() {
       ),
     onSuccess: async (auth) => {
       invite.clear();
-      setBecameAdmin(auth.user.role === 'admin');
       await signIn(auth);
-      setStep('code');
+      if (auth.user.role === 'admin') {
+        flash(fmt(t.invites.welcome, { name: auth.user.name }));
+        router.replace(ROUTES.admin);
+      } else router.replace(ROUTES.home);
     },
     onError: (e) => {
+      // The email belongs to another account: back to the form, the message on the email field.
+      if (isEmailTaken(e)) {
+        setEmailError(t.onboarding.emailTaken);
+        setStep('form');
+      }
       // With a token, a 400 means the invite died meanwhile (used / revoked / expired): nothing was created —
       // show the notice and let them carry on as a fan (the next tap signs up without the token).
-      if ((invite.state === 'valid' || invite.state === 'error') && isApiError(e, 'bad_request'))
+      else if ((invite.state === 'valid' || invite.state === 'error') && isApiError(e, 'bad_request'))
         invite.reject();
       else if (isApiError(e, 'conflict')) setStep('conflict');
       else if (isApiError(e, 'not_found')) {
@@ -121,48 +115,41 @@ export function OnboardingScreen() {
     },
   });
 
-  const recover = useMutation({
-    mutationFn: () => api.recover(RecoverBodySchema.parse({ entryId: teamId, recoveryCode: code })),
+  const emailLogin = useMutation({
+    mutationFn: (body: EmailLoginBody) => api.emailLogin(body),
     onSuccess: async (auth) => {
       await signIn(auth);
-      // Recovered on this device with an invite in hand → offer the upgrade.
+      // Signed in on this device with an invite in hand → offer the upgrade.
       if (invite.state === 'valid' && auth.user.role !== 'admin') setStep('redeem');
       else router.replace(ROUTES.home);
     },
-    onError: (e) => {
-      if (isApiError(e, 'unauthorized') || isApiError(e, 'not_found')) setCodeError(t.onboarding.wrongCode);
-    },
   });
-
-  const recoveryCode = useQuery({
-    queryKey: qk.recoveryCode,
-    queryFn: ({ signal }) => api.recoveryCode({ signal }),
-    enabled: step === 'code',
-    staleTime: Infinity,
-  });
+  const wrongCredentials =
+    isApiError(emailLogin.error, 'unauthorized') || isApiError(emailLogin.error, 'not_found');
 
   function submitForm(e: FormEvent) {
     e.preventDefault();
     const n = DisplayNameSchema.safeParse(name);
-    const id = FplEntryIdSchema.safeParse(teamId.trim());
+    const idOk = isTeamIdText(teamId);
+    const mail = parseEmail(email);
     setNameError(n.success ? null : t.onboarding.nameInvalid);
-    setTeamError(id.success && /^\d+$/.test(teamId.trim()) ? null : t.onboarding.teamIdInvalid);
-    if (!n.success || !id.success || !/^\d+$/.test(teamId.trim())) return;
-    lookup.mutate(id.data);
+    setTeamError(idOk ? null : t.onboarding.teamIdInvalid);
+    setEmailError(mail ? null : t.onboarding.emailInvalid);
+    if (!n.success || !idOk || !mail) return;
+    setEmail(mail);
+    lookup.mutate(FplEntryIdSchema.parse(teamId.trim()));
   }
 
-  function submitRecover(e: FormEvent) {
+  function submitSignIn(e: FormEvent) {
     e.preventDefault();
-    const parsed = RecoverBodySchema.safeParse({ entryId: teamId.trim(), recoveryCode: code });
-    if (!parsed.success) {
-      const idOk = FplEntryIdSchema.safeParse(teamId.trim()).success && /^\d+$/.test(teamId.trim());
-      setTeamError(idOk ? null : t.onboarding.teamIdInvalid);
-      setCodeError(idOk ? t.onboarding.recoveryCodeInvalid : null);
-      return;
-    }
-    setTeamError(null);
-    setCodeError(null);
-    recover.mutate();
+    const mail = parseEmail(email);
+    const idOk = isTeamIdText(teamId);
+    setEmailError(mail ? null : t.onboarding.emailInvalid);
+    setTeamError(idOk ? null : t.onboarding.teamIdInvalid);
+    if (!mail || !idOk) return;
+    setEmail(mail);
+    emailLogin.reset();
+    emailLogin.mutate(EmailLoginBodySchema.parse({ email: mail, entryId: teamId.trim() }));
   }
 
   const teamIdField = (
@@ -184,6 +171,19 @@ export function OnboardingScreen() {
     />
   );
 
+  const emailField = (hint: string | undefined) => (
+    <EmailField
+      label={t.onboarding.emailLabel}
+      hint={hint}
+      value={email}
+      error={emailError}
+      onChange={(e) => {
+        setEmail(e.target.value);
+        setEmailError(null);
+      }}
+    />
+  );
+
   const retryTeamId = () => {
     setNotFound(false);
     const input = teamField.current?.querySelector('input');
@@ -191,9 +191,17 @@ export function OnboardingScreen() {
     input?.select();
   };
 
+  const toSignIn = () => {
+    setTeamError(null);
+    setEmailError(null);
+    setNotFound(false);
+    emailLogin.reset();
+    setStep('signin');
+  };
+
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4 pt-[calc(1.5rem+env(safe-area-inset-top))] pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
-      {step !== 'code' && step !== 'redeem' && <InviteBanner invite={invite} />}
+      {step !== 'redeem' && <InviteBanner invite={invite} />}
       {step === 'redeem' && <RedeemStep invite={invite} />}
       {step === 'welcome' && (
         <div className="flex flex-1 flex-col">
@@ -210,11 +218,11 @@ export function OnboardingScreen() {
             </Button>
             <button
               type="button"
-              onClick={() => setStep('recover')}
+              onClick={toSignIn}
               className="mx-auto flex min-h-11 max-w-full items-center gap-2 rounded-xl px-3 text-sm font-semibold text-primary hover:bg-surface-2"
             >
-              <KeyIcon size={18} className="shrink-0" />
-              <span className="text-start">{t.onboarding.haveCode}</span>
+              <MailIcon size={18} className="shrink-0" />
+              <span className="text-start">{t.onboarding.haveAccount}</span>
             </button>
             <TermsAgreeLine />
           </div>
@@ -236,12 +244,13 @@ export function OnboardingScreen() {
               setNameError(null);
             }}
           />
+          {emailField(t.onboarding.emailHint)}
           <div ref={teamField}>{teamIdField}</div>
           {notFound ? (
             <NotFoundOptions
               onRetry={retryTeamId}
               onGuest={() => {
-                saveSignUpDraft({ name, teamId });
+                saveSignUpDraft({ name, teamId, email });
                 continueAsGuest();
               }}
             />
@@ -310,9 +319,9 @@ export function OnboardingScreen() {
             <p className="text-base leading-relaxed text-ink">{t.onboarding.alreadyRegisteredBody}</p>
           </Card>
           <div className="mt-auto flex flex-col gap-2">
-            <Button block className="min-h-12" onClick={() => setStep('recover')}>
-              <KeyIcon size={18} />
-              {t.onboarding.useRecovery}
+            <Button block className="min-h-12" onClick={toSignIn}>
+              <MailIcon size={18} />
+              {t.onboarding.useEmailSignIn}
             </Button>
             <Button block variant="ghost" onClick={() => setStep('form')}>
               {t.onboarding.backToRegister}
@@ -321,74 +330,32 @@ export function OnboardingScreen() {
         </div>
       )}
 
-      {step === 'recover' && (
-        <form onSubmit={submitRecover} className="flex flex-1 flex-col gap-5" noValidate>
-          <StepHeader title={t.onboarding.recoverTitle} onBack={() => setStep('welcome')} />
-          <p className="text-base leading-relaxed text-muted">{t.onboarding.recoverBody}</p>
+      {step === 'signin' && (
+        <form
+          onSubmit={submitSignIn}
+          className="flex flex-1 flex-col gap-5"
+          noValidate
+          data-testid="email-signin"
+        >
+          <StepHeader title={t.onboarding.signInTitle} onBack={() => setStep('welcome')} />
+          <p className="text-base leading-relaxed text-muted">{t.onboarding.signInBody}</p>
+          {emailField(undefined)}
           {teamIdField}
-          <TextField
-            label={t.onboarding.recoveryCodeLabel}
-            placeholder="XXXX-XXXX"
-            autoComplete="one-time-code"
-            autoCapitalize="characters"
-            spellCheck={false}
-            dir="ltr"
-            className="[&_input]:font-mono [&_input]:tracking-widest"
-            value={code}
-            error={codeError}
-            onChange={(e) => {
-              setCode(formatRecoveryCode(e.target.value));
-              setCodeError(null);
-            }}
-          />
-          {recover.isError && !codeError && <InlineError>{errorMessage(t, recover.error)}</InlineError>}
+          {emailLogin.isError && (
+            <InlineError>
+              {wrongCredentials ? t.onboarding.wrongCredentials : errorMessage(t, emailLogin.error)}
+            </InlineError>
+          )}
           <div className="mt-auto flex flex-col gap-2">
-            <Button type="submit" block className="min-h-12" disabled={recover.isPending}>
-              {recover.isPending && <Spinner />}
-              {t.onboarding.recoverSubmit}
+            <Button type="submit" block className="min-h-12" disabled={emailLogin.isPending}>
+              {emailLogin.isPending && <Spinner />}
+              {t.onboarding.signInSubmit}
             </Button>
             <Button block variant="ghost" onClick={() => setStep('form')}>
               {t.onboarding.backToRegister}
             </Button>
           </div>
         </form>
-      )}
-
-      {step === 'code' && (
-        <div className="flex flex-1 flex-col gap-5">
-          <h1 className="pt-4 text-2xl font-extrabold text-ink">{t.onboarding.savedCodeTitle}</h1>
-          <p className="text-base leading-relaxed text-muted">{t.onboarding.savedCodeBody}</p>
-          {recoveryCode.isPending && <div className="skeleton h-24 rounded-2xl" />}
-          {recoveryCode.isError && (
-            <ErrorState error={recoveryCode.error} onRetry={() => recoveryCode.refetch()} />
-          )}
-          {recoveryCode.data && (
-            <Card className="flex flex-col items-center gap-4 py-6">
-              <p
-                dir="ltr"
-                className="font-mono text-3xl font-bold tracking-[0.2em] text-ink select-all"
-                aria-label={t.onboarding.recoveryCodeLabel}
-              >
-                {recoveryCode.data}
-              </p>
-              <CopyButton value={recoveryCode.data} />
-            </Card>
-          )}
-          <div className="mt-auto">
-            <Button
-              block
-              className="min-h-12"
-              onClick={() => {
-                if (becameAdmin) {
-                  flash(fmt(t.invites.welcome, { name: name.trim() }));
-                  router.replace(ROUTES.admin);
-                } else router.replace(ROUTES.home);
-              }}
-            >
-              {t.onboarding.savedCodeConfirm}
-            </Button>
-          </div>
-        </div>
       )}
     </main>
   );

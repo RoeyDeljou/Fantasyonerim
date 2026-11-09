@@ -33,7 +33,7 @@ function client(queries: Q[]): PersistedClient {
 const page = (cursor: string | null) => ({ items: [], nextCursor: cursor });
 
 describe('query cache persistence', () => {
-  it('persists only the allow-list — never admin data, the recovery code or invite previews', () => {
+  it('persists only the allow-list — never admin data (other users emails) or invite previews', () => {
     expect(isPersistedKey(['news', 'feed'])).toBe(true);
     expect(isPersistedKey(['news', 'feed', 'shorts'])).toBe(true);
     expect(isPersistedKey(['news', 'filters'])).toBe(true);
@@ -42,7 +42,7 @@ describe('query cache persistence', () => {
     expect(isPersistedKey(['me'])).toBe(true);
     expect(isPersistedKey(['community', 'feed', 'all'])).toBe(true);
     expect(isPersistedKey(['fpl', 'picks', 1, 9])).toBe(true);
-    expect(isPersistedKey(['me', 'recovery-code'])).toBe(false);
+    expect(isPersistedKey(['admin', 'users', ''])).toBe(false);
     expect(isPersistedKey(['me', 'notification-prefs'])).toBe(false);
     expect(isPersistedKey(['admin', 'settings'])).toBe(false);
     expect(isPersistedKey(['admin', 'invites'])).toBe(false);
@@ -64,7 +64,7 @@ describe('query cache persistence', () => {
       client([
         query(['news', 'feed'], { pages: [{ items: 'nope' }], pageParams: [null] }),
         query(['admin', 'settings'], { leagueId: 1 }),
-        query(['me', 'recovery-code'], 'ABCD-EFGH'),
+        query(['admin', 'users', ''], []),
         query(['news', 'stories'], null, 'error'),
       ]),
     );
