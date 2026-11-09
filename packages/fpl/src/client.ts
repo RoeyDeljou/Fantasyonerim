@@ -672,7 +672,8 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
       const p = official ? policy('picksImmutable') : policy('picksSummary');
       const [picks, history] = await Promise.all([
         picksFor(entryId, event, p, official, fresh),
-        historyFor(entryId, fresh),
+        // chipsUsed only: the normal cached history (a fresh read of it would double the request count).
+        historyFor(entryId),
       ]);
       const memo = picksDtos.get(picks);
       if (memo && memo.history === history) return memo.dto;
