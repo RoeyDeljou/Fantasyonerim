@@ -8,6 +8,7 @@ import {
   FixtureSchema,
   FixtureStatIdSchema,
   FplEntryIdSchema,
+  FplPlayerIdSchema,
   LeagueStandingsSchema,
   PlayerLiveSchema,
   PlayerStatusSchema,
@@ -20,6 +21,7 @@ import {
   type FixtureDetail,
   type FixtureStatus,
   type FplEntryId,
+  type FplPlayerId,
   type LeagueStandings,
   type PlayerLive,
   type Position,
@@ -41,7 +43,18 @@ import type {
   RawLive,
   RawPicks,
   RawStandings,
+  RawTransfer,
 } from './raw.js';
+import {
+  EntryHistorySchema,
+  EntryTransferSchema,
+  LeagueInfoSchema,
+  type EntryHistory,
+  type EntryTransfer,
+  type EventPoints,
+  type LeagueInfo,
+  type PlayerEventPoints,
+} from './dto.js';
 
 /** Raw → `@fant/shared` DTOs. Every output is passed through the shared schema's `.parse`. */
 
@@ -292,6 +305,76 @@ export function chipsUsedOf(history: RawEntryHistory): { chip: Chip; event: numb
     if (chip) out.push({ chip, event: c.event });
   }
   return out.sort((a, b) => a.event - b.event);
+}
+
+/** `entry/{id}/history/` → EntryHistory (events sorted, points net of the transfer cost). */
+export function mapEntryHistory(entryId: number, raw: RawEntryHistory): EntryHistory {
+  return EntryHistorySchema.parse({
+    entryId,
+    events: [...raw.current]
+      .sort((a, b) => a.event - b.event)
+      .map((e) => ({
+        event: e.event,
+        points: e.points - e.event_transfers_cost,
+        grossPoints: e.points,
+        totalPoints: e.total_points,
+        transfersMade: e.event_transfers,
+        transfersCost: e.event_transfers_cost,
+        pointsOnBench: e.points_on_bench,
+        overallRank: e.overall_rank,
+        rankInGameweek: e.rank,
+        bank: e.bank,
+        value: e.value,
+      })),
+    chips: chipsUsedOf(raw),
+  });
+}
+
+/**
+ * `entry/{id}/transfers/` (FPL lists newest first) → oldest first. Sorted by `time`; transfers with the same
+ * instant (a batch confirmed together) keep FPL's list order, reversed.
+ */
+export function mapTransfers(raw: readonly RawTransfer[]): EntryTransfer[] {
+  const out: EntryTransfer[] = [];
+  for (let i = raw.length - 1; i >= 0; i--) {
+    const t = raw[i] as RawTransfer;
+    out.push(
+      EntryTransferSchema.parse({
+        event: t.event,
+        playerIn: t.element_in,
+        playerOut: t.element_out,
+        playerInCost: t.element_in_cost ?? null,
+        playerOutCost: t.element_out_cost ?? null,
+        time: toIso(t.time),
+      }),
+    );
+  }
+  const msOf = (iso: string) => {
+    const ms = Date.parse(iso);
+    return Number.isNaN(ms) ? 0 : ms;
+  };
+  return out
+    .map((t, i) => ({ t, i, ms: msOf(t.time) }))
+    .sort((a, b) => a.ms - b.ms || a.i - b.i)
+    .map((x) => x.t);
+}
+
+/** `event/{gw}/live/` → every player's GW points and minutes (FPL's own `total_points`, all fixtures). */
+export function eventPointsOf(raw: RawLive): EventPoints {
+  const out = new Map<FplPlayerId, PlayerEventPoints>();
+  for (const e of raw.elements) {
+    out.set(FplPlayerIdSchema.parse(e.id), { points: e.stats.total_points, minutes: e.stats.minutes });
+  }
+  return out;
+}
+
+/** The league block of a standings response. `start_event` absent (older payloads) → 1. */
+export function mapLeagueInfo(raw: RawStandings): LeagueInfo {
+  return LeagueInfoSchema.parse({
+    id: raw.league.id,
+    name: raw.league.name,
+    startEvent: raw.league.start_event ?? 1,
+  });
 }
 
 export function mapPicks(

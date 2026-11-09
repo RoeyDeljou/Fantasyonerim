@@ -30,6 +30,8 @@ export function demoRoutes(data: DemoDataset): ReplayResolver {
     if (m) return data.entries.get(Number(m[1]));
     m = /^entry\/(\d+)\/history\/$/.exec(path);
     if (m) return data.histories.get(Number(m[1]));
+    m = /^entry\/(\d+)\/transfers\/$/.exec(path);
+    if (m) return data.transfers.get(Number(m[1]));
     m = /^entry\/(\d+)\/event\/(\d+)\/picks\/$/.exec(path);
     if (m) return data.picks.get(`${m[1]}:${m[2]}`);
     m = /^leagues-classic\/(\d+)\/standings\/$/.exec(path);

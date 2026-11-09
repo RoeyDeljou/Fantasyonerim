@@ -1,11 +1,32 @@
 export * from './service.js';
 export {
+  EntryHistoryEventSchema,
+  EntryHistorySchema,
+  EntryTransferSchema,
+  LeagueInfoSchema,
+  type EntryHistory,
+  type EntryHistoryEvent,
+  type EntryTransfer,
+  type EventPoints,
+  type LeagueInfo,
+  type PlayerEventPoints,
+} from './dto.js';
+export {
+  buildGameweekRoundup,
+  netTransfers,
+  RoundupCoreSchema,
+  type RoundupCore,
+  type RoundupInput,
+  type RoundupMemberInput,
+} from './roundup.js';
+export {
   createFplService,
   FPL_CACHE_LIMITS,
   FPL_CACHE_TTL,
   FPL_REFRESH_AHEAD_RATIO,
   FPL_STALE_IF_ERROR,
   LIVE_LEAGUE_CONCURRENCY,
+  ROUNDUP_FETCH_CONCURRENCY,
   NEW_ENTRIES_MAX_PAGES,
   STANDINGS_PAGE_SIZE,
 } from './client.js';

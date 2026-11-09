@@ -18,6 +18,7 @@ import {
   type PlayerLive,
 } from '@fant/shared';
 import { FplBackoff } from './backoff.js';
+import type { EntryHistory, EntryTransfer, EventPoints, LeagueInfo } from './dto.js';
 import { LruMap, mapWithConcurrency, TtlCache, type CachePolicy } from './cache.js';
 import { createFplHttp } from './http.js';
 import {
@@ -35,19 +36,23 @@ import {
   chipsUsedOf,
   engineFixturesOf,
   engineLiveOf,
+  eventPointsOf,
   enginePicksOf,
   enginePlayersOf,
   fixtureLinesOf,
   fixtureStatusOf,
   mapBootstrap,
   mapEntry,
+  mapEntryHistory,
   mapEntryLive,
   mapFixtureDetail,
   mapFixtures,
+  mapLeagueInfo,
   mapNewEntries,
   mapPicks,
   mapPlayerLive,
   mapStandings,
+  mapTransfers,
   toChip,
   totalBeforeEvent,
   type FixturePlayerLine,
@@ -60,6 +65,7 @@ import {
   RawLiveSchema,
   RawPicksSchema,
   RawStandingsSchema,
+  RawTransfersSchema,
   type RawFixture,
   type RawLive,
   type RawPicks,
@@ -77,6 +83,8 @@ export const FPL_CACHE_TTL = {
   live: 30 * SECOND,
   entry: 5 * MINUTE,
   history: 5 * MINUTE,
+  /** `entry/{id}/transfers/`: changes only when the manager makes a transfer. */
+  transfers: 5 * MINUTE,
   /** Picks of a GW whose deadline has passed: the 15 players, captaincy and chip never change again. */
   picksImmutable: 12 * HOUR,
   /** Picks read for their entry_history (points/rank), which moves while the GW is in progress. */
@@ -96,6 +104,7 @@ export const FPL_STALE_IF_ERROR: Readonly<Record<FplCacheResource, number>> = {
   live: 2 * MINUTE,
   entry: 1 * HOUR,
   history: 1 * HOUR,
+  transfers: 1 * HOUR,
   picksImmutable: 12 * HOUR,
   picksSummary: 1 * HOUR,
   standings: 10 * MINUTE,
@@ -110,15 +119,17 @@ export const FPL_REFRESH_AHEAD_RATIO = 0.85;
 /**
  * LRU caps (number of keys). Per-entry caches are sized for ~300 managers × 2 GWs; see
  * docs in the package README / report for the memory estimate (~3 KB per picks, ~1 KB per entry,
- * ~0.2 KB per history (only the chips are kept), ~6 KB per memoized EntryLive).
+ * ≤ 4 KB per history, ≤ 6 KB per transfer list, ~6 KB per memoized EntryLive).
  */
 export const FPL_CACHE_LIMITS = {
   /** `entry/{id}/event/{gw}/picks/` — 300 entries × 2 GWs + headroom. */
   picks: 700,
   /** `entry/{id}/` */
   entries: 350,
-  /** `entry/{id}/history/` (stored as the mapped chip list only). */
+  /** `entry/{id}/history/` (mapped: ~38 GW rows + chips, ≈ 4 KB at season end). */
   histories: 350,
+  /** `entry/{id}/transfers/` (mapped; ≈ 6 KB for a full season of ~60 transfers). */
+  transfers: 350,
   /** Memoized live results / EntryLive DTOs per (entry, GW). */
   entryLive: 700,
   /** bootstrap, fixtures per GW, live per GW, standings pages. */
@@ -127,6 +138,12 @@ export const FPL_CACHE_LIMITS = {
 
 /** Max parallel FPL requests when building a live league page. */
 export const LIVE_LEAGUE_CONCURRENCY = 6;
+/**
+ * Recommended parallelism for a Gameweek Roundup build / back-fill (history + transfers + picks per member,
+ * via `mapWithConcurrency`). 4 fetched 171 histories + 171 transfer lists in ~23 s and 171 picks in ~12 s
+ * from FPL with no 429 (Nov 2026). See README "Gameweek Roundup".
+ */
+export const ROUNDUP_FETCH_CONCURRENCY = 4;
 /** FPL classic standings page size. */
 export const STANDINGS_PAGE_SIZE = 50;
 /** Safety cap on `new_entries` pages swept by getLeagueNewEntries (FPL pages hold 50 entries). */
@@ -187,11 +204,13 @@ interface PicksBundle {
 
 interface StandingsBundle {
   dto: LeagueStandings;
+  league: LeagueInfo;
   newEntries: { hasNext: boolean; ids: FplEntryId[] };
 }
 
 interface HistoryBundle {
   chipsUsed: { chip: Chip; event: number }[];
+  dto: EntryHistory;
 }
 
 /** Everything shared by every manager for one GW snapshot. */
@@ -243,6 +262,7 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
   const picksCache = new TtlCache(cacheOptions(limits.picks));
   const entryCache = new TtlCache(cacheOptions(limits.entries));
   const historyCache = new TtlCache(cacheOptions(limits.histories));
+  const transfersCache = new TtlCache(cacheOptions(limits.transfers));
 
   const policy = (resource: FplCacheResource): CachePolicy => ({
     ttlMs: ttl[resource],
@@ -326,9 +346,17 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
 
   const historyFor = (entryId: number): Promise<HistoryBundle> => {
     const path = `entry/${entryId}/history/`;
-    return historyCache.get(path, policy('history'), async () => ({
-      chipsUsed: chipsUsedOf(await getJson(path, RawEntryHistorySchema)),
-    }));
+    return historyCache.get(path, policy('history'), async () => {
+      const raw = await getJson(path, RawEntryHistorySchema);
+      return { chipsUsed: chipsUsedOf(raw), dto: mapEntryHistory(entryId, raw) };
+    });
+  };
+
+  const transfersFor = (entryId: number): Promise<EntryTransfer[]> => {
+    const path = `entry/${entryId}/transfers/`;
+    return transfersCache.get(path, policy('transfers'), async () =>
+      mapTransfers(await getJson(path, RawTransfersSchema)),
+    );
   };
 
   /**
@@ -347,7 +375,11 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
     const path = `leagues-classic/${leagueId}/standings/?${query}`;
     return shared.get(path, policy('standings'), async () => {
       const raw = await getJson(path, RawStandingsSchema);
-      return { dto: mapStandings(raw, page, now()), newEntries: mapNewEntries(raw) };
+      return {
+        dto: mapStandings(raw, page, now()),
+        league: mapLeagueInfo(raw),
+        newEntries: mapNewEntries(raw),
+      };
     });
   };
   const standingsFor = async (leagueId: number, page: number): Promise<LeagueStandings> =>
@@ -441,6 +473,7 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
 
   const picksDtos = new WeakMap<PicksBundle, { history: HistoryBundle; dto: EntryPicks }>();
   const playerLiveDtos = new WeakMap<GameweekContext, Map<number, PlayerLive>>();
+  const eventPointsMemo = new WeakMap<LiveBundle, EventPoints>();
   const fixtureDetails = new LruMap<
     number,
     { fixture: RawFixture; live: LiveBundle | null; bootstrap: BootstrapBundle; dto: FixtureDetail }
@@ -684,6 +717,28 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
         }
         return dto;
       });
+    },
+
+    async getEntryHistory(entryId: FplEntryId): Promise<EntryHistory> {
+      return (await historyFor(entryId)).dto;
+    },
+
+    getEntryTransfers(entryId: FplEntryId): Promise<EntryTransfer[]> {
+      return transfersFor(entryId);
+    },
+
+    async getEventPoints(event: Gameweek): Promise<EventPoints> {
+      const live = await liveFor(event);
+      let points = eventPointsMemo.get(live);
+      if (!points) {
+        points = eventPointsOf(live.raw);
+        eventPointsMemo.set(live, points);
+      }
+      return points;
+    },
+
+    async getLeagueInfo(leagueId: FplLeagueId): Promise<LeagueInfo> {
+      return (await standingsPage(leagueId, 1, 1)).league;
     },
 
     async getFixtureDetail(fixtureId: FplFixtureId): Promise<FixtureDetail> {

@@ -131,6 +131,23 @@ export const RawEntryHistorySchema = z.object({
 });
 export type RawEntryHistory = z.infer<typeof RawEntryHistorySchema>;
 
+// ---------- entry/{id}/transfers/ ----------
+/**
+ * One transfer, newest first in FPL's list. Wildcard / Free Hit transfers are listed too (with that GW's
+ * `event`), although history's `event_transfers` doesn't count them.
+ */
+export const RawTransferSchema = z.object({
+  element_in: int,
+  element_in_cost: int.optional(),
+  element_out: int,
+  element_out_cost: int.optional(),
+  entry: int.optional(),
+  event: int,
+  time: z.string(),
+});
+export type RawTransfer = z.infer<typeof RawTransferSchema>;
+export const RawTransfersSchema = z.array(RawTransferSchema);
+
 // ---------- entry/{id}/event/{gw}/picks/ ----------
 export const RawPickSchema = z.object({
   element: int,
@@ -207,7 +224,8 @@ export const RawNewEntrySchema = z.object({
 export type RawNewEntry = z.infer<typeof RawNewEntrySchema>;
 
 export const RawStandingsSchema = z.object({
-  league: z.object({ id: int, name: z.string() }),
+  /** `start_event`: the first GW whose points count in this league's totals (verified against FPL). */
+  league: z.object({ id: int, name: z.string(), start_event: int.optional() }),
   standings: z.object({
     has_next: z.boolean(),
     page: int,

@@ -475,6 +475,8 @@ export interface DemoDataset {
   live: ReadonlyMap<number, RawLive & Record<string, unknown>>;
   entries: ReadonlyMap<number, Record<string, unknown>>;
   histories: ReadonlyMap<number, Record<string, unknown>>;
+  /** `entry/{id}/transfers/` bodies (newest first). */
+  transfers: ReadonlyMap<number, readonly Record<string, unknown>[]>;
   /** key `${entryId}:${event}` */
   picks: ReadonlyMap<string, RawPicks & Record<string, unknown>>;
   standingsPages: readonly Record<string, unknown>[];
@@ -1257,6 +1259,37 @@ export function buildDemoDataset(options: BuildDemoOptions = {}): DemoDataset {
     standings: { has_next: p < pageCount - 1, page: p + 1, results: rows.slice(p * PAGE, (p + 1) * PAGE) },
   }));
 
+  // ----- transfers (own RNG stream, so the rest of the dataset is unchanged) -----
+  // The demo squads never change, so each GW's transfers bring in squad players for non-squad ones of the
+  // same position: one row per history `event_transfers`, newest first, like FPL.
+  const transfers = new Map<number, Record<string, unknown>[]>();
+  for (const m of managers) {
+    const trng = mulberry32(hashCode(`transfers-${m.entryId}`));
+    const inSquad = new Set(m.squad.map((p) => p.id));
+    const list: Record<string, unknown>[] = [];
+    for (const h of m.history as Record<string, number>[]) {
+      const event = h.event as number;
+      const count = h.event_transfers ?? 0;
+      const ins = [...m.squad];
+      for (let k = 0; k < count && ins.length > 0; k++) {
+        const pIn = ins.splice(Math.floor(trng() * ins.length), 1)[0] as DemoPlayer;
+        const outs = players.filter((p) => p.position === pIn.position && !inSquad.has(p.id));
+        const pOut = outs[Math.floor(trng() * outs.length)];
+        if (!pOut) continue;
+        list.push({
+          element_in: pIn.id,
+          element_in_cost: pIn.price,
+          element_out: pOut.id,
+          element_out_cost: pOut.price,
+          entry: m.entryId,
+          event,
+          time: fplIso(deadlineOf(event) - DAY + k * MINUTE),
+        });
+      }
+    }
+    transfers.set(m.entryId, list.reverse());
+  }
+
   return {
     anchorMs: anchor,
     currentEvent: current,
@@ -1268,6 +1301,7 @@ export function buildDemoDataset(options: BuildDemoOptions = {}): DemoDataset {
     live,
     entries,
     histories,
+    transfers,
     picks: picksMap,
     standingsPages,
   };

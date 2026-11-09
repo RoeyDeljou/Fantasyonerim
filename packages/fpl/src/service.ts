@@ -14,6 +14,7 @@ import type {
   LiveLeague,
   PlayerLive,
 } from '@fant/shared';
+import type { EntryHistory, EntryTransfer, EventPoints, LeagueInfo } from './dto.js';
 
 /**
  * The single seam between the app and fantasy.premierleague.com.
@@ -40,6 +41,21 @@ export interface FplService {
    */
   getLeagueNewEntries?(leagueId: FplLeagueId): Promise<FplEntryId[]>;
   getPlayersLive(playerIds: readonly FplPlayerId[], event: Gameweek): Promise<PlayerLive[]>;
+  /**
+   * A manager's season, GW by GW (points net of hits, transfers, bench points, ranks) plus chips played.
+   * Throws FplNotFoundError for an unknown Team ID. Optional so existing fakes still compile;
+   * createFplService always implements it (as do getEntryTransfers, getEventPoints and getLeagueInfo).
+   */
+  getEntryHistory?(entryId: FplEntryId): Promise<EntryHistory>;
+  /** Every transfer of the season, oldest first (Wildcard / Free Hit ones included). */
+  getEntryTransfers?(entryId: FplEntryId): Promise<EntryTransfer[]>;
+  /**
+   * Every player's FPL points and minutes for a GW from ONE `event/{gw}/live/` call (shared with the live
+   * engine's cache). FPL's own totals: final once the GW is data-checked. Missing player → 0 points.
+   */
+  getEventPoints?(event: Gameweek): Promise<EventPoints>;
+  /** League name and `startEvent` (from standings page 1, same cache). Throws FplNotFoundError if unknown. */
+  getLeagueInfo?(leagueId: FplLeagueId): Promise<LeagueInfo>;
   /**
    * The FPL match sheet ("Match Details" stat blocks + per-player FPL points from this fixture only).
    * Empty stats/players before kick-off. Throws FplNotFoundError for an unknown fixture id.
