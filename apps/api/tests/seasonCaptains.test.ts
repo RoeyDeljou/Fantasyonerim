@@ -7,6 +7,7 @@ import {
   type RoundupMemberInput,
 } from '@fant/fpl';
 import {
+  CLIENT_HOSTS,
   FplEntryIdSchema,
   GameweekRoundupSchema,
   GameweekSchema,
@@ -287,6 +288,51 @@ describe('GET /v1/league/season-captains', () => {
     await prisma.gameweekRoundup.deleteMany({ where: { event: 1 } });
     app.hot.invalidateConfig();
     expect((await season()).body.status).toBe('building');
+  });
+
+  it("marks the hosts' own teams (shared CLIENT_HOSTS ids) without touching ranks or points; an absent host just does not appear", async () => {
+    const dor = Number(CLIENT_HOSTS.dor.fplEntryId);
+    const itay = Number(CLIENT_HOSTS.itay.fplEntryId);
+    await setLeague(LEAGUE);
+    // Itay's team is not in the league.
+    await store(
+      1,
+      [
+        { entryId: 11, name: 'Alpha', captain: 2 }, // 26
+        { entryId: dor, name: 'Dorsenal', captain: 1 }, // 12
+        { entryId: 13, name: 'Charlie', captain: 3 }, // 4
+      ],
+      { 1: 6, 2: 13, 3: 2 },
+      [
+        { kind: 'community', label: 'Fans', playerId: 1, captainPoints: 12 },
+        { kind: 'fpl_lad', label: 'Lad', playerId: 3, captainPoints: 4 },
+      ],
+    );
+    const { body, res } = await season();
+    expect(body.rows.map((r) => [r.rank, r.name, r.points, r.host])).toEqual([
+      [1, 'Alpha', 26, null],
+      [2, 'Dorsenal', 12, 'dor'],
+      [2, 'Fans', 12, null],
+      [4, 'Charlie', 4, null],
+      [4, 'Lad', 4, null],
+    ]);
+    // The cached body (what is sent) carries the field.
+    expect(JSON.parse(res.body).rows.map((r: { host: unknown }) => r.host)).toEqual([
+      null,
+      'dor',
+      null,
+      null,
+      null,
+    ]);
+
+    // Itay's team joins: flagged too.
+    await store(2, [{ entryId: itay, name: 'ShawMustGoOn', captain: 2 }], { 2: 13 });
+    clock.advance(60_000 + 120_000 + 1);
+    const later = (await season()).body.rows;
+    expect(later.find((r) => r.entryId === itay)?.host).toBe('itay');
+    expect(later.filter((r) => r.host !== null).map((r) => r.host)).toEqual(
+      expect.arrayContaining(['dor', 'itay']),
+    );
   });
 
   it('is computed once a minute for everybody, served with an ETag, and refreshed when a roundup is stored', async () => {

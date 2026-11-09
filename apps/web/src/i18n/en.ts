@@ -303,6 +303,13 @@ export const en: Messages = {
     gain: 'Gain',
   },
   season: {
+    hostDor: 'Dor Dabush',
+    hostItay: 'Itay Tebeka',
+    starsTitle: 'You vs. the stars',
+    yourRank: 'Your rank: #{n} · {p} pts',
+    you: 'You',
+    gap: 'Gap',
+    level: 'Level',
     subtitle: 'Total captain points over the season · through GW {gw}',
     explain: 'Ranked by total captain points over the whole season, not by number of wins.',
     gwsOne: '1 gameweek',

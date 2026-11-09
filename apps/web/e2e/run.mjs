@@ -4098,7 +4098,7 @@ async function roundupJourneys(browser, userPage) {
 // GET /v1/league/season-captains and the captain-battle endpoints (GET /v1/captain-battle, GET/PUT /v1/admin/captain-battle) are
 // MOCKED with page.route (the real ones are covered by apps/api tests), so the UI is checked against the contract alone.
 
-function seasonMock(status, me, { rows = null, throughEvent = 10 } = {}) {
+function seasonMock(status, me, { rows = null, throughEvent = 10, meInList = true } = {}) {
   const team = (i, points) => ({
     kind: 'manager',
     key: String(3000000 + i),
@@ -4106,11 +4106,16 @@ function seasonMock(status, me, { rows = null, throughEvent = 10 } = {}) {
     name: `קבוצה ${i}`,
     subtitle: `Manager ${i}`,
     tag: null,
+    host: null,
     points,
     gameweeks: 10,
   });
   const base = Array.from({ length: 16 }, (_, i) => team(i + 1, 400 - i * 10));
-  base[12] = { ...base[12], entryId: me, key: String(me), name: 'E2E United', subtitle: 'E2E Tester' };
+  if (meInList)
+    base[12] = { ...base[12], entryId: me, key: String(me), name: 'E2E United', subtitle: 'E2E Tester' };
+  // The hosts' own teams (the API sets `host`): far enough down to fall outside the top 10.
+  base[14] = { ...base[14], host: 'dor', name: 'Dorsenal', subtitle: 'Dor Dabush' };
+  base[15] = { ...base[15], host: 'itay', name: 'ShawMustGoOn!', subtitle: 'Itay Tebeka' };
   // 410 community, 400 FPL Lad: ties with team 1 (400) so ranks run 1, 2, 2, 4…
   const special = [
     {
@@ -4120,6 +4125,7 @@ function seasonMock(status, me, { rows = null, throughEvent = 10 } = {}) {
       name: 'קפטן הקהילה',
       subtitle: null,
       tag: null,
+      host: null,
       points: 410,
       gameweeks: 10,
     },
@@ -4130,6 +4136,7 @@ function seasonMock(status, me, { rows = null, throughEvent = 10 } = {}) {
       name: 'הקפטן של FPL Lad',
       subtitle: null,
       tag: null,
+      host: null,
       points: 400,
       gameweeks: 9,
     },
@@ -4222,8 +4229,14 @@ async function seasonJourneys(browser, userPage) {
         'subtitle names the GW',
       );
       await p.getByText('לא לפי מספר ניצחונות').waitFor();
-      const rows = p.locator('[data-testid=season-list] > li');
-      assert((await rows.count()) === 10, 'top 10 shown');
+      const rows = p.locator('[data-testid=season-list] > li[data-key]');
+      // Collapsed: the top 10 + the viewer (rank 15) + Dor and Itay (beyond rank 10), "⋮" between the runs.
+      assert((await rows.count()) === 13, `preview rows: ${await rows.count()}`);
+      assert((await p.locator('[data-testid=season-list] > li[data-gap]').count()) === 2, 'two gap markers');
+      const order = await p
+        .locator('[data-testid=season-list] > li')
+        .evaluateAll((els) => els.map((el) => (el.hasAttribute('data-gap') ? '⋮' : 'r')).join(''));
+      assert(order === 'rrrrrrrrrr⋮r⋮rr', `preview shape: ${order}`);
       const ranks = await rows.evaluateAll((els) =>
         els.map((el) => el.querySelector('span')?.textContent?.trim()),
       );
@@ -4239,22 +4252,108 @@ async function seasonJourneys(browser, userPage) {
         'FPL Lad without a custom tag shows the logo alone',
       );
       assert((await lad.innerText()).includes('9 מחזורים'), 'gameweeks counted shown');
+      const mine = p.locator(`[data-testid=season-list] > li[data-entry="${me}"]`);
       await p.getByTestId('season-show-all').click();
       assert((await rows.count()) === 18, 'show all expands to every row');
-      const mine = p.locator(`[data-testid=season-list] > li[data-entry="${me}"]`);
+      assert((await p.locator('[data-testid=season-list] > li[data-gap]').count()) === 0, 'no markers');
       assert((await mine.getAttribute('data-mine')) === 'true', 'my team is highlighted');
       assert((await mine.innerText()).includes('E2E United'), 'my row shows the team name');
       await noHorizontalScroll(p, 'season ready');
     },
   );
 
+  await step('Season: highlighted rows + "you vs. the stars" summary with signed gaps', async () => {
+    await p.goto(`${WEB}/table/?view=season`);
+    await root.waitFor();
+    const body = season.body;
+    const meRow = body.rows.find((r) => r.entryId === me);
+    const summary = p.getByTestId('season-summary');
+    await summary.getByRole('heading', { name: 'איפה אתם מול הכוכבים' }).waitFor();
+    const mine = await p.getByTestId('season-me').innerText();
+    assert(mine.includes(`מקום ${meRow.rank}`) && mine.includes(String(meRow.points)), `my line: ${mine}`);
+    const lines = p.getByTestId('season-star');
+    assert((await lines.count()) === 4, 'four star lines');
+    const text = (await lines.allInnerTexts()).map((t) => t.replace(/\s+/g, ' '));
+    const names = ['קפטן הקהילה', 'הקפטן של FPL Lad', 'דור דבוש', 'איתי טבקה'];
+    names.forEach((n, i) => assert(text[i].includes(n), `line ${i} names ${n}: ${text[i]}`));
+    const ranksOrdered = body.rows.filter((r) => r.kind !== 'manager' || r.host).map((r) => r.rank);
+    assert(
+      ranksOrdered.join() === [...ranksOrdered].sort((a, b) => a - b).join(),
+      'mock rows are in rank order',
+    );
+    names.forEach((_, i) => {
+      const r = body.rows.filter((x) => x.kind !== 'manager' || x.host)[i];
+      assert(text[i].includes(`#${r.rank}`) && text[i].includes(String(r.points)), `rank/points ${text[i]}`);
+    });
+    // Me 280: behind the community (410) and FPL Lad (400), ahead of Dor (260) and Itay (250).
+    const gaps = await lines.evaluateAll((els) =>
+      els.map((el) => el.querySelector('[data-testid=season-gap]')?.getAttribute('data-gap')),
+    );
+    assert(gaps.join() === 'behind,behind,ahead,ahead', `gap kinds: ${gaps}`);
+    assert(text[0].includes('−130') && text[1].includes('−120'), `behind gaps: ${text[0]} / ${text[1]}`);
+    assert(text[2].includes('+20') && text[3].includes('+30'), `ahead gaps: ${text[2]} / ${text[3]}`);
+    assert(text[0].includes('הפרש'), 'gap label');
+    const colours = await lines.evaluateAll((els) =>
+      els.map((el) => {
+        const v = el.querySelector('[data-testid=season-gap] span:last-child');
+        return v ? getComputedStyle(v).color : null;
+      }),
+    );
+    assert(colours[0] !== colours[2], 'behind and ahead gaps have different colours');
+    // Highlighted table rows: host badge, accent edge, tinted background; mine keeps its own ring.
+    const stars = p.locator('[data-testid=season-list] > li[data-star=true]');
+    assert((await stars.count()) === 4, 'four highlighted rows');
+    const dor = p.locator('[data-testid=season-list] > li[data-host=dor]');
+    await dor.getByText('דור דבוש', { exact: true }).waitFor();
+    await p.locator('[data-testid=season-list] > li[data-host=itay]').getByText('איתי טבקה').waitFor();
+    const style = await dor.locator('button').evaluate((el) => {
+      const c = getComputedStyle(el);
+      return { edge: c.borderInlineStartWidth, bg: c.backgroundColor };
+    });
+    assert(
+      style.edge === '4px' && style.bg !== 'rgba(0, 0, 0, 0)',
+      `host row style ${JSON.stringify(style)}`,
+    );
+    const ring = await p
+      .locator(`[data-testid=season-list] > li[data-entry="${me}"] button`)
+      .evaluate((el) => getComputedStyle(el).boxShadow);
+    assert(ring !== 'none', 'my row has its own ring');
+    await noHorizontalScroll(p, 'season summary');
+    // Tapping a line brings that row into view.
+    await lines.nth(3).click();
+    await p.waitForFunction(() => {
+      const li = document.querySelector('[data-testid=season-list] li[data-host=itay]');
+      const sc = document.querySelector('[data-app-scroller]');
+      if (!li || !sc) return false;
+      const r = li.getBoundingClientRect();
+      const c = sc.getBoundingClientRect();
+      return r.top >= c.top && r.bottom <= c.bottom;
+    });
+  });
+
+  await step(
+    'Season: a viewer who is not in the league sees the stars without their line or gaps',
+    async () => {
+      season.body = seasonMock('ready', me, { meInList: false });
+      await p.goto(`${WEB}/table/?view=season`);
+      await root.waitFor();
+      await p.getByTestId('season-summary').waitFor();
+      assert((await p.getByTestId('season-me').count()) === 0, 'no "your rank" line');
+      assert((await p.getByTestId('season-star').count()) === 4, 'still four stars');
+      const gapText = (await p.getByTestId('season-gap').allInnerTexts()).join('').trim();
+      assert(gapText === '', `no gaps: "${gapText}"`);
+      assert(
+        (await p.locator('[data-testid=season-list] > li[data-star=true]').count()) === 4,
+        'rows highlighted',
+      );
+      await noHorizontalScroll(p, 'season summary (not in league)');
+      season.body = seasonMock('ready', me);
+    },
+  );
+
   await step('Season: find-my-team jumps to my row below the fold; deep link works', async () => {
     await p.goto(`${WEB}/table/?view=season`);
     await root.waitFor();
-    assert(
-      (await p.locator(`[data-testid=season-list] > li[data-entry="${me}"]`).count()) === 0,
-      'collapsed',
-    );
     await p.getByTestId('find-my-team').click();
     await p.locator(`[data-testid=season-list] > li[data-entry="${me}"]`).waitFor();
     await p.waitForFunction((id) => {

@@ -6,13 +6,14 @@ import type { FplEntryId, SeasonCaptainRow } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import { useConfig, useFplIndex, useLivePollInterval, useMe } from '@/lib/queries';
 import { useSeasonCaptains } from '@/lib/seasonCaptains';
-import { previewRows } from '@/lib/roundup';
+import { gapKind, isStar, seasonPreview, seasonSummary } from '@/lib/season';
+import type { StarLine } from '@/lib/season';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { ClockIcon, RefreshIcon, TableIcon } from '@/components/icons';
 import { ManagerSheet } from '@/components/lazySheets';
 import { CaptainTag, useCaptainBadge } from '@/components/team/CaptainCard';
 import { FindMyTeam } from '@/components/team/FindMyTeam';
-import { Button, EmptyState, ErrorState, Num, Skeleton, Spinner, cx } from '@/components/ui';
+import { Badge, Button, EmptyState, ErrorState, Num, Skeleton, Spinner, cx } from '@/components/ui';
 import { NoLeague } from './Table';
 
 /**
@@ -82,8 +83,26 @@ function SeasonList({ rows: all }: { rows: readonly SeasonCaptainRow[] }) {
   const { interval } = useLivePollInterval();
   const myEntry = me.data?.entryId ?? null;
   const [expanded, setExpanded] = useState(false);
-  const rows = previewRows(all, expanded);
-  const hidden = all.length - previewRows(all, false).length;
+  const { items, hidden } = seasonPreview(all, myEntry, expanded);
+  const shown = items.reduce((n, i) => n + (i.type === 'row' ? 1 : 0), 0);
+  const summary = seasonSummary(all, myEntry);
+  // Summary line tapped: bring that row (always in the preview; expand first if not) to the middle of the screen.
+  const jump = useCallback((key: string) => {
+    const find = () => document.querySelector<HTMLElement>(`[data-testid=season-list] li[data-key="${key}"]`);
+    const go = (el: HTMLElement) => {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el.classList.remove('row-pulse');
+      void el.offsetWidth;
+      el.classList.add('row-pulse');
+      window.setTimeout(() => el.classList.remove('row-pulse'), 1_600);
+    };
+    const el = find();
+    if (el) go(el);
+    else {
+      setExpanded(true);
+      requestAnimationFrame(() => requestAnimationFrame(() => find() && go(find() as HTMLElement)));
+    }
+  }, []);
   const [entryParam, setEntryParam] = useQueryParam('entry');
   const selectedId = FplEntryIdSchema.safeParse(entryParam ?? undefined);
   const selected = selectedId.success ? all.find((r) => r.entryId === selectedId.data) : undefined;
@@ -92,6 +111,7 @@ function SeasonList({ rows: all }: { rows: readonly SeasonCaptainRow[] }) {
 
   return (
     <>
+      <SeasonSummary summary={summary} onJump={jump} />
       <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
         <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_4.5rem] items-center gap-2 border-b border-line px-3 py-2 text-xs font-semibold text-muted">
           <span>{t.table.rank}</span>
@@ -99,14 +119,25 @@ function SeasonList({ rows: all }: { rows: readonly SeasonCaptainRow[] }) {
           <span className="text-end">{t.liveAction.captainPts}</span>
         </div>
         <ol className="divide-y divide-line" data-testid="season-list">
-          {rows.map((r) => (
-            <SeasonRow
-              key={r.key}
-              row={r}
-              mine={r.entryId !== null && r.entryId === myEntry}
-              onOpen={openEntry}
-            />
-          ))}
+          {items.map((it) =>
+            it.type === 'gap' ? (
+              <li
+                key={it.key}
+                aria-hidden="true"
+                data-gap=""
+                className="py-0.5 text-center text-sm leading-none text-muted"
+              >
+                ⋮
+              </li>
+            ) : (
+              <SeasonRow
+                key={it.row.key}
+                row={it.row}
+                mine={it.row.entryId !== null && it.row.entryId === myEntry}
+                onOpen={openEntry}
+              />
+            ),
+          )}
         </ol>
       </div>
       {hidden > 0 && (
@@ -124,7 +155,7 @@ function SeasonList({ rows: all }: { rows: readonly SeasonCaptainRow[] }) {
         enabled={mineInList}
         loadPage={async () => setExpanded(true)}
         rankOf={(id) => all.find((r) => r.entryId === id)?.rank ?? null}
-        rowsKey={rows.length}
+        rowsKey={shown}
       />
       <ManagerSheet
         entryId={selected && selected.entryId !== null ? selected.entryId : null}
@@ -149,6 +180,7 @@ const SeasonRow = memo(function SeasonRow({
 }) {
   const { t } = useI18n();
   const special = r.kind !== 'manager';
+  const star = isStar(r);
   const badge = useCaptainBadge({ kind: r.kind === 'manager' ? 'custom' : r.kind, tag: r.tag });
   const gws = r.gameweeks === 1 ? t.season.gwsOne : fmt(t.season.gws, { n: r.gameweeks });
   const body = (
@@ -158,6 +190,7 @@ const SeasonRow = memo(function SeasonRow({
       </span>
       <span className="flex min-w-0 flex-col gap-0.5">
         {special && <CaptainTag badge={badge} />}
+        {r.host !== null && <HostBadge host={r.host} />}
         <span dir="auto" className="name-start min-w-0 truncate font-semibold text-ink">
           {r.name}
         </span>
@@ -175,22 +208,30 @@ const SeasonRow = memo(function SeasonRow({
   );
   const cls = cx(
     'grid min-h-16 w-full grid-cols-[2.5rem_minmax(0,1fr)_4.5rem] items-center gap-2 px-3 py-2.5 text-start',
-    mine && 'bg-primary-soft',
-    special && !mine && 'bg-surface-2',
+    star && 'border-s-4 border-star-edge bg-star-soft',
+    mine && 'ring-2 ring-inset ring-primary',
+    mine && !star && 'bg-primary-soft',
   );
   return (
-    <li data-entry={r.entryId ?? undefined} data-kind={r.kind} data-mine={mine ? 'true' : undefined}>
+    <li
+      data-key={r.key}
+      data-entry={r.entryId ?? undefined}
+      data-kind={r.kind}
+      data-host={r.host ?? undefined}
+      data-star={star ? 'true' : undefined}
+      data-mine={mine ? 'true' : undefined}
+    >
       {r.entryId !== null ? (
         <button
           type="button"
           onClick={() => onOpen(r.entryId as FplEntryId)}
           aria-label={fmt(t.table.openTeam, { name: r.subtitle ?? r.name })}
-          className={cx(cls, 'hover:bg-surface-2')}
+          className={cx(cls, !star && 'hover:bg-surface-2')}
         >
           {body}
         </button>
       ) : (
-        <div className={cx(cls, 'border-s-4 border-accent')}>{body}</div>
+        <div className={cls}>{body}</div>
       )}
     </li>
   );
@@ -204,5 +245,96 @@ function SeasonSkeleton() {
         <Skeleton key={i} className="h-16" />
       ))}
     </div>
+  );
+}
+
+function HostBadge({ host }: { host: 'dor' | 'itay' }) {
+  const { t } = useI18n();
+  return (
+    <Badge tone="warning" className="self-start px-1.5 py-0 text-[10px]">
+      {host === 'dor' ? t.season.hostDor : t.season.hostItay}
+    </Badge>
+  );
+}
+
+/** "You vs. the stars": the viewer's rank (when in the league) and one line per highlighted row, with the point gap. */
+function SeasonSummary({
+  summary: { me, stars },
+  onJump,
+}: {
+  summary: { me: SeasonCaptainRow | null; stars: StarLine<SeasonCaptainRow>[] };
+  onJump(key: string): void;
+}) {
+  const { t } = useI18n();
+  if (stars.length === 0 && me === null) return null;
+  const iso = (n: number) => `\u2066${n}\u2069`;
+  return (
+    <section
+      className="flex flex-col gap-1.5 rounded-2xl border border-line bg-surface p-3 shadow-card"
+      aria-labelledby="season-stars-title"
+      data-testid="season-summary"
+    >
+      <h2 id="season-stars-title" className="text-sm font-bold text-ink">
+        {t.season.starsTitle}
+      </h2>
+      {me && (
+        <button
+          type="button"
+          onClick={() => onJump(me.key)}
+          data-testid="season-me"
+          className="min-h-11 rounded-xl bg-primary-soft px-3 text-start text-base font-extrabold text-primary"
+        >
+          {fmt(t.season.yourRank, { n: iso(me.rank), p: iso(me.points) })}
+        </button>
+      )}
+      <ul className="flex flex-col gap-1">
+        {stars.map(({ row, gap, mine }) => {
+          const name =
+            row.host === 'dor' ? t.season.hostDor : row.host === 'itay' ? t.season.hostItay : row.name;
+          const kind = gap === null ? null : gapKind(gap);
+          return (
+            <li key={row.key} data-testid="season-star" data-key={row.key}>
+              <button
+                type="button"
+                onClick={() => onJump(row.key)}
+                className="grid min-h-11 w-full grid-cols-[2.75rem_minmax(0,1fr)_auto_3.5rem] items-center gap-2 rounded-xl border-s-4 border-star-edge bg-star-soft px-2 text-start"
+              >
+                <span className="font-extrabold text-ink">
+                  #<Num value={row.rank} />
+                </span>
+                <span dir="auto" className="name-start min-w-0 truncate text-sm font-semibold text-ink">
+                  {name}
+                  {mine && <span className="text-muted"> · {t.season.you}</span>}
+                </span>
+                <span className="font-bold text-ink">
+                  <Num value={row.points} />
+                </span>
+                <span
+                  className="flex flex-col items-end leading-tight"
+                  data-gap={kind ?? undefined}
+                  data-testid="season-gap"
+                >
+                  {gap !== null && kind !== null && (
+                    <>
+                      <span className="text-[10px] text-muted">{t.season.gap}</span>
+                      <span
+                        className={cx(
+                          'text-sm font-extrabold',
+                          kind === 'ahead' && 'text-success',
+                          kind === 'behind' && 'text-live',
+                          kind === 'level' && 'text-muted',
+                        )}
+                      >
+                        {kind === 'level' ? t.season.level : <Num value={gap} signed />}
+                      </span>
+                    </>
+                  )}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

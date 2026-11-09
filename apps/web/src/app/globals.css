@@ -80,6 +80,8 @@
   --color-bench: var(--bench);
   --color-chip-label: var(--chip-label);
   --color-logo-chip: var(--logo-chip);
+  --color-star-soft: var(--star-soft);
+  --color-star-edge: var(--star-edge);
   --color-story-bg: var(--story-bg);
   --color-story-ink: var(--story-ink);
   --color-story-track: var(--story-track);

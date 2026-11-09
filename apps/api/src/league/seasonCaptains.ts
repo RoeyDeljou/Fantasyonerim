@@ -1,5 +1,6 @@
 import { RoundupCoreSchema } from '@fant/fpl';
 import {
+  CLIENT_HOSTS,
   RoundupCaptainSchema,
   SeasonCaptainsSchema,
   type FplEntryId,
@@ -17,6 +18,11 @@ export const SEASON_CAPTAINS_HOT_PREFIX = 'league:season-captains:';
 
 /** Rows stored by builder versions below this have the FPL Lad captain as `community` and no tags. */
 const FPL_LAD_KIND_VERSION = 3;
+
+/** Team ID → which podcast host owns it. */
+const HOST_BY_ENTRY = new Map<number, 'dor' | 'itay'>(
+  (['dor', 'itay'] as const).map((h) => [Number(CLIENT_HOSTS[h].fplEntryId), h]),
+);
 
 const CaptainPointsSchema = z.record(z.string(), z.number().int());
 const CaptainRowsSchema = z.array(RoundupCaptainSchema);
@@ -136,6 +142,7 @@ export async function computeSeasonCaptains(
       name: t.name,
       subtitle: t.subtitle,
       tag: null,
+      host: HOST_BY_ENTRY.get(entryId) ?? null,
       points: t.points,
       gameweeks: t.gameweeks,
     })),
@@ -148,6 +155,7 @@ export async function computeSeasonCaptains(
         name: t.name,
         subtitle: null,
         tag: t.tag,
+        host: null,
         points: t.points,
         gameweeks: t.gameweeks,
       })),
