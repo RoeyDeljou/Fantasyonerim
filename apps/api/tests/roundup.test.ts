@@ -20,7 +20,12 @@ import {
   resetDb,
   type TestClock,
 } from './helpers.js';
-import { ROUNDUP_BUILD_DELAY_MS, ROUNDUP_REQUEST_BUDGET, roundupGwsPerRun } from '../src/league/roundup.js';
+import {
+  ROUNDUP_BUILD_DELAY_MS,
+  ROUNDUP_BUILD_VERSION,
+  ROUNDUP_REQUEST_BUDGET,
+  roundupGwsPerRun,
+} from '../src/league/roundup.js';
 
 const prisma = createTestPrisma();
 let app: FastifyInstance;
@@ -153,6 +158,35 @@ async function getRoundup(query = '', headers: Record<string, string> = {}) {
   return { res, body: GameweekRoundupSchema.parse(res.json()) };
 }
 
+/** A 171-member-style league with 10 official GWs (current GW 11). */
+async function seedBigLeague(MEMBERS: number): Promise<void> {
+  fpl.leagues.set(LEAGUE, { id: LEAGUE, name: 'Big League' });
+  const rows = Array.from({ length: MEMBERS }, (_, i) => ({
+    rank: i + 1,
+    lastRank: i + 1,
+    entryId: 1000 + i,
+    entryName: `Team ${i}`,
+    managerName: `Manager ${i}`,
+    total: 1000 - i,
+    eventTotal: 50,
+  }));
+  fpl.standingsPageCount = 4;
+  fpl.standingsByPage = new Map([1, 2, 3, 4].map((p) => [p, rows.slice((p - 1) * 50, p * 50)]));
+  for (const row of rows) {
+    fpl.histories.set(
+      row.entryId,
+      makeHistory(
+        row.entryId,
+        Array.from({ length: 10 }, (_, g) => ({ event: g + 1, points: 40 + ((row.entryId + g) % 30) })),
+      ),
+    );
+    for (let gw = 1; gw <= 10; gw++)
+      fpl.picks.set(`${row.entryId}:${gw}`, makePicks(row.entryId, gw, 1 + (gw % 4)));
+  }
+  setBootstrap(11, 10);
+  await setLeague(LEAGUE);
+}
+
 describe('gameweek_roundup job', () => {
   it('builds an official GW after the 5-minute delay, newest first, then back-fills', async () => {
     seedLeague();
@@ -202,31 +236,7 @@ describe('gameweek_roundup job', () => {
   it('spreads a back-fill over runs with a bounded request budget', async () => {
     const MEMBERS = 171;
     expect(roundupGwsPerRun(MEMBERS)).toBe(3);
-    fpl.leagues.set(LEAGUE, { id: LEAGUE, name: 'Big League' });
-    const rows = Array.from({ length: MEMBERS }, (_, i) => ({
-      rank: i + 1,
-      lastRank: i + 1,
-      entryId: 1000 + i,
-      entryName: `Team ${i}`,
-      managerName: `Manager ${i}`,
-      total: 1000 - i,
-      eventTotal: 50,
-    }));
-    fpl.standingsPageCount = 4;
-    fpl.standingsByPage = new Map([1, 2, 3, 4].map((p) => [p, rows.slice((p - 1) * 50, p * 50)]));
-    for (const row of rows) {
-      fpl.histories.set(
-        row.entryId,
-        makeHistory(
-          row.entryId,
-          Array.from({ length: 10 }, (_, g) => ({ event: g + 1, points: 40 + ((row.entryId + g) % 30) })),
-        ),
-      );
-      for (let gw = 1; gw <= 10; gw++)
-        fpl.picks.set(`${row.entryId}:${gw}`, makePicks(row.entryId, gw, 1 + (gw % 4)));
-    }
-    setBootstrap(11, 10);
-    await setLeague(LEAGUE);
+    await seedBigLeague(MEMBERS);
 
     const requests = () =>
       fpl.calls.filter((c) =>
@@ -461,6 +471,7 @@ describe('gameweek_roundup job', () => {
 
     it('uses the official rank / last rank / total and recomputes climb and drop; older GWs stay computed', async () => {
       seedLeague();
+      setBootstrap(2, 2);
       fpl.standingsRows = officialAfterGw2();
       await setLeague(LEAGUE);
       await buildAll();
@@ -502,6 +513,7 @@ describe('gameweek_roundup job', () => {
 
     it('keeps the computed table when the official standings have moved on to a newer GW', async () => {
       seedLeague();
+      setBootstrap(2, 2);
       fpl.standingsRows = officialAfterGw2(40); // GW3 points already in FPL's totals
       await setLeague(LEAGUE);
       await buildAll();
@@ -513,6 +525,126 @@ describe('gameweek_roundup job', () => {
       ]);
       expect([gw2.biggestClimb, gw2.biggestDrop]).toEqual([null, null]);
       expect(gw2.averages).toEqual({ league: 68.3, world: 52 });
+    });
+
+    it("keeps the computed table once FPL's current GW is past the one being built", async () => {
+      seedLeague(); // current GW 3, GW2 the newest official
+      fpl.standingsRows = officialAfterGw2(); // totals still match GW2
+      await setLeague(LEAGUE);
+      await buildAll();
+      const gw2 = (await getRoundup('?event=2')).body;
+      expect(gw2.table.map((r) => [r.entryId, r.rank, r.lastRank])).toEqual([
+        [11, 1, 1],
+        [12, 2, 2],
+        [13, 3, null],
+      ]);
+    });
+  });
+
+  describe('builder version', () => {
+    it('rebuilds an older-version row with the current rules, serving the old one until it is replaced', async () => {
+      seedLeague(); // current GW 3: the official table is not used for GW2
+      fpl.standingsRows = [
+        {
+          rank: 1,
+          lastRank: 3,
+          entryId: 12,
+          entryName: 'Bravo',
+          managerName: 'Itay',
+          total: 130,
+          eventTotal: 84,
+        },
+        {
+          rank: 2,
+          lastRank: 1,
+          entryId: 11,
+          entryName: 'Alpha',
+          managerName: 'Dor',
+          total: 130,
+          eventTotal: 70,
+        },
+        {
+          rank: 3,
+          lastRank: 0,
+          entryId: 13,
+          entryName: 'Charlie',
+          managerName: 'Moshe',
+          total: 55,
+          eventTotal: 55,
+        },
+      ];
+      await setLeague(LEAGUE);
+      await buildAll();
+      // As the previous code would have stored it (computed ranks, version 1).
+      await prisma.gameweekRoundup.updateMany({ where: { event: 2 }, data: { buildVersion: 1 } });
+      const old = await prisma.gameweekRoundup.findFirstOrThrow({ where: { event: 2 } });
+
+      setBootstrap(2, 2); // FPL's table is GW2's
+      const before = (await getRoundup('?event=2')).body;
+      expect([before.status, before.table.map((r) => r.entryId)]).toEqual(['ready', [11, 12, 13]]);
+
+      clock.advance(MINUTE);
+      expect(await runJob()).toBe('ok');
+      const rows = await prisma.gameweekRoundup.findMany({ where: { event: 2 } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.buildVersion).toBe(ROUNDUP_BUILD_VERSION);
+      expect(rows[0]?.builtAt.getTime()).toBeGreaterThan(old.builtAt.getTime());
+      // The route's cached copy was dropped: the new table at once.
+      const after = (await getRoundup('?event=2')).body;
+      expect(after.table.map((r) => [r.entryId, r.rank, r.lastRank])).toEqual([
+        [12, 1, 3],
+        [11, 2, 1],
+        [13, 3, null],
+      ]);
+      expect(after.biggestClimb?.entryId).toBe(12);
+      // GW1 was current already: untouched.
+      expect((await prisma.gameweekRoundup.findFirstOrThrow({ where: { event: 1 } })).buildVersion).toBe(
+        ROUNDUP_BUILD_VERSION,
+      );
+    });
+
+    it('never rebuilds a current-version row', async () => {
+      seedLeague();
+      await setLeague(LEAGUE);
+      await buildAll();
+      const before = await prisma.gameweekRoundup.findMany({ orderBy: { event: 'asc' } });
+      expect(before.map((r) => r.buildVersion)).toEqual([ROUNDUP_BUILD_VERSION, ROUNDUP_BUILD_VERSION]);
+      fpl.calls = [];
+      clock.advance(ROUNDUP_BUILD_DELAY_MS);
+      expect(await runJob()).toBe('ok');
+      expect(fpl.calls.filter((c) => c.startsWith('getEntry'))).toEqual([]);
+      expect(await prisma.gameweekRoundup.findMany({ orderBy: { event: 'asc' } })).toEqual(before);
+    });
+
+    it('rebuilds older-version rows newest first within the per-run budget', async () => {
+      await seedBigLeague(171);
+      await setLeague(LEAGUE);
+      for (let run = 0; run < 4; run++) {
+        expect(await runJob()).toBe('ok');
+        clock.advance(ROUNDUP_BUILD_DELAY_MS);
+      }
+      expect(await storedEvents()).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      await prisma.gameweekRoundup.updateMany({ data: { buildVersion: 1 } });
+      // A missing GW and outdated ones share the budget, newest first.
+      await prisma.gameweekRoundup.deleteMany({ where: { event: 9 } });
+
+      const current = async () =>
+        (await prisma.gameweekRoundup.findMany({ where: { buildVersion: ROUNDUP_BUILD_VERSION } }))
+          .map((r) => r.event)
+          .sort((a, b) => a - b);
+      const runs: number[][] = [];
+      let previous: number[] = [];
+      for (let run = 0; run < 5; run++) {
+        expect(await runJob()).toBe('ok');
+        const now = await current();
+        runs.push(now.filter((gw) => !previous.includes(gw)));
+        previous = now;
+        // The outdated rows are served meanwhile: always one row per GW except the missing one until rebuilt.
+        expect((await prisma.gameweekRoundup.count()) >= 9).toBe(true);
+        clock.advance(ROUNDUP_BUILD_DELAY_MS);
+      }
+      expect(runs).toEqual([[8, 9, 10], [5, 6, 7], [2, 3, 4], [1], []]);
+      expect(await prisma.gameweekRoundup.count()).toBe(10);
     });
   });
 

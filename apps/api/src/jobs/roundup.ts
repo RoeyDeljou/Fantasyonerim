@@ -7,6 +7,7 @@ import {
   FRESH,
   officialEvents,
   ROUNDUP_BUILD_DELAY_MS,
+  ROUNDUP_BUILD_VERSION,
   ROUNDUP_HOT_PREFIX,
   supportsRoundup,
 } from '../league/roundup.js';
@@ -61,9 +62,11 @@ export const gameweekRoundupJob: Job = {
 
     const stored = await app.prisma.gameweekRoundup.findMany({
       where: { leagueId, event: { in: official } },
-      select: { event: true },
+      select: { event: true, buildVersion: true },
     });
-    const have = new Set(stored.map((r) => r.event));
+    // Built by the current rules. An older-version row is rebuilt like a missing one (and served until then).
+    const have = new Set(stored.filter((r) => r.buildVersion >= ROUNDUP_BUILD_VERSION).map((r) => r.event));
+    const outdated = stored.length - have.size;
     const missing: Gameweek[] = official.filter((gw) => !have.has(gw) && (gw !== newest || newestReady));
     const waiting = !have.has(newest) && !newestReady;
     if (missing.length === 0) {
@@ -91,7 +94,7 @@ export const gameweekRoundupJob: Job = {
         toBuild,
       );
       return {
-        summary: `league ${leagueId}: built ${result.built.map((gw) => `GW${gw}`).join(', ') || 'nothing'}, ${
+        summary: `league ${leagueId} (${outdated} outdated at start): built ${result.built.map((gw) => `GW${gw}`).join(', ') || 'nothing'}, ${
           result.remaining
         } left${waiting ? `, GW${newest} waiting` : ''}`,
         state,

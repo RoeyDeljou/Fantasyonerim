@@ -200,9 +200,18 @@ historical member list).
 **Ranks and totals**: official FPL standings for the newest GW at build time; older GWs reconstructed from each
 team's history. When the job builds the newest official GW, `rank`, `lastRank` (FPL `last_rank` 0 = joined since the
 last update → null) and `total` come from FPL's classic standings (read fresh), the table is ordered by official rank,
-and biggest climb / drop are recomputed from them (places, then higher GW points, then table order). Guard: if fewer
-than 90% of the official totals equal the reconstructed ones, FPL's table has moved on to a newer GW and the
+and biggest climb / drop are recomputed from them (places, then higher GW points, then table order). Guards: the
+official table is used only while the fresh bootstrap's current GW is the GW being built, and only when at least 90%
+of the official totals equal the reconstructed ones; otherwise FPL's table has moved on to a newer GW and the
 reconstructed values are kept. Back-filled GWs (FPL keeps no historical league tables) are always reconstructed:
 total = Σ (GW points − hits) from the league's `startEvent`, ranked by total then fewer transfers. `eventPoints` and
-the league average are net of hits in both cases. Stored roundups are never replaced; the migration
-`20261110090000_roundup_rebuild_official_ranks` deleted those built before official ranks were used, so all are rebuilt.
+the league average are net of hits in both cases.
+
+**Builder version** (`GameweekRoundup.buildVersion`, `ROUNDUP_BUILD_VERSION` in `apps/api/src/league/roundup.ts`,
+currently 2; rows stored before the column existed are 1). A stored row of an older version counts as needing a
+rebuild for any GW, exactly like a missing one: newest first, within the same per-run budget. The rebuilt row
+replaces the old one atomically (delete of the older-version row + create, in one transaction; a current-version row
+is never replaced) and the route's cached copy of that GW is dropped. Until then the old row keeps being served (no
+`building` gap). Code from before versioning never deletes or overwrites a row, so anything it writes during a
+deploy (as version 1) is healed by the next run. **Changing a roundup rule that must reach stored roundups = bump
+`ROUNDUP_BUILD_VERSION`.**

@@ -43,6 +43,14 @@ import { allStandingRows, fetchAllPages } from './pages.js';
  */
 export const FRESH: FplReadOptions = { fresh: true };
 
+/**
+ * Version of the roundup rules stored with every row. Bump it whenever a rule change must reach roundups already
+ * stored: the job then rebuilds every older row (newest GW first, within its per-run budget) and replaces it
+ * atomically; the old row is served until then. 1 = ranks reconstructed for every GW; 2 = the newest official GW
+ * uses FPL's official standings.
+ */
+export const ROUNDUP_BUILD_VERSION = 2;
+
 /** Build a GW only this long after we first saw it `finished && dataChecked` (history cache TTL, 5 min). */
 export const ROUNDUP_BUILD_DELAY_MS = FPL_CACHE_TTL.history;
 /**
@@ -271,27 +279,34 @@ export async function buildRoundups(
     // The newest official GW: FPL's own league table (read fresh above) is exactly this GW's table, so its ranks,
     // last ranks and totals win over the reconstruction (FPL leaves late joiners out of last_rank). Older GWs have
     // no official table left on FPL and keep the values rebuilt from each team's history.
-    const core = event === newestOfficial ? (applyOfficialStandings(computed, rows) ?? computed) : computed;
+    // Only while FPL's current GW is still this one: once the next GW starts, its table is no longer this GW's.
+    const core =
+      event === newestOfficial && bootstrap.currentEvent === event
+        ? (applyOfficialStandings(computed, rows) ?? computed)
+        : computed;
     const captains = await roundupCaptainRows(prisma, fpl, event, playerPoints, picks);
     const captainPoints: Record<string, number> = {};
     for (const r of core.table) {
       if (r.captainPlayerId !== null)
         captainPoints[r.captainPlayerId] = playerPoints.get(r.captainPlayerId)?.points ?? 0;
     }
-    // Idempotent: a roundup already stored for (league, GW) is never replaced.
-    const stored = await prisma.gameweekRoundup.createMany({
-      data: [
-        {
-          leagueId,
-          event,
-          leagueName: info.name,
-          data: core as unknown as Prisma.InputJsonObject,
-          captains: captains as unknown as Prisma.InputJsonArray,
-          captainPoints,
-          builtAt: deps.now(),
-        },
-      ],
-      skipDuplicates: true,
+    // Replaces only a row of an older builder version (delete + create in one transaction); a current-version row
+    // (another instance was faster) is never replaced. Old code never deletes, so anything it writes is healed later.
+    const data = {
+      leagueId,
+      event,
+      leagueName: info.name,
+      data: core as unknown as Prisma.InputJsonObject,
+      captains: captains as unknown as Prisma.InputJsonArray,
+      captainPoints,
+      builtAt: deps.now(),
+      buildVersion: ROUNDUP_BUILD_VERSION,
+    };
+    const stored = await prisma.$transaction(async (tx) => {
+      await tx.gameweekRoundup.deleteMany({
+        where: { leagueId, event, buildVersion: { lt: ROUNDUP_BUILD_VERSION } },
+      });
+      return tx.gameweekRoundup.createMany({ data: [data], skipDuplicates: true });
     });
     if (stored.count > 0) {
       built.push(event);
