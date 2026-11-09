@@ -497,3 +497,18 @@ export const LocateIcon = (p: IconProps) => (
     <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" />
   </Svg>
 );
+
+/** Crown: the Gameweek Roundup's "king of the gameweek". */
+export const CrownIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 8.5 7.5 12 12 5.5 16.5 12 20 8.5 18.5 17.5h-13L4 8.5Z" />
+    <path d="M5.5 20.5h13" />
+  </Svg>
+);
+
+/** Arrow toward the reading direction's end ("out → in"; flips in RTL). */
+export const ArrowEndIcon = (p: IconProps) => (
+  <Svg {...p} className={`rtl:rotate-180 ${p.className ?? ''}`}>
+    <path d="M5 12h13M13 6.5l5.5 5.5-5.5 5.5" />
+  </Svg>
+);

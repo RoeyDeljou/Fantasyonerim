@@ -9,11 +9,13 @@ import { qk, useConfig, useFplIndex, useLivePollInterval, useMe, useStandings } 
 import { useQueryClient } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import { useQueryParam } from '@/lib/useQueryParam';
+import { rankMove } from '@/lib/roundup';
 import { REFRESH_SCOPES } from '@/lib/refresh';
 import { AppShell, TableShellSkeleton } from '@/components/AppShell';
 import { ArrowDownIcon, ArrowUpIcon, ClockIcon, DotIcon, TableIcon } from '@/components/icons';
 import { ChipIcon } from '@/components/team/ChipIcon';
 import { ManagerSheet } from '@/components/lazySheets';
+import { lazyWhenOpen } from '@/components/lazy';
 import { FindMyTeam, loadPagesUntil } from '@/components/team/FindMyTeam';
 import {
   Button,
@@ -21,6 +23,7 @@ import {
   ErrorState,
   InlineError,
   Num,
+  Segmented,
   SkeletonList,
   Spinner,
   cx,
@@ -30,28 +33,28 @@ import {
 export function TableScreen() {
   const { t } = useI18n();
   return (
-    <AppShell title={t.table.title} refresh={REFRESH_SCOPES.table} skeleton={<TableShellSkeleton />}>
-      <Suspense fallback={<TableShellSkeleton />}>
+    <AppShell title={t.table.title} refresh={REFRESH_SCOPES.table} skeleton={<TableShellSkeleton tabs />}>
+      <Suspense fallback={<TableShellSkeleton tabs />}>
         <TableInner />
       </Suspense>
     </AppShell>
   );
 }
 
-export function Movement({ rank, lastRank }: { rank: number; lastRank: number }) {
+export function Movement({ rank, lastRank }: { rank: number; lastRank: number | null }) {
   const { t } = useI18n();
-  if (lastRank <= 0 || lastRank === rank) {
+  const move = rankMove(rank, lastRank);
+  if (move.dir === 'same') {
     return (
-      <span className="text-muted" aria-label={t.table.same} title={t.table.same}>
+      <span className="text-muted" aria-label={t.table.same} title={t.table.same} data-move="same">
         <DotIcon width={14} height={14} />
       </span>
     );
   }
-  const up = rank < lastRank;
-  const n = Math.abs(lastRank - rank);
-  const label = fmt(up ? t.table.up : t.table.down, { n });
+  const up = move.dir === 'up';
+  const label = fmt(up ? t.table.up : t.table.down, { n: move.places });
   return (
-    <span className={up ? 'text-success' : 'text-live'} aria-label={label} title={label}>
+    <span className={up ? 'text-success' : 'text-live'} aria-label={label} title={label} data-move={move.dir}>
       {up ? (
         <ArrowUpIcon width={14} height={14} strokeWidth={2.6} />
       ) : (
@@ -72,7 +75,40 @@ export function NoLeague() {
   );
 }
 
+type View = 'table' | 'roundup';
+
+/**
+ * The Gameweek Roundup is its own chunk (screens/Roundup.tsx): fans opening the Table don't download it, and it is
+ * fetched in the background once the tab is idle so the sub-tab opens instantly.
+ */
+const RoundupView = lazyWhenOpen(
+  () => import('./Roundup').then((m) => m.RoundupView),
+  () => true,
+  <SkeletonList rows={8} />,
+);
+
+/** League tab: the official table (default) and the Gameweek Roundup (`?view=roundup`), like Live's sub-tabs. */
 function TableInner() {
+  const { t } = useI18n();
+  const [viewParam, setView] = useQueryParam('view');
+  const view: View = viewParam === 'roundup' ? 'roundup' : 'table';
+  return (
+    <div className="flex flex-col gap-3">
+      <Segmented<View>
+        label={t.roundup.viewsLabel}
+        value={view}
+        onChange={(v) => setView(v === 'roundup' ? 'roundup' : null)}
+        options={[
+          { value: 'table', label: t.roundup.viewTable },
+          { value: 'roundup', label: t.roundup.tab },
+        ]}
+      />
+      {view === 'table' ? <Standings /> : <RoundupView />}
+    </div>
+  );
+}
+
+function Standings() {
   const { t, f } = useI18n();
   const config = useConfig();
   const leagueSet = !!config.data?.league;

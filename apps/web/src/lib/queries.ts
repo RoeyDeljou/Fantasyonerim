@@ -22,6 +22,7 @@ import type {
   FplPlayerId,
   FplTeamId,
   Gameweek,
+  GameweekRoundup,
   LeagueStandings,
   LiveLeague,
   Me,
@@ -81,6 +82,12 @@ export const qk = {
   liveLeague: ['league', 'live'] as const,
   leaguePosition: ['league', 'position'] as const,
   captainBattle: ['captain-battle'] as const,
+  /**
+   * Keyed by viewer too: the response carries the viewer's own captain (`captains[kind=mine]`), so one account's
+   * copy must never be shown to another on a shared device (on top of the cache being cleared on sign-out).
+   */
+  roundup: (viewer: string, event: Gameweek | null) =>
+    ['league', 'roundup', viewer, event ?? 'latest'] as const,
   adminSettings: ['admin', 'settings'] as const,
   adminCaptainBattle: ['admin', 'captain-battle'] as const,
   admins: ['admin', 'admins'] as const,
@@ -393,6 +400,37 @@ export function useCaptainBattle(refetchInterval: number) {
     refetchInterval: everyJittered(refetchInterval),
     refetchIntervalInBackground: false,
     staleTime: 15_000,
+  });
+}
+
+/** A roundup still being built is re-checked every minute; a pending GW every few minutes; a ready one never. */
+export const ROUNDUP_BUILDING_POLL_MS = 60_000;
+
+function roundupPoll(data: GameweekRoundup | undefined): number | false {
+  if (data?.status === 'building') return jittered(ROUNDUP_BUILDING_POLL_MS);
+  if (data?.status === 'pending') return jittered(IDLE_POLL_MS);
+  return false;
+}
+
+/**
+ * Gameweek Roundup for `event` (null = the latest official GW). Waits until the viewer is known (signed-in: their
+ * user id; guest: 'guest') so the cache entry is per account. Switching GWs keeps the previous roundup on screen
+ * as placeholder (the picker stays put) until the new one lands.
+ */
+export function useLeagueRoundup(event: Gameweek | null, enabled: boolean) {
+  const me = useMe();
+  const viewer = isGuest() ? 'guest' : (me.data?.id ?? (me.isError ? 'anon' : null));
+  return useQuery({
+    queryKey: qk.roundup(viewer ?? 'pending', event),
+    queryFn:
+      enabled && viewer !== null
+        ? ({ signal }) => api.leagueRoundup(event ?? undefined, { signal })
+        : skipToken,
+    placeholderData: keepPreviousData,
+    // An official GW's roundup doesn't change once built; pending / building ones are re-checked.
+    staleTime: (q) => (q.state.data?.status === 'ready' ? 10 * 60_000 : 30_000),
+    refetchInterval: (q) => roundupPoll(q.state.data),
+    refetchIntervalInBackground: false,
   });
 }
 

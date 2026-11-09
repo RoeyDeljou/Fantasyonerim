@@ -11,7 +11,8 @@
 //   4. runs the user journeys below at a 390×844 phone viewport and fails on any unexpected console error
 //
 // Env overrides: E2E_DB_NAME, E2E_DATABASE_URL, E2E_API_PORT, E2E_WEB_PORT, E2E_SKIP_BUILD=1, E2E_SKIP_DB_RESET=1, E2E_HEADED=1,
-// E2E_ONLY_UPDATES=1 (register, then only the app-update journeys), E2E_DEBUG_DIR=<dir> (screenshot + text of every
+// E2E_ONLY_UPDATES=1 (register, then only the app-update journeys), E2E_ONLY_ROUNDUP=1 (register, then only the
+// Gameweek Roundup journeys; E2E_ROUNDUP_SHOTS=<dir> saves their phone screenshots), E2E_DEBUG_DIR=<dir> (screenshot + text of every
 // open page when a journey fails).
 import { spawn, spawnSync } from 'node:child_process';
 import { createECDH, randomBytes } from 'node:crypto';
@@ -700,6 +701,12 @@ async function journeys(browser) {
 
   if (process.env.E2E_ONLY_UPDATES) {
     await updateJourneys(user);
+    await user.close();
+    return;
+  }
+
+  await roundupJourneys(browser, page);
+  if (process.env.E2E_ONLY_ROUNDUP) {
     await user.close();
     return;
   }
@@ -3509,6 +3516,365 @@ async function updateJourneys(ctx) {
   deploy.from = null;
   deploy.to = null;
   await up.close();
+}
+
+// ---------- Gameweek Roundup (League tab → "סיכום מחזור") ----------
+// GET /v1/league/roundup isn't served by apps/api yet: every response here is MOCKED with page.route, built from the
+// demo bootstrap's real player ids (so photos/names resolve). GW10 = ready with every section, GW9 = ready with
+// most sections empty and a 25-team table, GW11 = pending, GW8 = unavailable, GW7 = building, GW6 = 404.
+// E2E_ROUNDUP_SHOTS=<dir> also saves phone screenshots (he/en × light/dark).
+function roundupMocks(playerIds, me) {
+  const pid = (i) => playerIds[i % playerIds.length];
+  const team = (i) => ({ entryId: 3000000 + i, entryName: `קבוצה ${i}`, managerName: `Manager ${i}` });
+  const mine = { entryId: me, entryName: 'E2E United', managerName: 'E2E Tester' };
+  const events = Array.from({ length: 11 }, (_, i) => i + 1);
+  const empty = (event, status) => ({
+    event,
+    status,
+    events,
+    league: { id: Number(DEMO.league), name: 'ליגת פנטזיונרים' },
+    participants: null,
+    averages: null,
+    king: null,
+    table: [],
+    biggestClimb: null,
+    biggestDrop: null,
+    benchPoints: null,
+    bestTransfer: null,
+    worstTransfer: null,
+    captains: [],
+    builtAt: null,
+  });
+  const row = (rank, t, extra = {}) => ({
+    ...t,
+    rank,
+    lastRank: rank,
+    eventPoints: 50 + ((rank * 7) % 30),
+    total: 700 - rank * 9,
+    captainPlayerId: pid(rank),
+    chip: null,
+    transfers: [],
+    transferCost: 0,
+    ...extra,
+  });
+  const gw10 = {
+    ...empty(10, 'ready'),
+    participants: 7,
+    averages: { league: 61.37, world: 54 },
+    king: {
+      ...team(1),
+      points: 98,
+      captainPlayerId: pid(10),
+      chip: 'bboost',
+      topPlayers: [
+        { playerId: pid(10), points: 26 },
+        { playerId: pid(11), points: 15 },
+        { playerId: pid(12), points: 12 },
+        { playerId: pid(13), points: 9 },
+      ],
+      benchBoostPoints: 14,
+    },
+    table: [
+      row(1, team(1), { lastRank: 4, eventPoints: 98, chip: 'bboost', captainPlayerId: pid(10) }),
+      row(2, team(2), { lastRank: 1, transfers: [{ playerOut: pid(20), playerIn: pid(21) }] }),
+      row(3, mine, {
+        lastRank: 3,
+        transfers: [
+          { playerOut: pid(22), playerIn: pid(23) },
+          { playerOut: pid(24), playerIn: pid(25) },
+        ],
+      }),
+      row(4, team(4), {
+        lastRank: 2,
+        transfers: [
+          { playerOut: pid(26), playerIn: pid(27) },
+          { playerOut: pid(28), playerIn: pid(29) },
+          { playerOut: pid(30), playerIn: pid(31) },
+        ],
+        transferCost: 4,
+      }),
+      row(5, team(5), { lastRank: 7, chip: '3xc' }),
+      row(6, team(6), { lastRank: 5 }),
+      row(7, team(7), { lastRank: null, chip: 'wildcard' }),
+    ],
+    biggestClimb: { ...team(1), places: 3, eventPoints: 98 },
+    biggestDrop: { ...team(4), places: 2, eventPoints: 41 },
+    benchPoints: {
+      ...team(6),
+      points: 17,
+      players: [
+        { playerId: pid(40), points: 9 },
+        { playerId: pid(41), points: 6 },
+        { playerId: pid(42), points: 2 },
+        { playerId: pid(43), points: 0 },
+      ],
+    },
+    bestTransfer: {
+      ...team(2),
+      playerOut: { playerId: pid(20), points: 2 },
+      playerIn: { playerId: pid(21), points: 15 },
+      gain: 13,
+      transferCost: 0,
+    },
+    worstTransfer: {
+      ...team(4),
+      playerOut: { playerId: pid(26), points: 12 },
+      playerIn: { playerId: pid(27), points: 1 },
+      gain: -11,
+      transferCost: 4,
+    },
+    captains: [
+      {
+        key: 'community',
+        label: 'קפטן הקהילה',
+        kind: 'community',
+        playerId: pid(10),
+        multiplier: 2,
+        captainPoints: 26,
+      },
+      { key: 'mine', label: 'הקפטן שלי', kind: 'mine', playerId: pid(10), multiplier: 3, captainPoints: 39 },
+      {
+        key: 'dor',
+        label: 'הקפטן של דור',
+        kind: 'custom',
+        playerId: pid(50),
+        multiplier: 2,
+        captainPoints: 16,
+      },
+      {
+        key: 'itay',
+        label: 'הקפטן של איתי תבקה',
+        kind: 'custom',
+        playerId: null,
+        multiplier: 2,
+        captainPoints: 0,
+      },
+    ].sort((a, b) => b.captainPoints - a.captainPoints),
+    builtAt: new Date().toISOString(),
+  };
+  const gw9 = {
+    ...empty(9, 'ready'),
+    participants: 25,
+    table: Array.from({ length: 25 }, (_, i) =>
+      row(i + 1, i + 1 === 12 ? mine : team(i + 1), { lastRank: i + 2 }),
+    ),
+    biggestClimb: { ...team(5), places: 6, eventPoints: 77 },
+    builtAt: new Date().toISOString(),
+  };
+  return {
+    latest: gw10,
+    10: gw10,
+    9: gw9,
+    11: empty(11, 'pending'),
+    8: empty(8, 'unavailable'),
+    7: empty(7, 'building'),
+  };
+}
+
+async function roundupContext(browser, token, mocks, { locale = 'he', theme = 'light' } = {}) {
+  const ctx = await newContext(browser, { colorScheme: theme });
+  await ctx.addInitScript(
+    ([tok, loc, th]) => {
+      globalThis.localStorage.setItem('fant.token', tok);
+      globalThis.localStorage.setItem('fant.locale', loc);
+      globalThis.localStorage.setItem('fant.theme', th);
+    },
+    [token, locale, theme],
+  );
+  // The league is set (no admin needed for these journeys) and the fan is in it.
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/config',
+    async (r) => {
+      if (r.request().method() === 'OPTIONS') return r.continue();
+      const res = await r.fetch();
+      const body = await res.json();
+      await r.fulfill({
+        response: res,
+        json: { ...body, league: body.league ?? { id: Number(DEMO.league), name: 'ליגת פנטזיונרים' } },
+      });
+    },
+  );
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/league/position',
+    (r) =>
+      r.request().method() === 'OPTIONS'
+        ? r.continue()
+        : r.fulfill(json({ entryId: Number(DEMO.tripleCaptain), page: 1, rank: 3, member: true })),
+  );
+  const calls = [];
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/league/roundup',
+    (r) => {
+      if (r.request().method() === 'OPTIONS') return r.continue();
+      const event = new URL(r.request().url()).searchParams.get('event');
+      calls.push(event);
+      const body = mocks[event ?? 'latest'];
+      return r.fulfill(
+        body ? json(body) : json({ error: { code: 'not_found', message: 'no such gameweek' } }, 404),
+      );
+    },
+  );
+  return { ctx, calls };
+}
+
+async function roundupJourneys(browser, userPage) {
+  const token = await userPage.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+  const bootstrap = await (await globalThis.fetch(`${API}/v1/fpl/bootstrap`)).json();
+  const playerIds = bootstrap.players.map((p) => p.id);
+  const mocks = roundupMocks(playerIds, Number(DEMO.tripleCaptain));
+  const nameOf = (id) => bootstrap.players.find((p) => p.id === id)?.webName;
+
+  const { ctx, calls } = await roundupContext(browser, token, mocks);
+  const p = await ctx.newPage();
+  watch(p, 'roundup');
+  const roundup = p.getByTestId('roundup');
+
+  await step('League tab: Table stays the default; the "סיכום מחזור" sub-tab is deep-linkable', async () => {
+    await p.goto(`${WEB}/table/`);
+    const tabs = p.getByRole('tablist', { name: 'תצוגת הליגה' });
+    await tabs.waitFor();
+    assert(
+      (await tabs.getByRole('tab', { name: 'טבלה' }).getAttribute('aria-selected')) === 'true',
+      'Table is the default sub-tab',
+    );
+    assert(calls.length === 0, 'the roundup is not fetched while the Table sub-tab is open');
+    await tabs.getByRole('tab', { name: 'סיכום מחזור' }).click();
+    await p.waitForURL('**/table/?view=roundup');
+    await roundup.and(p.locator('[data-status=ready]')).waitFor();
+    assert(calls[0] === null, `first call asks for the latest GW, got event=${calls[0]}`);
+    await p.getByRole('heading', { name: 'סיכום מחזור 10' }).waitFor();
+    // Deep link straight into it.
+    await p.goto(`${WEB}/table/?view=roundup`);
+    await roundup.and(p.locator('[data-status=ready]')).waitFor();
+  });
+
+  await step(
+    'Roundup (ready): every section, my row highlighted, transfers, hits, no horizontal scroll',
+    async () => {
+      for (const id of [
+        'roundup-king',
+        'roundup-averages',
+        'roundup-captains',
+        'roundup-table',
+        'roundup-climb',
+        'roundup-drop',
+        'roundup-bench',
+        'roundup-best-transfer',
+        'roundup-worst-transfer',
+      ])
+        assert((await p.getByTestId(id).count()) === 1, `${id} shown`);
+      const king = p.getByTestId('roundup-king');
+      assert((await king.getByTestId('chip-icon').getAttribute('data-chip')) === 'bboost', 'king chip');
+      assert((await king.locator('li[data-captain=true]').count()) === 1, 'king captain marked');
+      assert((await king.textContent()).includes('+14'), 'bench boost points');
+      // 61.37 → one decimal.
+      assert((await p.getByTestId('roundup-averages').textContent()).includes('61.4'), 'league average 1 dp');
+      // Captain battle: my row highlighted, the unknown captain last with a dash.
+      const caps = p.getByTestId('roundup-captains').locator('ol > li');
+      assert((await caps.count()) === 4, 'four captain rows');
+      assert((await caps.first().getAttribute('data-captain-kind')) === 'mine', 'my captain (39) first');
+      assert((await caps.last().textContent()).includes('אין קפטן'), 'no-captain row last');
+      // Table: 7 rows, no "show all", my row highlighted, movement arrows, transfers.
+      const rows = p.locator('[data-testid=roundup-table] li[data-entry]');
+      assert((await rows.count()) === 7, '7 rows');
+      assert((await p.getByTestId('roundup-show-all').count()) === 0, 'no "show all" for 7 rows');
+      const mineRow = p.locator(`[data-testid=roundup-table] li[data-entry="${DEMO.tripleCaptain}"]`);
+      assert((await mineRow.getAttribute('data-mine')) === 'true', 'my row flagged');
+      assert((await rows.nth(0).locator('[data-move=up]').count()) === 1, 'rank 1 moved up');
+      assert((await rows.nth(1).locator('[data-move=down]').count()) === 1, 'rank 2 moved down');
+      assert((await rows.nth(6).locator('[data-move=same]').count()) === 1, 'new entry = same');
+      const two = await mineRow.getByTestId('roundup-transfers').textContent();
+      assert(
+        two.includes(nameOf(playerIds[23])) && two.includes(nameOf(playerIds[25])),
+        `two transfers: ${two}`,
+      );
+      const many = await rows.nth(3).getByTestId('roundup-transfers').textContent();
+      assert(many.includes('3 חילופים') && many.includes('מינוס 4'), `3 transfers + hit: ${many}`);
+      assert(
+        (await rows.nth(0).getByTestId('roundup-captain').textContent()).includes(nameOf(playerIds[10])),
+        'captain name',
+      );
+      // The arrow in "out → in" points to the reading end (left in Hebrew): the player in sits left of the player out.
+      const [outBox, inBox] = await Promise.all([
+        mineRow.getByTestId('roundup-transfers').locator('bdi').nth(0).boundingBox(),
+        mineRow.getByTestId('roundup-transfers').locator('bdi').nth(1).boundingBox(),
+      ]);
+      assert(outBox && inBox && inBox.x < outBox.x, 'RTL: player out on the right, player in on the left');
+      assert((await p.getByTestId('roundup-worst-transfer').textContent()).includes('−11'), 'worst gain −11');
+      await noHorizontalScroll(p, 'roundup ready');
+    },
+  );
+
+  await step(
+    'Roundup GW picker: next = pending, prev = sparse GW with hidden sections + "show all"',
+    async () => {
+      await p.getByRole('button', { name: 'למחזור הבא' }).click();
+      await p.waitForURL('**/table/?view=roundup&gw=11');
+      await p.getByText('חזרו בסוף המחזור!').waitFor();
+      assert(await p.getByRole('button', { name: 'למחזור הבא' }).isDisabled(), 'no GW after the current one');
+      await noHorizontalScroll(p, 'roundup pending');
+      await p.getByRole('button', { name: 'למחזור הקודם' }).click();
+      await p.getByRole('heading', { name: 'סיכום מחזור 10' }).waitFor();
+      await p.getByRole('button', { name: 'למחזור הקודם' }).click();
+      await p.getByRole('heading', { name: 'סיכום מחזור 9' }).waitFor();
+      for (const id of [
+        'roundup-king',
+        'roundup-averages',
+        'roundup-captains',
+        'roundup-drop',
+        'roundup-bench',
+        'roundup-best-transfer',
+        'roundup-worst-transfer',
+      ])
+        assert((await p.getByTestId(id).count()) === 0, `${id} hidden when null/empty`);
+      assert((await p.getByTestId('roundup-climb').count()) === 1, 'climb shown');
+      const rows = p.locator('[data-testid=roundup-table] li[data-entry]');
+      assert((await rows.count()) === 10, `top 10 rows first (got ${await rows.count()})`);
+      const all = p.getByTestId('roundup-show-all');
+      assert((await all.textContent()).includes('15'), 'show all says 15 more');
+      await all.click();
+      assert((await rows.count()) === 25, 'all 25 rows after expanding');
+      await noHorizontalScroll(p, 'roundup sparse');
+    },
+  );
+
+  await step('Roundup: unavailable / building / unknown GW (404 → error state with retry)', async () => {
+    await p.goto(`${WEB}/table/?view=roundup&gw=8`);
+    await p.getByText('אין סיכום למחזור הזה').waitFor();
+    await p.getByTestId('gw-select').selectOption('7');
+    await p.waitForURL('**/table/?view=roundup&gw=7');
+    await p.getByText('הסיכום בהכנה').waitFor();
+    await p.goto(`${WEB}/table/?view=roundup&gw=6`);
+    await p.getByRole('alert').getByRole('button', { name: 'נסו שוב' }).waitFor();
+    await noHorizontalScroll(p, 'roundup error');
+  });
+  await ctx.close();
+
+  const dir = process.env.E2E_ROUNDUP_SHOTS;
+  if (dir) {
+    await step('Roundup screenshots (he/en × light/dark, 390×844)', async () => {
+      for (const locale of ['he', 'en'])
+        for (const theme of ['light', 'dark']) {
+          const { ctx: c } = await roundupContext(browser, token, mocks, { locale, theme });
+          const sp = await c.newPage();
+          watch(sp, `roundup-${locale}-${theme}`);
+          await sp.goto(`${WEB}/table/?view=roundup`);
+          await sp.locator('[data-testid=roundup][data-status=ready]').waitFor();
+          await sp.waitForTimeout(400);
+          await noHorizontalScroll(sp, `roundup ${locale} ${theme}`);
+          await sp.screenshot({ path: `${dir}/roundup-${locale}-${theme}.png`, fullPage: true });
+          await sp.screenshot({ path: `${dir}/roundup-${locale}-${theme}-top.png` });
+          await sp.goto(`${WEB}/table/?view=roundup&gw=11`);
+          await sp.locator('[data-testid=roundup][data-status=pending]').waitFor();
+          await sp.screenshot({ path: `${dir}/roundup-${locale}-${theme}-pending.png` });
+          await sp.goto(`${WEB}/table/?view=roundup&gw=9`);
+          await sp.locator('[data-testid=roundup][data-status=ready]').waitFor();
+          await sp.waitForTimeout(300);
+          await sp.screenshot({ path: `${dir}/roundup-${locale}-${theme}-gw9.png`, fullPage: true });
+          await c.close();
+        }
+    });
+  }
 }
 
 // ---------- main ----------

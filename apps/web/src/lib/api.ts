@@ -11,6 +11,7 @@ import {
   EntrySummarySchema,
   FixtureDetailSchema,
   FixtureSchema,
+  GameweekRoundupSchema,
   LeagueStandingsSchema,
   LeaguePositionSchema,
   LiveLeagueSchema,
@@ -64,6 +65,7 @@ import type {
   FplFixtureId,
   FplEntryId,
   Gameweek,
+  GameweekRoundup,
   LeagueStandings,
   LeaguePosition,
   LiveLeague,
@@ -352,6 +354,12 @@ export const api = {
     request('GET', '/v1/league/live', LiveLeagueSchema, { ...o, query: { page } }),
   captainBattle: (o: Signal = {}): Promise<CaptainBattle> =>
     request('GET', '/v1/captain-battle', CaptainBattleSchema, o),
+  /**
+   * Gameweek Roundup ("סיכום מחזור"). `event` omitted = the latest official GW. Public, but the `mine` captain row
+   * is added for a signed-in fan (the bearer token goes along as on every call).
+   */
+  leagueRoundup: (event?: Gameweek, o: Signal = {}): Promise<GameweekRoundup> =>
+    request('GET', '/v1/league/roundup', GameweekRoundupSchema, { ...o, query: { event } }),
 
   /** `filter` omitted = everything (the "All" chip). */
   news: (

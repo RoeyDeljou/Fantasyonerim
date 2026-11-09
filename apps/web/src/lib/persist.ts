@@ -17,6 +17,7 @@ import {
   EntrySummarySchema,
   FixtureDetailSchema,
   FixtureSchema,
+  GameweekRoundupSchema,
   LeagueStandingsSchema,
   LeaguePositionSchema,
   LiveLeagueSchema,
@@ -63,6 +64,9 @@ function kindOf(key: QueryKey): Kind | null {
     if (b === 'live' && c !== 'none') return { schema: EntryLiveSchema };
     return null;
   }
+  // ['league', 'roundup', viewer, event | 'latest']: per viewer (it carries their own captain), cleared on sign-out.
+  if (a === 'league' && b === 'roundup' && key.length === 4 && c !== 'pending')
+    return { schema: GameweekRoundupSchema };
   if (a === 'league' && key.length === 2) {
     if (b === 'standings') return { schema: LeagueStandingsSchema, infinite: true };
     if (b === 'live') return { schema: LiveLeagueSchema, infinite: true };

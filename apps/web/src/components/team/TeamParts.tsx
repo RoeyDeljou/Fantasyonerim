@@ -16,7 +16,8 @@ import { GameweekSchema } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import type { Messages } from '@/i18n';
 import type { FplIndex } from '@/lib/queries';
-import { ChevronEndIcon, ChevronStartIcon } from '../icons';
+import { ChevronDownIcon, ChevronEndIcon, ChevronStartIcon } from '../icons';
+import { neighbourEvents } from '@/lib/roundup';
 import { Badge, Card, IconButton, Ltr, Num, SectionTitle, Skeleton, cx } from '../ui';
 import { ChipIcon } from './ChipIcon';
 import { opponentText } from './fixtureText';
@@ -121,13 +122,21 @@ export function TeamHeaderSkeleton() {
 export function GwSelector({
   value,
   max,
+  events,
   chip,
+  selectLabel,
   onChange,
 }: {
   value: Gameweek;
   max: Gameweek;
+  /**
+   * The GWs that can be opened (any order). When given, the arrows step through this list and the GW name becomes
+   * a picker over it (`selectLabel` = its accessible name); otherwise every GW from 1 to `max`.
+   */
+  events?: readonly Gameweek[] | undefined;
   /** The chip played in the GW shown (marked next to the GW name). */
   chip?: Chip | null | undefined;
+  selectLabel?: string | undefined;
   onChange(gw: Gameweek): void;
 }) {
   const { t } = useI18n();
@@ -135,16 +144,42 @@ export function GwSelector({
     const parsed = GameweekSchema.safeParse(n);
     if (parsed.success && n <= max) onChange(parsed.data);
   };
+  const listed = events ? [...events].sort((a, b) => a - b) : null;
+  const { prev, next } = listed
+    ? neighbourEvents(listed, value)
+    : { prev: value > 1 ? value - 1 : null, next: value < max ? value + 1 : null };
+  const name = fmt(t.common.gw, { gw: value });
   return (
     <div className="flex items-center justify-between rounded-2xl border border-line bg-surface px-1 py-1">
-      <IconButton label={t.myTeam.prevGw} disabled={value <= 1} onClick={() => go(value - 1)}>
+      <IconButton label={t.myTeam.prevGw} disabled={prev === null} onClick={() => prev !== null && go(prev)}>
         <ChevronStartIcon />
       </IconButton>
-      <span className="flex items-center gap-2 text-base font-bold text-ink" aria-live="polite">
-        {fmt(t.common.gw, { gw: value })}
-        {chip && <ChipIcon chip={chip} gw={value} />}
-      </span>
-      <IconButton label={t.myTeam.nextGw} disabled={value >= max} onClick={() => go(value + 1)}>
+      {listed ? (
+        <span className="relative flex min-h-11 items-center gap-1 rounded-xl px-2 text-base font-bold text-ink hover:bg-surface-2">
+          <span aria-hidden="true">{name}</span>
+          <ChevronDownIcon size={16} aria-hidden="true" className="text-muted" />
+          {/* The native picker (best on phones) sits invisibly over the label: the whole label is the target. */}
+          <select
+            aria-label={selectLabel ?? name}
+            value={value}
+            onChange={(e) => go(Number(e.target.value))}
+            className="absolute inset-0 cursor-pointer appearance-none opacity-0"
+            data-testid="gw-select"
+          >
+            {[...listed].reverse().map((gw) => (
+              <option key={gw} value={gw}>
+                {fmt(t.common.gw, { gw })}
+              </option>
+            ))}
+          </select>
+        </span>
+      ) : (
+        <span className="flex items-center gap-2 text-base font-bold text-ink" aria-live="polite">
+          {name}
+          {chip && <ChipIcon chip={chip} gw={value} />}
+        </span>
+      )}
+      <IconButton label={t.myTeam.nextGw} disabled={next === null} onClick={() => next !== null && go(next)}>
         <ChevronEndIcon />
       </IconButton>
     </div>

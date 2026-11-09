@@ -29,6 +29,8 @@ import { ClockIcon, ShirtIcon, TableIcon } from '@/components/icons';
 import { FixtureSheet, ManagerSheet } from '@/components/lazySheets';
 import { ChipIcon } from '@/components/team/ChipIcon';
 import { BonusBadge } from '@/components/team/BonusBadge';
+import { CaptainCard, captainKindLabel } from '@/components/team/CaptainCard';
+import { rankCaptains } from '@/lib/roundup';
 import { fixtureScoreText, fixtureStatusText } from '@/components/team/fixtureText';
 import {
   Badge,
@@ -444,14 +446,12 @@ function CaptainBattleView({ index, interval }: { index: FplIndex; interval: num
   }
   const { event, updatedAt } = data;
   if (event === null || data.rows.length === 0) return <NoBattle />;
-  // Server sorts by captain points; keep rows whose captain is still unknown at the bottom.
-  const rows = [...data.rows].sort((a, b) => Number(a.playerId === null) - Number(b.playerId === null));
+  // Server sorts by captain points; rows whose captain is still unknown go to the bottom. Standard competition
+  // ranking: equal captain points share a rank (16, 16 → 1, 1; next is 3).
+  const ranked = rankCaptains(data.rows);
   const deadline = index.bootstrap.events.find((e) => e.id === event)?.deadlineTime;
   const beforeDeadline = deadline ? Date.parse(deadline) > Date.now() : false;
 
-  // Standard competition ranking: equal captain points share a rank (16, 16 → 1, 1; next is 3).
-  const known = rows.filter((r) => r.playerId !== null);
-  const rankOf = (r: CaptainBattleRow) => 1 + known.filter((o) => o.captainPoints > r.captainPoints).length;
   return (
     <div className="flex flex-col gap-3">
       <header>
@@ -462,11 +462,11 @@ function CaptainBattleView({ index, interval }: { index: FplIndex; interval: num
         </p>
       </header>
       <ol className="flex flex-col gap-2">
-        {rows.map((r) => (
+        {ranked.map(({ row: r, rank }) => (
           <CaptainRow
             key={r.key}
             row={r}
-            rank={r.playerId === null ? null : rankOf(r)}
+            rank={rank}
             index={index}
             event={event}
             isAdmin={isAdmin}
@@ -510,57 +510,20 @@ function CaptainRow({
   const { t, f } = useI18n();
   const player = row.playerId ? index.players.get(row.playerId) : undefined;
   const team = player ? index.teams.get(player.teamId) : undefined;
-  const mine = row.kind === 'mine';
-  const kindLabel =
-    row.kind === 'mine'
-      ? t.liveAction.mine
-      : row.kind === 'community'
-        ? t.liveAction.kindCommunity
-        : row.source === 'entry'
-          ? t.liveAction.linkedTeam
-          : t.liveAction.kindCustom;
   const live = row.live;
   const notPicked = row.playerId === null && row.source === 'player';
   return (
-    <li
-      className={cx(
-        'flex items-center gap-3 rounded-2xl border bg-surface p-3 shadow-card',
-        mine ? 'border-primary ring-2 ring-primary/30' : 'border-line',
-        row.playerId === null && 'opacity-80',
-      )}
-    >
-      <span
-        className={cx(
-          'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-extrabold',
-          rank === 1 ? 'bg-primary text-on-primary' : 'bg-surface-2 text-ink',
-        )}
-      >
-        {rank === null ? '·' : <Num value={rank} />}
-      </span>
-      <ImageWithFallback
-        src={player ? fplImage.photo(player.photoCode) : null}
-        name={player?.webName ?? '?'}
-        fallbackText={player ? undefined : '?'}
-        className="h-14 w-11 shrink-0 rounded-lg bg-surface-2 object-cover object-top"
-        fallbackClassName="size-11 text-sm"
-      />
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        {/* The label gets the full line (user-entered, any script); the kind badge sits above it. */}
-        <Badge tone={mine ? 'primary' : 'neutral'} className="self-start px-1.5 py-0 text-[10px]">
-          {kindLabel}
-        </Badge>
-        <span dir="auto" className="name-start min-w-0 truncate font-bold text-ink">
-          {row.label}
-        </span>
-        {player ? (
-          <span className="flex min-w-0 items-center gap-1 text-sm text-ink">
-            <span dir="auto" className="name-start truncate">
-              {player.webName}
-            </span>
-            {team && <span className="shrink-0 text-muted">· {team.shortName}</span>}
-            {row.multiplier === 3 && <ChipIcon chip="3xc" />}
-          </span>
-        ) : notPicked ? (
+    <CaptainCard
+      rank={rank}
+      player={player}
+      team={team}
+      kindLabel={captainKindLabel(t, row.kind, row.source)}
+      label={row.label}
+      mine={row.kind === 'mine'}
+      multiplier={row.multiplier}
+      points={row.playerId === null ? null : row.captainPoints}
+      fallback={
+        notPicked ? (
           // A hand-picked row the admin hasn't re-picked since FPL moved to this GW.
           <span className="flex min-w-0 flex-wrap items-center gap-x-2" data-testid="battle-not-picked">
             <span className="text-sm text-muted">{fmt(t.liveAction.notPickedYet, { event })}</span>
@@ -577,8 +540,10 @@ function CaptainRow({
           <span className="text-sm text-muted">
             {beforeDeadline ? t.liveAction.revealedAtDeadline : t.liveAction.unavailable}
           </span>
-        )}
-        {live && (
+        )
+      }
+      details={
+        live && (
           <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted">
             <span className={cx(live.fixtureStatus === 'live' && 'font-semibold text-live')}>
               {live.fixtureStatus === 'live' && <LiveDot className="me-1 align-middle" />}
@@ -590,18 +555,9 @@ function CaptainRow({
             <span>· {fmt(t.liveAction.base, { n: f.num(live.basePoints) })}</span>
             <BonusBadge n={live.bonus} confirmed={live.bonusConfirmed} />
           </span>
-        )}
-      </div>
-      <span className="flex shrink-0 flex-col items-center">
-        <span className="text-2xl leading-none font-extrabold text-primary">
-          {row.playerId === null ? '—' : <Num value={row.captainPoints} />}
-        </span>
-        <span className="mt-1 text-[10px] font-semibold text-muted">
-          {t.liveAction.captainPts}
-          {row.multiplier === 3 && <bdi dir="ltr"> ×3</bdi>}
-        </span>
-      </span>
-    </li>
+        )
+      }
+    />
   );
 }
 

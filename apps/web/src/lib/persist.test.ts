@@ -48,6 +48,11 @@ describe('query cache persistence', () => {
     expect(isPersistedKey(['admin', 'invites'])).toBe(false);
     expect(isPersistedKey(['community', 'post', 'p1'])).toBe(false);
     expect(isPersistedKey(['fpl', 'picks', 'none'])).toBe(false);
+    // Gameweek Roundup: per viewer and GW; never the placeholder key used before the viewer is known.
+    expect(isPersistedKey(['league', 'roundup', 'u1', 'latest'])).toBe(true);
+    expect(isPersistedKey(['league', 'roundup', 'guest', 10])).toBe(true);
+    expect(isPersistedKey(['league', 'roundup', 'pending', 'latest'])).toBe(false);
+    expect(isPersistedKey(['league', 'roundup'])).toBe(false);
   });
 
   it('keeps only the first page of an infinite feed and restores its `undefined` cursor', () => {
