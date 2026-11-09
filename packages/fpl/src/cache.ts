@@ -48,6 +48,7 @@ export interface TtlCacheOptions {
 export class TtlCache {
   private readonly store = new Map<string, Stored<unknown>>();
   private readonly inflight = new Map<string, Promise<unknown>>();
+  private readonly freshInflight = new Map<string, Promise<unknown>>();
   private readonly now: () => number;
   private readonly maxEntries: number;
   private readonly staleIfUnavailableMs: number;
@@ -67,6 +68,32 @@ export class TtlCache {
     const stored = this.store.get(key) as Stored<T> | undefined;
     if (stored && this.hit(key, stored, policy, load)) return Promise.resolve(stored.value);
     return this.load(key, policy, load, stored);
+  }
+
+  /**
+   * Always loads from the source: never answers from the store and never falls back to a stale value — a
+   * failure is thrown. A success replaces the stored value (so normal `get`s see it too). Concurrent `fresh`
+   * calls for one key share a load; they never join a normal `get`'s load (that one may answer stale).
+   */
+  fresh<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const pending = this.freshInflight.get(key) as Promise<T> | undefined;
+    if (pending) return pending;
+    const promise = (async (): Promise<T> => {
+      try {
+        const value = await load();
+        this.set(key, value);
+        return value;
+      } finally {
+        this.freshInflight.delete(key);
+      }
+    })();
+    this.freshInflight.set(key, promise);
+    return promise;
+  }
+
+  /** `fresh` when `isFresh`, else `get`. */
+  read<T>(key: string, policy: CachePolicy, load: () => Promise<T>, isFresh: boolean | undefined): Promise<T> {
+    return isFresh ? this.fresh(key, load) : this.get(key, policy, load);
   }
 
   /**

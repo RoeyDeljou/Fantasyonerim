@@ -21,7 +21,7 @@ permissions: {}
 jobs:
   tick:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Call /internal/jobs/tick
         env:
@@ -32,6 +32,7 @@ jobs:
             echo "API_URL / CRON_SECRET secrets not set yet — skipping."; exit 0
           fi
           BASE="${API_URL%/}" # tolerate a trailing slash in the secret
-          # A sleeping free-tier service can take ~60 s to wake: allow it.
-          curl --fail-with-body --silent --show-error --max-time 120 --retry 2 --retry-delay 10 \
+          # A sleeping free-tier service can take ~60 s to wake, and a GW Roundup back-fill run takes ~60 s more:
+          # allow both. Retries are safe (every job holds a lease).
+          curl --fail-with-body --silent --show-error --max-time 240 --retry 2 --retry-delay 10 \
             -X POST "$BASE/internal/jobs/tick" -H "x-cron-secret: $CRON_SECRET"
