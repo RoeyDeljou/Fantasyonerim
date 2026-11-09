@@ -26,6 +26,7 @@ import {
   NewsFiltersSchema,
   NewsPageSchema,
   PublicConfigSchema,
+  SeasonCaptainsSchema,
   StoriesSchema,
 } from '@fant/shared';
 
@@ -71,6 +72,7 @@ function kindOf(key: QueryKey): Kind | null {
     if (b === 'standings') return { schema: LeagueStandingsSchema, infinite: true };
     if (b === 'live') return { schema: LiveLeagueSchema, infinite: true };
     if (b === 'position') return { schema: LeaguePositionSchema };
+    if (b === 'season-captains') return { schema: SeasonCaptainsSchema };
     return null;
   }
   if (a === 'news' && key.length === 2) {

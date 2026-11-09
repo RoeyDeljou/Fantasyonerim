@@ -12,6 +12,7 @@ import {
   FixtureDetailSchema,
   FixtureSchema,
   GameweekRoundupSchema,
+  SeasonCaptainsSchema,
   LeagueStandingsSchema,
   LeaguePositionSchema,
   LiveLeagueSchema,
@@ -66,6 +67,7 @@ import type {
   FplEntryId,
   Gameweek,
   GameweekRoundup,
+  SeasonCaptains,
   LeagueStandings,
   LeaguePosition,
   LiveLeague,
@@ -360,6 +362,9 @@ export const api = {
    */
   leagueRoundup: (event?: Gameweek, o: Signal = {}): Promise<GameweekRoundup> =>
     request('GET', '/v1/league/roundup', GameweekRoundupSchema, { ...o, query: { event } }),
+  /** Season Captain Battle leaderboard ("קרב קפטנים עונתי"): public, total captain points over the season. */
+  leagueSeasonCaptains: (o: Signal = {}): Promise<SeasonCaptains> =>
+    request('GET', '/v1/league/season-captains', SeasonCaptainsSchema, o),
 
   /** `filter` omitted = everything (the "All" chip). */
   news: (

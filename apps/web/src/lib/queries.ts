@@ -82,6 +82,7 @@ export const qk = {
   liveLeague: ['league', 'live'] as const,
   leaguePosition: ['league', 'position'] as const,
   captainBattle: ['captain-battle'] as const,
+  seasonCaptains: ['league', 'season-captains'] as const,
   /**
    * Keyed by viewer too: the response carries the viewer's own captain (`captains[kind=mine]`), so one account's
    * copy must never be shown to another on a shared device (on top of the cache being cleared on sign-out).
@@ -430,6 +431,17 @@ export function useLeagueRoundup(event: Gameweek | null, enabled: boolean) {
     // An official GW's roundup doesn't change once built; pending / building ones are re-checked.
     staleTime: (q) => (q.state.data?.status === 'ready' ? 10 * 60_000 : 30_000),
     refetchInterval: (q) => roundupPoll(q.state.data),
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** Season Captain Battle: public (no viewer key), re-checked every minute while it is still being built. */
+export function useSeasonCaptains(enabled: boolean) {
+  return useQuery({
+    queryKey: qk.seasonCaptains,
+    queryFn: enabled ? ({ signal }) => api.leagueSeasonCaptains({ signal }) : skipToken,
+    staleTime: (q) => (q.state.data?.status === 'ready' ? 10 * 60_000 : 30_000),
+    refetchInterval: (q) => (q.state.data?.status === 'building' ? jittered(ROUNDUP_BUILDING_POLL_MS) : false),
     refetchIntervalInBackground: false,
   });
 }
