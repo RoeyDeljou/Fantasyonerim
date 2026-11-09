@@ -857,7 +857,7 @@ function BattleRowEditor({
       mine: t.liveAction.mine,
       community: t.liveAction.kindCommunity,
       linkedTeam: t.liveAction.linkedTeam,
-    }) ?? (r.kind === 'fpl_lad' ? t.admin.tagLogoOnly : t.admin.tagNone);
+    }) ?? (r.kind === 'fpl_lad' ? t.liveAction.fplLadAlt : '—');
   return (
     <li
       className="flex flex-col gap-2 rounded-xl border border-line bg-surface-2 p-3"
@@ -925,7 +925,6 @@ function BattleRowEditor({
       )}
       <TextField
         label={t.admin.tag}
-        hint={t.admin.tagHelp}
         maxLength={MAX_TAG_LENGTH}
         dir="auto"
         placeholder={fmt(t.admin.tagDefault, { tag: defaultTag })}

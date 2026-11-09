@@ -39,7 +39,7 @@ export function SeasonView() {
       <EmptyState
         icon={<Spinner className="size-8" />}
         title={t.season.buildingTitle}
-        body={t.season.buildingBody}
+        body={t.roundup.buildingBody}
         action={
           <Button variant="secondary" onClick={() => season.refetch()} disabled={season.isFetching}>
             <RefreshIcon size={18} />
@@ -52,7 +52,7 @@ export function SeasonView() {
   return (
     <div className="flex flex-col gap-3" data-testid="season-captains">
       <header>
-        <h1 className="text-xl font-extrabold text-ink">{t.season.title}</h1>
+        <h1 className="text-xl font-extrabold text-ink">{t.roundup.viewSeason}</h1>
         {data.throughEvent !== null && (
           <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted" data-testid="season-subtitle">
             <ClockIcon width={14} height={14} className="shrink-0" />
