@@ -431,7 +431,7 @@ export const api = {
       }).then((r) => r.items),
     ban: (id: UserId, reason: string): Promise<void> =>
       request('POST', `/v1/admin/users/${encodeURIComponent(id)}/ban`, noContent, { body: { reason } }),
-    /** Fix a user's sign-in email (null clears it). 204 or 200 — the body isn't used. 409 = taken. */
+    /** Fix a user's sign-in email (null clears it); returns the updated user. 409 = taken. */
     setUserEmail: (id: UserId, body: AdminUserEmailBody): Promise<AdminUser> =>
       request('PUT', `/v1/admin/users/${encodeURIComponent(id)}/email`, AdminUserSchema, { body }),
     unban: (id: UserId): Promise<void> =>
