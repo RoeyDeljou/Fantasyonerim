@@ -4,7 +4,6 @@ import {
   ApiErrorSchema,
   AuthResponseSchema,
   BootstrapSchema,
-  CaptainBattleConfigSchema,
   CaptainBattleSchema,
   EntryLiveSchema,
   EntryPicksSchema,
@@ -12,7 +11,6 @@ import {
   FixtureDetailSchema,
   FixtureSchema,
   GameweekRoundupSchema,
-  SeasonCaptainsSchema,
   LeagueStandingsSchema,
   LeaguePositionSchema,
   LiveLeagueSchema,
@@ -57,7 +55,6 @@ import type {
   AuthResponse,
   Bootstrap,
   CaptainBattle,
-  CaptainBattleConfig,
   EntryLive,
   EntryPicks,
   EntrySummary,
@@ -67,7 +64,6 @@ import type {
   FplEntryId,
   Gameweek,
   GameweekRoundup,
-  SeasonCaptains,
   LeagueStandings,
   LeaguePosition,
   LiveLeague,
@@ -172,7 +168,7 @@ function listOf<T>(item: Parser<T>): Parser<T[]> {
   };
 }
 
-function nullable<T>(item: Parser<T>): Parser<T | null> {
+export function nullable<T>(item: Parser<T>): Parser<T | null> {
   return { parse: (data) => (data === null ? null : item.parse(data)) };
 }
 
@@ -202,7 +198,7 @@ interface RequestOptions {
   credentialCheck?: boolean;
 }
 
-async function request<T>(
+export async function request<T>(
   method: string,
   path: string,
   parser: Parser<T>,
@@ -307,7 +303,7 @@ function statusToCode(status: number): ApiErrorCode {
   }
 }
 
-type Signal = { signal?: AbortSignal | undefined };
+export type Signal = { signal?: AbortSignal | undefined };
 
 /** The typed REST client. One function per route in docs/API.md. */
 export const api = {
@@ -362,10 +358,6 @@ export const api = {
    */
   leagueRoundup: (event?: Gameweek, o: Signal = {}): Promise<GameweekRoundup> =>
     request('GET', '/v1/league/roundup', GameweekRoundupSchema, { ...o, query: { event } }),
-  /** Season Captain Battle leaderboard ("קרב קפטנים עונתי"): public, total captain points over the season. */
-  leagueSeasonCaptains: (o: Signal = {}): Promise<SeasonCaptains> =>
-    request('GET', '/v1/league/season-captains', SeasonCaptainsSchema, o),
-
   /** `filter` omitted = everything (the "All" chip). */
   news: (
     cursor: string | undefined,
@@ -420,10 +412,6 @@ export const api = {
       request('GET', '/v1/admin/settings', AdminSettingsSchema, o),
     saveSettings: (body: AdminSettings): Promise<AdminSettings> =>
       request('PUT', '/v1/admin/settings', AdminSettingsSchema, { body }),
-    captainBattle: (o: Signal = {}): Promise<CaptainBattleConfig | null> =>
-      request('GET', '/v1/admin/captain-battle', nullable(CaptainBattleConfigSchema), o),
-    saveCaptainBattle: (body: CaptainBattleConfig): Promise<CaptainBattleConfig> =>
-      request('PUT', '/v1/admin/captain-battle', CaptainBattleConfigSchema, { body }),
     admins: (o: Signal = {}): Promise<AdminAccount[]> =>
       request('GET', '/v1/admin/admins', listOf(AdminAccountSchema), o),
     createAdmin: (body: CreateAdminBody): Promise<AdminAccount> =>

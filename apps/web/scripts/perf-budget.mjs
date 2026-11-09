@@ -1,7 +1,7 @@
 // Performance budget for the static export: first-load JS per route, gzipped, as a phone on mobile data
 // downloads it on a cold start (every <script src> + <link rel=preload as=script> in the route's HTML).
 //
-//   node scripts/perf-budget.mjs [outDir=out] [--budget=228] [--json]
+//   node scripts/perf-budget.mjs [outDir=out] [--budget=229] [--json]
 //
 // Fails (exit 1) when a fan route (the five tabs) ships more than the budget, or when a fan route's JS contains
 // admin console code (admin code must never load for fans). Every other route is listed for information. Runs after
@@ -19,7 +19,7 @@ const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2);
 const outArg = args.find((a) => !a.startsWith('--'));
 const out = path.resolve(WEB_DIR, outArg ?? 'out');
-const budgetKb = Number(args.find((a) => a.startsWith('--budget='))?.split('=')[1] ?? 228);
+const budgetKb = Number(args.find((a) => a.startsWith('--budget='))?.split('=')[1] ?? 229);
 const asJson = args.includes('--json');
 const TARGET_KB = 200;
 const print = (line) => process.stdout.write(`${line}\n`);

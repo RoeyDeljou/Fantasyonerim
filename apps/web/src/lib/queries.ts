@@ -15,7 +15,6 @@ import {
 import type {
   AdminSettings,
   Bootstrap,
-  CaptainBattleConfig,
   Fixture,
   FplFixtureId,
   FplEntryId,
@@ -435,18 +434,6 @@ export function useLeagueRoundup(event: Gameweek | null, enabled: boolean) {
   });
 }
 
-/** Season Captain Battle: public (no viewer key), re-checked every minute while it is still being built. */
-export function useSeasonCaptains(enabled: boolean) {
-  return useQuery({
-    queryKey: qk.seasonCaptains,
-    queryFn: enabled ? ({ signal }) => api.leagueSeasonCaptains({ signal }) : skipToken,
-    staleTime: (q) => (q.state.data?.status === 'ready' ? 10 * 60_000 : 30_000),
-    refetchInterval: (q) =>
-      q.state.data?.status === 'building' ? jittered(ROUNDUP_BUILDING_POLL_MS) : false,
-    refetchIntervalInBackground: false,
-  });
-}
-
 // ---------- me ----------
 
 export function useMe(enabled = true) {
@@ -481,26 +468,6 @@ export function useSaveAdminSettings() {
       qc.setQueryData(qk.adminSettings, s);
       void qc.invalidateQueries({ queryKey: qk.config });
       void qc.invalidateQueries({ queryKey: ['league'] });
-    },
-  });
-}
-
-export function useAdminCaptainBattle(enabled: boolean) {
-  return useQuery({
-    queryKey: qk.adminCaptainBattle,
-    queryFn: ({ signal }) => api.admin.captainBattle({ signal }),
-    enabled,
-  });
-}
-
-export function useSaveAdminCaptainBattle() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (body: CaptainBattleConfig) => api.admin.saveCaptainBattle(body),
-    onSuccess: (c) => {
-      qc.setQueryData(qk.adminCaptainBattle, c);
-      void qc.invalidateQueries({ queryKey: qk.captainBattle });
-      void qc.invalidateQueries({ queryKey: qk.config });
     },
   });
 }

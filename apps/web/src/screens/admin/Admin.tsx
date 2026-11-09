@@ -32,14 +32,12 @@ import { fmt, plural, useI18n } from '@/i18n';
 import type { Messages } from '@/i18n';
 import { isApiError } from '@/lib/api';
 import {
-  useAdminCaptainBattle,
   useAdminSettings,
   useAdmins,
   useConfig,
   useCreateAdmin,
   useEntry,
   useFplIndex,
-  useSaveAdminCaptainBattle,
   useSaveAdminSettings,
 } from '@/lib/queries';
 import type { FplIndex } from '@/lib/queries';
@@ -75,6 +73,7 @@ import {
   cx,
   errorMessage,
 } from '@/components/ui';
+import { useAdminCaptainBattle, useSaveAdminCaptainBattle } from '@/lib/adminCaptainBattle';
 import { CLIENT_HOSTS } from '@/lib/clientConfig';
 import {
   MAX_TAG_LENGTH,

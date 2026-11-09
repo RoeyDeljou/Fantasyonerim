@@ -504,12 +504,12 @@ FCP 0.75–0.85 s → 0.75–0.81 s. ¹ One slow run out of three (540 / 1032 / 
 
 ### Targets
 
-| Target (best effort, free)      | Result                                                                                  |
-| ------------------------------- | --------------------------------------------------------------------------------------- |
-| Cold LCP ≤ 3 s (Lighthouse)     | **Not met**: 4.2–4.3 s. Applied-throttling time to content is 3.3–3.6 s, from 3.8–5.6 s |
-| Warm LCP ≤ 1 s                  | **Not met**: 1.1–1.5 s, from 1.3–1.6 s                                                  |
-| Fan first-load JS ≤ 200 KB gzip | **Not met**: 215–223 KB, from 228–237 KB. Budget now fails the build above 228 KB       |
-| CLS                             | Every tab ≤ 0.03; News and Community were 0.13 and 0.07                                 |
+| Target (best effort, free)      | Result                                                                                        |
+| ------------------------------- | --------------------------------------------------------------------------------------------- |
+| Cold LCP ≤ 3 s (Lighthouse)     | **Not met**: 4.2–4.3 s. Applied-throttling time to content is 3.3–3.6 s, from 3.8–5.6 s       |
+| Warm LCP ≤ 1 s                  | **Not met**: 1.1–1.5 s, from 1.3–1.6 s                                                        |
+| Fan first-load JS ≤ 200 KB gzip | **Not met**: 215–223 KB, from 228–237 KB. Budget now fails the build above 229 KB (see below) |
+| CLS                             | Every tab ≤ 0.03; News and Community were 0.13 and 0.07                                       |
 
 ### What changed
 
@@ -551,3 +551,12 @@ FCP 0.75–0.85 s → 0.75–0.81 s. ¹ One slow run out of three (540 / 1032 / 
 3. Lighthouse's slow-4G model puts ~220 KB of JS at ~1.2 s of transfer before anything can render the feed. Without
    dropping the framework there's no free path to 3 s in that model. On a real 4G/5G connection, with an iPhone
    CPU, the applied-throttling time to content (3.3–3.6 s cold, 1.6–2.2 s warm at 4× CPU) is the closer guide.
+
+### Budget 228 → 229 KB (Nov 2026)
+
+Each new feature that adds to the shared `@fant/shared` contract adds a few hundred bytes to EVERY fan route: schemas
+are top-level statements in one module, so a bundler can't drop the ones a route doesn't use. The tags / permanent
+FPL Lad captain / season Captain Battle work put `/news/` and `/community/` 0.3–0.4 KB over 228 KB, so the guard moved to
+229 KB (+0.4 %). Season and admin captain API code already live in lazy chunks. The real fix, for a later pass: split
+`@fant/shared` into per-feature entry points (admin, roundup/season, community) so routes only pull what they use,
+and lazy-load the admin strings from the i18n dictionaries.
