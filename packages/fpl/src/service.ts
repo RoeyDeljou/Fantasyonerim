@@ -37,7 +37,11 @@ export interface FplService {
   getFixtures(event?: Gameweek): Promise<Fixture[]>;
   /** Throws FplNotFoundError when the Team ID doesn't exist. */
   getEntry(entryId: FplEntryId): Promise<EntrySummary>;
-  /** `fresh` also re-reads the history used for `chipsUsed`. */
+  /**
+   * `fresh` re-fetches ONLY the picks endpoint (one request). `chipsUsed` comes from the normally cached
+   * history (a hit right after a fresh `getEntryHistory`); the picks themselves — multipliers, captaincy,
+   * `activeChip`, entry_history numbers — never depend on it.
+   */
   getEntryPicks(entryId: FplEntryId, event: Gameweek, options?: FplReadOptions): Promise<EntryPicks>;
   /** Live GW points with auto-subs, vice-captain promotion and provisional bonus applied. */
   getEntryLive(entryId: FplEntryId, event: Gameweek): Promise<EntryLive>;

@@ -147,7 +147,7 @@ describe('fresh reads', () => {
     expect(count('event/10/live/')).toBe(2);
     expect(count('leagues-classic/4611/standings/?page_standings=1')).toBe(4); // info + page 1, ×2
     expect(count(`entry/${ID}/event/10/picks/`)).toBe(2);
-    expect(count(`entry/${ID}/history/`)).toBe(2); // getEntryPicks re-reads the history too
+    expect(count(`entry/${ID}/history/`)).toBe(1); // getEntryPicks' chipsUsed: the cached history only
   });
 
   it('fresh never serves stale data on a 503; normal reads still do; the backoff applies to fresh', async () => {
@@ -193,5 +193,72 @@ describe('fresh reads', () => {
     );
     expect(count('entry/42/event/10/picks/')).toBe(2);
     expect(state.calls.length).toBeGreaterThan(0);
+  });
+});
+
+describe('fresh reads: request budget (roundup job)', () => {
+  function multiGw() {
+    const calls: string[] = [];
+    let down = false;
+    const fetch = createReplayFetch(
+      (path) => {
+        if (path === 'bootstrap-static/') {
+          const events = [8, 9, 10].map((id) => ({
+            ...REAL.bootstrapEvents[0],
+            id,
+            name: `Gameweek ${id}`,
+            finished: true,
+            data_checked: true,
+            is_current: id === 10,
+            is_next: false,
+          }));
+          return { events, teams: [], elements: [] };
+        }
+        if (path === 'event/10/live/') return REAL.live;
+        if (path === `entry/${ID}/history/`)
+          return (REAL.detail as Record<string, { history: unknown }>)[String(ID)]?.history;
+        const m = new RegExp(`^entry/${ID}/event/(8|9|10)/picks/$`).exec(path);
+        if (m) return down ? replayStatus(503) : finalPicks;
+        return undefined;
+      },
+      { onRequest: (k) => calls.push(k) },
+    );
+    const service = createFplService({ fetch, now: () => Date.parse('2026-11-09T12:00:00Z') });
+    return { service, calls, setDown: (v: boolean) => (down = v) };
+  }
+
+  it('fresh history + fresh picks for 3 GWs = exactly 1 + 3 FPL requests', async () => {
+    const { service, calls } = multiGw();
+    await service.getBootstrap({ fresh: true }); // the job confirms the GW is official first
+    calls.length = 0;
+    await req(service.getEntryHistory)(entry, { fresh: true });
+    for (const n of [8, 9, 10]) {
+      const picks = await service.getEntryPicks(entry, GameweekSchema.parse(n), { fresh: true });
+      expect(armband(picks)).toEqual([0, 2]);
+    }
+    expect(calls).toEqual([
+      `entry/${ID}/history/`,
+      `entry/${ID}/event/8/picks/`,
+      `entry/${ID}/event/9/picks/`,
+      `entry/${ID}/event/10/picks/`,
+    ]);
+  });
+
+  it('fresh event points = 1 request', async () => {
+    const { service, calls } = multiGw();
+    await req(service.getEventPoints)(gw10, { fresh: true });
+    expect(calls).toEqual(['event/10/live/']);
+  });
+
+  it('fresh picks still throw on a 503 of the picks endpoint (history cached and healthy)', async () => {
+    const { service, calls, setDown } = multiGw();
+    await service.getEntryPicks(entry, gw10); // warm picks + history
+    setDown(true);
+    calls.length = 0;
+    await expect(service.getEntryPicks(entry, gw10, { fresh: true })).rejects.toMatchObject({
+      name: 'FplUnavailableError',
+      status: 503,
+    });
+    expect(calls).toEqual([`entry/${ID}/event/10/picks/`]);
   });
 });

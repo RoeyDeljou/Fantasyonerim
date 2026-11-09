@@ -73,6 +73,11 @@ fresh read always goes to FPL:
   which fresh reads also respect) and `FplNotFoundError` (a fresh read skips the remembered-404 shortcut).
 - A success replaces the cached value, so later normal reads see it.
 - Concurrent fresh reads of the same path share one request.
+- A fresh `getEntryPicks` fetches only the picks endpoint, so it costs one request. Its `chipsUsed` comes from the
+  normally cached history, which is a cache hit right after the job's fresh `getEntryHistory`. The picks' own data
+  (multipliers, captain and vice, `activeChip`, the GW's points) comes only from the fresh picks response.
+- Request budget per member for a run covering G GWs: 1 history + 1 transfers + G picks. The run also costs
+  1 bootstrap, 1 event-points request per GW, and the standings pages.
 
 The roundup job stores its result permanently, so it must pass `{ fresh: true }` on every read for the GW it
 builds: bootstrap, league info and standings pages (membership), and each member's history, transfers and picks,
