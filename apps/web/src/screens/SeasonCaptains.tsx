@@ -299,7 +299,7 @@ function SeasonSummary({
                 onClick={() => onJump(row.key)}
                 className="grid min-h-11 w-full grid-cols-[2.75rem_minmax(0,1fr)_auto_3.5rem] items-center gap-2 rounded-xl border-s-4 border-star-edge bg-star-soft px-2 text-start"
               >
-                <span className="font-extrabold text-ink">
+                <span dir="ltr" className="text-start font-extrabold text-ink">
                   #<Num value={row.rank} />
                 </span>
                 <span dir="auto" className="name-start min-w-0 truncate text-sm font-semibold text-ink">

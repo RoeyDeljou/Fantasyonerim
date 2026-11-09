@@ -4269,11 +4269,13 @@ async function seasonJourneys(browser, userPage) {
     const meRow = body.rows.find((r) => r.entryId === me);
     const summary = p.getByTestId('season-summary');
     await summary.getByRole('heading', { name: 'איפה אתם מול הכוכבים' }).waitFor();
-    const mine = await p.getByTestId('season-me').innerText();
+    const mine = (await p.getByTestId('season-me').innerText()).replace(/[\u2066-\u2069]/g, '');
     assert(mine.includes(`מקום ${meRow.rank}`) && mine.includes(String(meRow.points)), `my line: ${mine}`);
     const lines = p.getByTestId('season-star');
     assert((await lines.count()) === 4, 'four star lines');
-    const text = (await lines.allInnerTexts()).map((t) => t.replace(/\s+/g, ' '));
+    const text = (await lines.allInnerTexts()).map((t) =>
+      t.replace(/[\u2066-\u2069]/g, '').replace(/\s+/g, ' '),
+    );
     const names = ['קפטן הקהילה', 'הקפטן של FPL Lad', 'דור דבוש', 'איתי טבקה'];
     names.forEach((n, i) => assert(text[i].includes(n), `line ${i} names ${n}: ${text[i]}`));
     const ranksOrdered = body.rows.filter((r) => r.kind !== 'manager' || r.host).map((r) => r.rank);
