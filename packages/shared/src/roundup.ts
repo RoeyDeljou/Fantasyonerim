@@ -143,6 +143,10 @@ export type GameweekRoundup = z.infer<typeof GameweekRoundupSchema>;
 
 // ---------- season captain battle ----------
 
+/** The podcast hosts: their own teams are highlighted on the season leaderboard. */
+export const SeasonHostSchema = z.enum(['dor', 'itay']);
+export type SeasonHost = z.infer<typeof SeasonHostSchema>;
+
 /**
  * One row of the season Captain Battle leaderboard ("קרב קפטנים עונתי"): total captain points over every official GW
  * so far (captain base points × the armband multiplier), NOT the number of GW wins. League members rank next to the
@@ -160,6 +164,8 @@ export const SeasonCaptainRowSchema = z.object({
   subtitle: z.nullable(z.string()),
   /** Admin-chosen badge text of a special captain; null otherwise (the client uses its default). */
   tag: z.nullable(z.string()),
+  /** Dor's / Itay's own team (a 'manager' row) — highlighted by the client; null for everyone else. */
+  host: z._default(z.nullable(SeasonHostSchema), null),
   /** Competition ranking: equal points share a rank (1, 2, 2, 4). */
   rank: int(),
   points: int(),

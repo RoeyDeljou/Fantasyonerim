@@ -5,3 +5,4 @@ export * from './news.js';
 export * from './community.js';
 export * from './broadcast.js';
 export * from './roundup.js';
+export * from './clientHosts.js';
