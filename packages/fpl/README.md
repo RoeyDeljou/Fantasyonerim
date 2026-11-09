@@ -58,5 +58,35 @@ roundup. Mark the GW `building` and retry after `getHealth().retryAt`. A member 
 (`FplNotFoundError`) can be passed as `history: null` / `picks: null`; the builder leaves them out, or leaves that
 data blank.
 
-Build only once the GW is `finished && dataChecked`. A history fetched just before the flag flipped can be cached
-for up to 5 minutes. To be safe, build (or rebuild once) at least `FPL_CACHE_TTL.history` after the flip.
+Build only once the GW is `finished && dataChecked`, and confirm it with `getBootstrap({ fresh: true })`.
+
+### `fresh` reads: required for every roundup read
+
+`getBootstrap`, `getEntryHistory`, `getEntryTransfers`, `getEntryPicks`, `getEventPoints`, `getLeagueStandings`
+and `getLeagueInfo` accept a final `{ fresh: true }` option (it's optional, so existing callers are unchanged). A
+fresh read always goes to FPL:
+
+- It never answers from the cache.
+- It never falls back to stale data (normal reads serve the last good value for up to 1 h, or 12 h during FPL's
+  update window).
+- Failures throw: `FplUnavailableError` (503 / 429 / network, or kind `backoff` while the shared circuit is open,
+  which fresh reads also respect) and `FplNotFoundError` (a fresh read skips the remembered-404 shortcut).
+- A success replaces the cached value, so later normal reads see it.
+- Concurrent fresh reads of the same path share one request.
+
+The roundup job stores its result permanently, so it must pass `{ fresh: true }` on every read for the GW it
+builds: bootstrap, league info and standings pages (membership), and each member's history, transfers and picks,
+plus the GW's event points. Otherwise a 503 could quietly freeze old data into the roundup.
+
+### Picks cache and official GWs
+
+FPL rewrites a GW's picks after the GW (auto-subs, vice promotion). Picks are therefore cached under a separate
+key once bootstrap shows the GW as `finished && dataChecked`:
+
+- Copies fetched while the GW was in progress are never served as the final picks. That includes the 12 h copy
+  the live engine keeps.
+- Before the GW is official, `getEntryPicks` uses the 1-minute `picksSummary` TTL.
+- After it is official, the final picks are cached for 12 h.
+
+Normal reads therefore converge within the bootstrap TTL (5 min) after the GW becomes official. Fresh reads get
+the final picks at once.

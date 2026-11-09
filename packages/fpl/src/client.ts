@@ -70,7 +70,13 @@ import {
   type RawLive,
   type RawPicks,
 } from './raw.js';
-import { FplNotFoundError, FplUnavailableError, type FplService, type FplServiceOptions } from './service.js';
+import {
+  FplNotFoundError,
+  FplUnavailableError,
+  type FplReadOptions,
+  type FplService,
+  type FplServiceOptions,
+} from './service.js';
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -272,18 +278,29 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
 
   // ---------- loaders: Zod-parse + normalize once per fetch ----------
 
-  const bootstrap = (): Promise<BootstrapBundle> =>
-    shared.get('bootstrap', policy('bootstrap'), async () => {
-      const raw = await getJson('bootstrap-static/', RawBootstrapSchema);
-      const dto = mapBootstrap(raw, now());
-      return {
-        dto,
-        players: enginePlayersOf(dto),
-        currentEvent: dto.currentEvent,
-        eventsById: new Map(dto.events.map((e) => [e.id as number, e])),
-        teamOfPlayer: new Map(raw.elements.map((e) => [e.id, e.team])),
-      };
-    });
+  const bootstrap = (fresh?: boolean): Promise<BootstrapBundle> =>
+    shared.read(
+      'bootstrap',
+      policy('bootstrap'),
+      async () => {
+        const raw = await getJson('bootstrap-static/', RawBootstrapSchema);
+        const dto = mapBootstrap(raw, now());
+        return {
+          dto,
+          players: enginePlayersOf(dto),
+          currentEvent: dto.currentEvent,
+          eventsById: new Map(dto.events.map((e) => [e.id as number, e])),
+          teamOfPlayer: new Map(raw.elements.map((e) => [e.id, e.team])),
+        };
+      },
+      fresh,
+    );
+
+  /** FPL has finished AND data-checked the GW: its picks / history rows are final from now on. */
+  const isOfficial = (b: BootstrapBundle, event: number): boolean => {
+    const info = b.eventsById.get(event);
+    return info !== undefined && info.finished && info.dataChecked;
+  };
 
   const fixturesFor = (event?: number): Promise<FixturesBundle> => {
     const path = event === undefined ? 'fixtures/' : `fixtures/?event=${event}`;
@@ -299,12 +316,17 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
     });
   };
 
-  const liveFor = (event: number): Promise<LiveBundle> => {
+  const liveFor = (event: number, fresh?: boolean): Promise<LiveBundle> => {
     const path = `event/${event}/live/`;
-    return shared.get(path, policy('live'), async () => {
-      const raw = await getJson(path, RawLiveSchema);
-      return { raw, engine: engineLiveOf(raw), lines: lazy(() => fixtureLinesOf(raw)), fetchedAt: now() };
-    });
+    return shared.read(
+      path,
+      policy('live'),
+      async () => {
+        const raw = await getJson(path, RawLiveSchema);
+        return { raw, engine: engineLiveOf(raw), lines: lazy(() => fixtureLinesOf(raw)), fetchedAt: now() };
+      },
+      fresh,
+    );
   };
 
   /** Bumped whenever a picks response is (re)loaded: invalidates memoized live league pages. */
@@ -323,39 +345,64 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
     };
   };
   const picksPath = (entryId: number, event: number) => `entry/${entryId}/event/${event}/picks/`;
+  /**
+   * Picks are cached under a different key once the GW is official (finished + data-checked). FPL rewrites a
+   * GW's picks when it processes auto-subs and the vice's promotion, so a copy fetched while the GW was in
+   * progress (which the live engine keeps for 12 h) must never be served as the final picks.
+   */
+  const picksKey = (path: string, official: boolean) => (official ? `${path}#official` : path);
   const recentlyNotFound = (path: string): boolean => {
     const missedAt = picksNotFoundAt.get(path);
     return missedAt !== undefined && now() - missedAt < PICKS_NOT_FOUND_TTL;
   };
-  const picksFor = async (entryId: number, event: number, p: CachePolicy): Promise<PicksBundle> => {
+  const picksFor = async (
+    entryId: number,
+    event: number,
+    p: CachePolicy,
+    official: boolean,
+    fresh?: boolean,
+  ): Promise<PicksBundle> => {
     const path = picksPath(entryId, event);
-    if (recentlyNotFound(path)) throw new FplNotFoundError(path);
+    if (!fresh && recentlyNotFound(path)) throw new FplNotFoundError(path);
     try {
-      return await picksCache.get(path, p, loadPicks(path));
+      return await picksCache.read(picksKey(path, official), p, loadPicks(path), fresh);
     } catch (err) {
       if (err instanceof FplNotFoundError) picksNotFoundAt.set(path, now());
       throw err;
     }
   };
   /** Sync fast path: a fresh cached bundle, `null` for a remembered 404, `undefined` → use picksFor. */
-  const peekPicks = (entryId: number, event: number, p: CachePolicy): PicksBundle | null | undefined => {
+  const peekPicks = (
+    entryId: number,
+    event: number,
+    p: CachePolicy,
+    official: boolean,
+  ): PicksBundle | null | undefined => {
     const path = picksPath(entryId, event);
     if (recentlyNotFound(path)) return null;
-    return picksCache.peek(path, p, loadPicks(path));
+    return picksCache.peek(picksKey(path, official), p, loadPicks(path));
   };
 
-  const historyFor = (entryId: number): Promise<HistoryBundle> => {
+  const historyFor = (entryId: number, fresh?: boolean): Promise<HistoryBundle> => {
     const path = `entry/${entryId}/history/`;
-    return historyCache.get(path, policy('history'), async () => {
-      const raw = await getJson(path, RawEntryHistorySchema);
-      return { chipsUsed: chipsUsedOf(raw), dto: mapEntryHistory(entryId, raw) };
-    });
+    return historyCache.read(
+      path,
+      policy('history'),
+      async () => {
+        const raw = await getJson(path, RawEntryHistorySchema);
+        return { chipsUsed: chipsUsedOf(raw), dto: mapEntryHistory(entryId, raw) };
+      },
+      fresh,
+    );
   };
 
-  const transfersFor = (entryId: number): Promise<EntryTransfer[]> => {
+  const transfersFor = (entryId: number, fresh?: boolean): Promise<EntryTransfer[]> => {
     const path = `entry/${entryId}/transfers/`;
-    return transfersCache.get(path, policy('transfers'), async () =>
-      mapTransfers(await getJson(path, RawTransfersSchema)),
+    return transfersCache.read(
+      path,
+      policy('transfers'),
+      async () => mapTransfers(await getJson(path, RawTransfersSchema)),
+      fresh,
     );
   };
 
@@ -367,23 +414,29 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
     leagueId: number,
     page: number,
     newEntriesPage: number,
+    fresh?: boolean,
   ): Promise<StandingsBundle> => {
     const query =
       newEntriesPage === 1
         ? `page_standings=${page}`
         : `page_new_entries=${newEntriesPage}&page_standings=${page}`;
     const path = `leagues-classic/${leagueId}/standings/?${query}`;
-    return shared.get(path, policy('standings'), async () => {
-      const raw = await getJson(path, RawStandingsSchema);
-      return {
-        dto: mapStandings(raw, page, now()),
-        league: mapLeagueInfo(raw),
-        newEntries: mapNewEntries(raw),
-      };
-    });
+    return shared.read(
+      path,
+      policy('standings'),
+      async () => {
+        const raw = await getJson(path, RawStandingsSchema);
+        return {
+          dto: mapStandings(raw, page, now()),
+          league: mapLeagueInfo(raw),
+          newEntries: mapNewEntries(raw),
+        };
+      },
+      fresh,
+    );
   };
-  const standingsFor = async (leagueId: number, page: number): Promise<LeagueStandings> =>
-    (await standingsPage(leagueId, page, 1)).dto;
+  const standingsFor = async (leagueId: number, page: number, fresh?: boolean): Promise<LeagueStandings> =>
+    (await standingsPage(leagueId, page, 1, fresh)).dto;
 
   const newEntriesInflight = new Map<number, Promise<FplEntryId[]>>();
   const leagueNewEntries = async (leagueId: number): Promise<FplEntryId[]> => {
@@ -525,6 +578,7 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
     let complete = true;
     type Row = LeagueStandings['rows'][number];
     const immutable = policy('picksImmutable');
+    const official = isOfficial(gw.bootstrap, event);
     const base = (row: Row) => ({
       officialRank: row.rank,
       entryId: row.entryId,
@@ -559,14 +613,14 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
     const rows: ReturnType<typeof scored>[] = new Array(standings.rows.length);
     const misses: number[] = [];
     standings.rows.forEach((row, i) => {
-      const picks = peekPicks(row.entryId, event, immutable);
+      const picks = peekPicks(row.entryId, event, immutable, official);
       if (picks === undefined) misses.push(i);
       else rows[i] = picks === null ? fallback(row, true) : scored(row, picks);
     });
     await mapWithConcurrency(misses, LIVE_LEAGUE_CONCURRENCY, async (i) => {
       const row = standings.rows[i] as Row;
       try {
-        rows[i] = scored(row, await picksFor(row.entryId, event, immutable));
+        rows[i] = scored(row, await picksFor(row.entryId, event, immutable, official));
       } catch (err) {
         if (!(err instanceof FplNotFoundError) && !(err instanceof FplUnavailableError)) throw err;
         const notFound = err instanceof FplNotFoundError;
@@ -596,8 +650,8 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
   };
 
   const service: FplService = {
-    async getBootstrap(): Promise<Bootstrap> {
-      return (await bootstrap()).dto;
+    async getBootstrap(options?: FplReadOptions): Promise<Bootstrap> {
+      return (await bootstrap(options?.fresh)).dto;
     },
 
     async getFixtures(event?: Gameweek): Promise<Fixture[]> {
@@ -610,12 +664,16 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
       return entryCache.get(path, policy('entry'), async () => mapEntry(await getJson(path, RawEntrySchema)));
     },
 
-    async getEntryPicks(entryId: FplEntryId, event: Gameweek): Promise<EntryPicks> {
-      const b = await bootstrap();
-      const info = b.eventsById.get(event);
-      // A finished + data-checked GW is final: its entry_history no longer moves either.
-      const p = info?.finished && info.dataChecked ? policy('picksImmutable') : policy('picksSummary');
-      const [picks, history] = await Promise.all([picksFor(entryId, event, p), historyFor(entryId)]);
+    async getEntryPicks(entryId: FplEntryId, event: Gameweek, options?: FplReadOptions): Promise<EntryPicks> {
+      const fresh = options?.fresh;
+      const official = isOfficial(await bootstrap(), event);
+      // A finished + data-checked GW is final: its picks and entry_history no longer move. Before that,
+      // entry_history moves and FPL still rewrites the multipliers (auto-subs, vice), so: short TTL.
+      const p = official ? policy('picksImmutable') : policy('picksSummary');
+      const [picks, history] = await Promise.all([
+        picksFor(entryId, event, p, official, fresh),
+        historyFor(entryId, fresh),
+      ]);
       const memo = picksDtos.get(picks);
       if (memo && memo.history === history) return memo.dto;
       const dto = mapPicks(entryId, event, picks.raw, history.chipsUsed);
@@ -624,15 +682,20 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
     },
 
     async getEntryLive(entryId: FplEntryId, event: Gameweek): Promise<EntryLive> {
+      const official = isOfficial(await bootstrap(), event);
       const [gw, picks] = await Promise.all([
         gameweek(event),
-        picksFor(entryId, event, policy('picksImmutable')),
+        picksFor(entryId, event, policy('picksImmutable'), official),
       ]);
       return entryResult(entryId, event, gw, picks, true).dto as EntryLive;
     },
 
-    async getLeagueStandings(leagueId: FplLeagueId, page: number): Promise<LeagueStandings> {
-      return standingsFor(leagueId, Math.max(1, Math.trunc(page)));
+    async getLeagueStandings(
+      leagueId: FplLeagueId,
+      page: number,
+      options?: FplReadOptions,
+    ): Promise<LeagueStandings> {
+      return standingsFor(leagueId, Math.max(1, Math.trunc(page)), options?.fresh);
     },
 
     /**
@@ -719,16 +782,16 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
       });
     },
 
-    async getEntryHistory(entryId: FplEntryId): Promise<EntryHistory> {
-      return (await historyFor(entryId)).dto;
+    async getEntryHistory(entryId: FplEntryId, options?: FplReadOptions): Promise<EntryHistory> {
+      return (await historyFor(entryId, options?.fresh)).dto;
     },
 
-    getEntryTransfers(entryId: FplEntryId): Promise<EntryTransfer[]> {
-      return transfersFor(entryId);
+    getEntryTransfers(entryId: FplEntryId, options?: FplReadOptions): Promise<EntryTransfer[]> {
+      return transfersFor(entryId, options?.fresh);
     },
 
-    async getEventPoints(event: Gameweek): Promise<EventPoints> {
-      const live = await liveFor(event);
+    async getEventPoints(event: Gameweek, options?: FplReadOptions): Promise<EventPoints> {
+      const live = await liveFor(event, options?.fresh);
       let points = eventPointsMemo.get(live);
       if (!points) {
         points = eventPointsOf(live.raw);
@@ -737,8 +800,8 @@ export function createFplService(options: FplServiceOptions & CreateFplServiceEx
       return points;
     },
 
-    async getLeagueInfo(leagueId: FplLeagueId): Promise<LeagueInfo> {
-      return (await standingsPage(leagueId, 1, 1)).league;
+    async getLeagueInfo(leagueId: FplLeagueId, options?: FplReadOptions): Promise<LeagueInfo> {
+      return (await standingsPage(leagueId, 1, 1, options?.fresh)).league;
     },
 
     async getFixtureDetail(fixtureId: FplFixtureId): Promise<FixtureDetail> {

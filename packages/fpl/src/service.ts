@@ -22,16 +22,26 @@ import type { EntryHistory, EntryTransfer, EventPoints, LeagueInfo } from './dto
  * Implemented by `createFplService` (live HTTP + TTL cache) and by test fakes. apps/api depends on
  * this interface only — never on raw FPL response shapes.
  */
+/**
+ * Per-read options. `fresh: true` = always ask FPL: never answer from the cache and never fall back to stale
+ * data — failures throw (`FplUnavailableError`, `FplNotFoundError`), the shared backoff still applies, and a
+ * success refreshes the cache. Use it for anything that is stored permanently (the Gameweek Roundup).
+ */
+export interface FplReadOptions {
+  fresh?: boolean;
+}
+
 export interface FplService {
-  getBootstrap(): Promise<Bootstrap>;
+  getBootstrap(options?: FplReadOptions): Promise<Bootstrap>;
   /** All fixtures of a GW (or the whole season when `event` is omitted), with live scores. */
   getFixtures(event?: Gameweek): Promise<Fixture[]>;
   /** Throws FplNotFoundError when the Team ID doesn't exist. */
   getEntry(entryId: FplEntryId): Promise<EntrySummary>;
-  getEntryPicks(entryId: FplEntryId, event: Gameweek): Promise<EntryPicks>;
+  /** `fresh` also re-reads the history used for `chipsUsed`. */
+  getEntryPicks(entryId: FplEntryId, event: Gameweek, options?: FplReadOptions): Promise<EntryPicks>;
   /** Live GW points with auto-subs, vice-captain promotion and provisional bonus applied. */
   getEntryLive(entryId: FplEntryId, event: Gameweek): Promise<EntryLive>;
-  getLeagueStandings(leagueId: FplLeagueId, page: number): Promise<LeagueStandings>;
+  getLeagueStandings(leagueId: FplLeagueId, page: number, options?: FplReadOptions): Promise<LeagueStandings>;
   /** Live table for one standings page (50 managers): each manager's live GW points, re-ranked. */
   getLiveLeague(leagueId: FplLeagueId, event: Gameweek, page: number): Promise<LiveLeague>;
   /**
@@ -46,16 +56,16 @@ export interface FplService {
    * Throws FplNotFoundError for an unknown Team ID. Optional so existing fakes still compile;
    * createFplService always implements it (as do getEntryTransfers, getEventPoints and getLeagueInfo).
    */
-  getEntryHistory?(entryId: FplEntryId): Promise<EntryHistory>;
+  getEntryHistory?(entryId: FplEntryId, options?: FplReadOptions): Promise<EntryHistory>;
   /** Every transfer of the season, oldest first (Wildcard / Free Hit ones included). */
-  getEntryTransfers?(entryId: FplEntryId): Promise<EntryTransfer[]>;
+  getEntryTransfers?(entryId: FplEntryId, options?: FplReadOptions): Promise<EntryTransfer[]>;
   /**
    * Every player's FPL points and minutes for a GW from ONE `event/{gw}/live/` call (shared with the live
    * engine's cache). FPL's own totals: final once the GW is data-checked. Missing player → 0 points.
    */
-  getEventPoints?(event: Gameweek): Promise<EventPoints>;
+  getEventPoints?(event: Gameweek, options?: FplReadOptions): Promise<EventPoints>;
   /** League name and `startEvent` (from standings page 1, same cache). Throws FplNotFoundError if unknown. */
-  getLeagueInfo?(leagueId: FplLeagueId): Promise<LeagueInfo>;
+  getLeagueInfo?(leagueId: FplLeagueId, options?: FplReadOptions): Promise<LeagueInfo>;
   /**
    * The FPL match sheet ("Match Details" stat blocks + per-player FPL points from this fixture only).
    * Empty stats/players before kick-off. Throws FplNotFoundError for an unknown fixture id.

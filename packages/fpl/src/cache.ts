@@ -92,7 +92,12 @@ export class TtlCache {
   }
 
   /** `fresh` when `isFresh`, else `get`. */
-  read<T>(key: string, policy: CachePolicy, load: () => Promise<T>, isFresh: boolean | undefined): Promise<T> {
+  read<T>(
+    key: string,
+    policy: CachePolicy,
+    load: () => Promise<T>,
+    isFresh: boolean | undefined,
+  ): Promise<T> {
     return isFresh ? this.fresh(key, load) : this.get(key, policy, load);
   }
 

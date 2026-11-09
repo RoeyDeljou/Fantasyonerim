@@ -3519,7 +3519,7 @@ async function updateJourneys(ctx) {
 }
 
 // ---------- Gameweek Roundup (League tab → "סיכום מחזור") ----------
-// GET /v1/league/roundup isn't served by apps/api yet: every response here is MOCKED with page.route, built from the
+// GET /v1/league/roundup is MOCKED here with page.route (the real endpoint + job are covered by apps/api tests), built from the
 // demo bootstrap's real player ids (so photos/names resolve). GW10 = ready with every section, GW9 = ready with
 // most sections empty and a 25-team table, GW11 = pending, GW8 = unavailable, GW7 = building, GW6 = 404.
 // E2E_ROUNDUP_SHOTS=<dir> also saves phone screenshots (he/en × light/dark).
