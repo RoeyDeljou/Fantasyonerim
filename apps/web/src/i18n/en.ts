@@ -306,7 +306,7 @@ export const en: Messages = {
     hostDor: 'Dor Dabush',
     hostItay: 'Itay Tebeka',
     starsTitle: 'You vs. the stars',
-    yourRank: 'Your rank: #{n} · {p} pts',
+    yourRank: 'Your rank',
     you: 'You',
     gap: 'Gap',
     level: 'Level',

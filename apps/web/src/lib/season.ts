@@ -71,3 +71,8 @@ export function seasonSummary<R extends RowLike>(
 
 export type GapKind = 'ahead' | 'behind' | 'level';
 export const gapKind = (gap: number): GapKind => (gap > 0 ? 'ahead' : gap < 0 ? 'behind' : 'level');
+
+/** The photo to show for a star avatar: the configured path unless it already failed to load (then initials). */
+export function starPhoto(configured: string | null | undefined, failed: string | null): string | null {
+  return configured && configured !== failed ? configured : null;
+}

@@ -309,7 +309,7 @@ export const he = {
     hostDor: 'דור דבוש',
     hostItay: 'איתי טבקה',
     starsTitle: 'איפה אתם מול הכוכבים',
-    yourRank: "הדירוג שלך: מקום {n} · {p} נק'",
+    yourRank: 'הדירוג שלך',
     you: 'אתם',
     gap: 'הפרש',
     level: 'תיקו',

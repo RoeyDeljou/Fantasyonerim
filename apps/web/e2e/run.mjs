@@ -4270,7 +4270,22 @@ async function seasonJourneys(browser, userPage) {
     const summary = p.getByTestId('season-summary');
     await summary.getByRole('heading', { name: 'איפה אתם מול הכוכבים' }).waitFor();
     const mine = (await p.getByTestId('season-me').innerText()).replace(/[\u2066-\u2069]/g, '');
-    assert(mine.includes(`מקום ${meRow.rank}`) && mine.includes(String(meRow.points)), `my line: ${mine}`);
+    assert(
+      mine.includes('הדירוג שלך') &&
+        mine.includes(`#${meRow.rank}`) &&
+        mine.includes(String(meRow.points)) &&
+        mine.includes("נק' קפטן"),
+      `hero: ${mine}`,
+    );
+    // The viewer's place is one flat gold (no gradient), with dark ink on it.
+    const gold = await p.getByTestId('season-me-rank').evaluate((el) => {
+      const c = getComputedStyle(el);
+      return { bg: c.backgroundColor, image: c.backgroundImage, ink: c.color };
+    });
+    assert(
+      gold.image === 'none' && gold.bg !== 'rgba(0, 0, 0, 0)' && gold.bg !== gold.ink,
+      `gold: ${JSON.stringify(gold)}`,
+    );
     const lines = p.getByTestId('season-star');
     assert((await lines.count()) === 4, 'four star lines');
     const text = (await lines.allInnerTexts()).map((t) =>
@@ -4294,14 +4309,31 @@ async function seasonJourneys(browser, userPage) {
     assert(gaps.join() === 'behind,behind,ahead,ahead', `gap kinds: ${gaps}`);
     assert(text[0].includes('−130') && text[1].includes('−120'), `behind gaps: ${text[0]} / ${text[1]}`);
     assert(text[2].includes('+20') && text[3].includes('+30'), `ahead gaps: ${text[2]} / ${text[3]}`);
-    assert(text[0].includes('הפרש'), 'gap label');
+    assert(text[0].includes('▼') && text[2].includes('▲'), 'gap pills carry ▼ / ▲');
     const colours = await lines.evaluateAll((els) =>
       els.map((el) => {
-        const v = el.querySelector('[data-testid=season-gap] span:last-child');
+        const v = el.querySelector('[data-testid=season-gap] > span');
         return v ? getComputedStyle(v).color : null;
       }),
     );
     assert(colours[0] !== colours[2], 'behind and ahead gaps have different colours');
+    // Round avatars: logo for the community captain, the FPL Lad chip, initials for the hosts (no photos yet).
+    const av = await lines.evaluateAll((els) =>
+      els.map((el) => ({
+        img: el.querySelector('img')?.getAttribute('src') ?? null,
+        role: el.querySelector('[role=img]')?.getAttribute('aria-label') ?? null,
+        radius: getComputedStyle(el.querySelector('.border-2')).borderRadius,
+        rank: el.querySelector('[data-testid=star-rank]')?.textContent?.replace(/[\u2066-\u2069]/g, ''),
+      })),
+    );
+    assert(av[0].img === '/brand/logo-320.png', `community avatar is the app logo: ${av[0].img}`);
+    assert(av[1].role === 'FPL Lad' && av[1].img === null, 'FPL Lad chip avatar');
+    assert(text[2].includes('דד') && text[3].includes('אט') && av[2].img === null, 'host initials');
+    assert(av.map((a) => a.rank).join() === '#1,#2,#17,#18', `rank pills: ${av.map((a) => a.rank)}`);
+    assert(
+      av.every((a) => parseFloat(a.radius) > 0),
+      'round avatars',
+    );
     // Highlighted table rows: host badge, accent edge, tinted background; mine keeps its own ring.
     const stars = p.locator('[data-testid=season-list] > li[data-star=true]');
     assert((await stars.count()) === 4, 'four highlighted rows');
@@ -4316,10 +4348,27 @@ async function seasonJourneys(browser, userPage) {
       style.edge === '4px' && style.bg !== 'rgba(0, 0, 0, 0)',
       `host row style ${JSON.stringify(style)}`,
     );
-    const ring = await p
+    // My row: a flat gold start edge and a gold rank badge, no tint (the same gold as the hero).
+    const myRow = await p
       .locator(`[data-testid=season-list] > li[data-entry="${me}"] button`)
-      .evaluate((el) => getComputedStyle(el).boxShadow);
-    assert(ring !== 'none', 'my row has its own ring');
+      .evaluate((el) => {
+        const c = getComputedStyle(el);
+        return {
+          edge: c.borderInlineStartColor,
+          width: c.borderInlineStartWidth,
+          bg: c.backgroundColor,
+          badge: getComputedStyle(el.querySelector('[data-testid=my-rank-gold]')).backgroundColor,
+        };
+      });
+    assert(
+      myRow.width === '4px' && myRow.edge === gold.bg && myRow.badge === gold.bg,
+      `my row: ${JSON.stringify(myRow)}`,
+    );
+    assert(myRow.bg === 'rgba(0, 0, 0, 0)', 'my row has no tint');
+    const hostEdge = await dor
+      .locator('button')
+      .evaluate((el) => getComputedStyle(el).borderInlineStartColor);
+    assert(hostEdge !== gold.bg, 'hosts use the primary edge, not gold');
     await noHorizontalScroll(p, 'season summary');
     // Tapping a line brings that row into view.
     await lines.nth(3).click();
@@ -4632,6 +4681,17 @@ async function seasonJourneys(browser, userPage) {
           await sp.screenshot({ path: `${shots}/season-${locale}-${theme}.png` });
           await sp.getByTestId('season-show-all').click();
           await sp.screenshot({ path: `${shots}/season-${locale}-${theme}-all.png`, fullPage: true });
+          // The guest / not-in-the-league variant: no hero, no gaps.
+          const guest = await withBattle({ locale, theme });
+          guest.season.body = seasonMock('ready', me, { meInList: false });
+          const gp = await guest.ctx.newPage();
+          watch(gp, `season-guest-${locale}-${theme}`);
+          await gp.goto(`${WEB}/table/?view=season`);
+          await gp.getByTestId('season-summary').waitFor();
+          await gp.waitForTimeout(500);
+          await noHorizontalScroll(gp, `season guest ${locale} ${theme}`);
+          await gp.screenshot({ path: `${shots}/season-guest-${locale}-${theme}.png` });
+          await guest.ctx.close();
           await sp.goto(`${WEB}/live/?view=captains`);
           await sp.locator('main ol > li').first().waitFor();
           await sp.getByRole('img', { name: 'FPL Lad' }).first().waitFor();

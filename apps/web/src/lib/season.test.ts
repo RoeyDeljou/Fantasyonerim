@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gapKind, isStar, seasonPreview, seasonSummary } from './season';
+import { gapKind, isStar, seasonPreview, seasonSummary, starPhoto } from './season';
 
 type Row = {
   key: string;
@@ -111,5 +111,18 @@ describe('gapKind', () => {
     expect(gapKind(5)).toBe('ahead');
     expect(gapKind(-5)).toBe('behind');
     expect(gapKind(0)).toBe('level');
+  });
+});
+
+describe('starPhoto', () => {
+  it('no configured photo → initials', () => {
+    expect(starPhoto(null, null)).toBeNull();
+    expect(starPhoto(undefined, null)).toBeNull();
+    expect(starPhoto('', null)).toBeNull();
+  });
+  it('a configured photo is used until it fails to load, then initials again', () => {
+    expect(starPhoto('/brand/stars/dor.jpg', null)).toBe('/brand/stars/dor.jpg');
+    expect(starPhoto('/brand/stars/dor.jpg', '/brand/stars/dor.jpg')).toBeNull();
+    expect(starPhoto('/brand/stars/dor.jpg', '/brand/stars/other.jpg')).toBe('/brand/stars/dor.jpg');
   });
 });
