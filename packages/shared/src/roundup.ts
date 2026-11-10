@@ -186,6 +186,8 @@ export const SeasonCaptainsStatusSchema = z.enum([
 export const SeasonCaptainsSchema = z.object({
   status: SeasonCaptainsStatusSchema,
   league: z.nullable(z.object({ id: FplLeagueIdSchema, name: z.string() })),
+  /** The first GW counted: the season Captain Battle starts here (client decision, GW 10), earlier GWs are ignored. */
+  fromEvent: z._default(z.nullable(GameweekSchema), null),
   /** The last official GW included in the totals. */
   throughEvent: z.nullable(GameweekSchema),
   rows: z.array(SeasonCaptainRowSchema),
