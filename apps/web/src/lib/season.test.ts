@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gapKind, isStar, seasonPreview, seasonSummary, starPhoto } from './season';
+import { gapKind, isStar, seasonPreview, seasonSubtitle, seasonSummary, starPhoto } from './season';
 
 type Row = {
   key: string;
@@ -124,5 +124,15 @@ describe('starPhoto', () => {
     expect(starPhoto('/brand/stars/dor.jpg', null)).toBe('/brand/stars/dor.jpg');
     expect(starPhoto('/brand/stars/dor.jpg', '/brand/stars/dor.jpg')).toBeNull();
     expect(starPhoto('/brand/stars/dor.jpg', '/brand/stars/other.jpg')).toBe('/brand/stars/dor.jpg');
+  });
+});
+
+describe('seasonSubtitle', () => {
+  it('range, single GW, legacy (no fromEvent) and nothing counted', () => {
+    expect(seasonSubtitle(10, 12)).toEqual({ kind: 'range', from: 10, to: 12 });
+    expect(seasonSubtitle(10, 10)).toEqual({ kind: 'one', gw: 10 });
+    expect(seasonSubtitle(null, 12)).toEqual({ kind: 'legacy', gw: 12 });
+    expect(seasonSubtitle(10, null)).toBeNull();
+    expect(seasonSubtitle(null, null)).toBeNull();
   });
 });

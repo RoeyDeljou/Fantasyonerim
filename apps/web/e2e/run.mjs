@@ -4098,7 +4098,7 @@ async function roundupJourneys(browser, userPage) {
 // GET /v1/league/season-captains and the captain-battle endpoints (GET /v1/captain-battle, GET/PUT /v1/admin/captain-battle) are
 // MOCKED with page.route (the real ones are covered by apps/api tests), so the UI is checked against the contract alone.
 
-function seasonMock(status, me, { rows = null, throughEvent = 10, meInList = true } = {}) {
+function seasonMock(status, me, { rows = null, throughEvent = 12, fromEvent = 10, meInList = true } = {}) {
   const team = (i, points) => ({
     kind: 'manager',
     key: String(3000000 + i),
@@ -4146,6 +4146,7 @@ function seasonMock(status, me, { rows = null, throughEvent = 10, meInList = tru
   return {
     status,
     league: status === 'unavailable' ? null : { id: Number(DEMO.league), name: 'ליגת פנטזיונרים' },
+    fromEvent,
     throughEvent: status === 'ready' ? throughEvent : null,
     rows: status === 'ready' ? (rows ?? ranked) : [],
     updatedAt: new Date().toISOString(),
@@ -4225,10 +4226,16 @@ async function seasonJourneys(browser, userPage) {
       await root.waitFor();
       await p.getByRole('heading', { name: 'קרב קפטנים עונתי' }).waitFor();
       assert(
-        (await p.getByTestId('season-subtitle').innerText()).includes('עד מחזור 10'),
+        (await p.getByTestId('season-subtitle').innerText())
+          .replace(/\s+/g, ' ')
+          .includes('ממחזור 10 עד מחזור 12'),
         'subtitle names the GW',
       );
       await p.getByText('לא לפי מספר ניצחונות').waitFor();
+      assert(
+        (await p.getByTestId('season-explain').innerText()).includes('התחרות מתחילה ממחזור 10'),
+        'the explanation notes the start GW',
+      );
       const rows = p.locator('[data-testid=season-list] > li[data-key]');
       // Collapsed: the top 10 + the viewer (rank 15) + Dor and Itay (beyond rank 10), "⋮" between the runs.
       assert((await rows.count()) === 13, `preview rows: ${await rows.count()}`);
@@ -4417,8 +4424,31 @@ async function seasonJourneys(browser, userPage) {
     }, String(me));
   });
 
+  await step('Season: subtitle variants (one GW, old API without fromEvent)', async () => {
+    season.body = seasonMock('ready', me, { fromEvent: 10, throughEvent: 10 });
+    await p.goto(`${WEB}/table/?view=season`);
+    await root.waitFor();
+    const one = (await p.getByTestId('season-subtitle').innerText()).replace(/\s+/g, ' ');
+    assert(one.includes('מחזור 10') && !one.includes('עד'), `single GW: ${one}`);
+    season.body = seasonMock('ready', me, { fromEvent: null });
+    await p.goto(`${WEB}/table/?view=season`);
+    await root.waitFor();
+    const legacy = (await p.getByTestId('season-subtitle').innerText()).replace(/\s+/g, ' ');
+    assert(legacy.includes('עד מחזור 12') && !legacy.includes('ממחזור'), `legacy: ${legacy}`);
+    assert(
+      !(await p.getByTestId('season-explain').innerText()).includes('התחרות מתחילה'),
+      'no start note without fromEvent',
+    );
+    season.body = seasonMock('ready', me);
+  });
+
   await step('Season: building (retry), unavailable, empty and error states', async () => {
     season.body = seasonMock('building', me);
+    await p.goto(`${WEB}/table/?view=season`);
+    await p.getByText('הנתונים בהכנה').waitFor();
+    await p.getByText('התחרות מתחילה ממחזור 10 ותתמלא ברגע שהמחזור יהפוך לרשמי').waitFor();
+    // An older API response without fromEvent keeps the generic text.
+    season.body = seasonMock('building', me, { fromEvent: null });
     await p.goto(`${WEB}/table/?view=season`);
     await p.getByText('הנתונים בהכנה').waitFor();
     await p.getByText('נסו שוב בעוד כמה דקות').waitFor();

@@ -6,7 +6,7 @@ import type { FplEntryId, SeasonCaptainRow } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import { useConfig, useFplIndex, useLivePollInterval, useMe } from '@/lib/queries';
 import { useSeasonCaptains } from '@/lib/seasonCaptains';
-import { gapKind, isStar, seasonPreview, seasonSummary, starPhoto } from '@/lib/season';
+import { gapKind, isStar, seasonPreview, seasonSubtitle, seasonSummary, starPhoto } from '@/lib/season';
 import type { StarLine } from '@/lib/season';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { ClockIcon, RefreshIcon, TableIcon } from '@/components/icons';
@@ -43,7 +43,11 @@ export function SeasonView() {
       <EmptyState
         icon={<Spinner className="size-8" />}
         title={t.season.buildingTitle}
-        body={t.roundup.buildingBody}
+        body={
+          data.fromEvent === null
+            ? t.roundup.buildingBody
+            : fmt(t.season.buildingStarts, { gw: data.fromEvent })
+        }
         action={
           <Button variant="secondary" onClick={() => season.refetch()} disabled={season.isFetching}>
             <RefreshIcon size={18} />
@@ -53,17 +57,25 @@ export function SeasonView() {
       />
     );
   }
+  const sub = seasonSubtitle(data.fromEvent, data.throughEvent);
   return (
     <div className="flex flex-col gap-3" data-testid="season-captains">
       <header>
         <h1 className="text-xl font-extrabold text-ink">{t.roundup.viewSeason}</h1>
-        {data.throughEvent !== null && (
+        {sub !== null && (
           <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted" data-testid="season-subtitle">
             <ClockIcon width={14} height={14} className="shrink-0" />
-            {fmt(t.season.subtitle, { gw: data.throughEvent })}
+            {sub.kind === 'range'
+              ? fmt(t.season.subtitleRange, { from: sub.from, to: sub.to })
+              : sub.kind === 'one'
+                ? fmt(t.season.subtitleOne, { gw: sub.gw })
+                : fmt(t.season.subtitle, { gw: sub.gw })}
           </p>
         )}
-        <p className="mt-1 text-xs leading-relaxed text-muted">{t.season.explain}</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted" data-testid="season-explain">
+          {t.season.explain}
+          {data.fromEvent !== null && ` ${fmt(t.season.startsAt, { gw: data.fromEvent })}`}
+        </p>
       </header>
       {data.rows.length === 0 ? (
         <EmptyState

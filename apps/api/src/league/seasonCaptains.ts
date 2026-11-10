@@ -1,6 +1,7 @@
 import { RoundupCoreSchema } from '@fant/fpl';
 import {
   CLIENT_HOSTS,
+  GameweekSchema,
   RoundupCaptainSchema,
   SeasonCaptainsSchema,
   type FplEntryId,
@@ -12,6 +13,14 @@ import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { serialize } from '../validate.js';
 import { FPL_LAD_LABEL, type PermanentKind } from './captains.js';
+
+/**
+ * The first GW (inclusive) that counts towards the season Captain Battle. Client decision (Nov 2026): the competition
+ * starts at GW10, because the community and FPL Lad captains only have data from there, so everybody competes on equal
+ * ground. Earlier stored roundups are ignored for teams and special captains alike. To change the start of the
+ * competition, edit this (the in-memory hot copy is rebuilt on restart / within a minute).
+ */
+export const SEASON_CAPTAINS_FROM_EVENT = GameweekSchema.parse(10);
 
 /** Hot-cache key prefix of the season leaderboard (dropped when a roundup is stored or the config changes). */
 export const SEASON_CAPTAINS_HOT_PREFIX = 'league:season-captains:';
@@ -58,7 +67,7 @@ export async function computeSeasonCaptains(
     );
   }
   const stored = await prisma.gameweekRoundup.findMany({
-    where: { leagueId },
+    where: { leagueId, event: { gte: SEASON_CAPTAINS_FROM_EVENT } },
     orderBy: { event: 'asc' },
     select: {
       event: true,
@@ -129,7 +138,14 @@ export async function computeSeasonCaptains(
   if (throughEvent === null) {
     return serialize(
       SeasonCaptainsSchema,
-      { status: 'building', league: null, throughEvent: null, rows: [], updatedAt },
+      {
+        status: 'building',
+        league: null,
+        throughEvent: null,
+        fromEvent: SEASON_CAPTAINS_FROM_EVENT,
+        rows: [],
+        updatedAt,
+      },
       'SeasonCaptains',
     );
   }
@@ -176,6 +192,7 @@ export async function computeSeasonCaptains(
       status: 'ready',
       league: { id: leagueId, name: leagueName ?? '' },
       throughEvent,
+      fromEvent: SEASON_CAPTAINS_FROM_EVENT,
       rows,
       updatedAt,
     },

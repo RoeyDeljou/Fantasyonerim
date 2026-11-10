@@ -252,6 +252,7 @@ longer parse are skipped.
   latest label / tag; `gameweeks` = GWs where the row had a player; left out when that is 0). Hand-picked rows only
   count in the GW the battle was saved for (see Gameweek Roundup), so a captain nobody picked for a GW scores 0 there.
 - `host`: `'dor' | 'itay' | null` on `manager` rows whose `entryId` is a podcast host's team (`CLIENT_HOSTS` in `@fant/shared`); null for everyone else and for the special captains. It changes neither rank nor points.
+- **Start of the competition**: only stored roundups with `event >= SEASON_CAPTAINS_FROM_EVENT` (10, in `src/league/seasonCaptains.ts`; client decision, Nov 2026: the community and FPL Lad captains only have data from GW10) count, for teams and special captains alike, so `points`, `gameweeks` and `throughEvent` all start there. `fromEvent` in the response is that GW (null only when `unavailable`). Only earlier GWs stored → `building`, `rows` empty, `fromEvent` still set.
 - `rank`: competition ranking over `points` desc, then `name` (1, 2, 2, 4). `throughEvent` = highest GW included.
 - `status`: `unavailable` (no league), `building` (no usable stored roundup yet), else `ready`.
 - Rows still at an older builder version are used as-is until the job replaces them. Version 1–2 rows keep the FPL

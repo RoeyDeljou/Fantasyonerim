@@ -18,7 +18,7 @@ import type { Prisma } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ROUNDUP_BUILD_VERSION } from '../src/league/roundup.js';
-import { computeSeasonCaptains } from '../src/league/seasonCaptains.js';
+import { computeSeasonCaptains, SEASON_CAPTAINS_FROM_EVENT } from '../src/league/seasonCaptains.js';
 import { makeBootstrap, makeEvents, type FakeFplService } from './fakeFpl.js';
 import {
   bearer,
@@ -74,12 +74,14 @@ interface Special {
 
 /** Stores a roundup row exactly as buildRoundups would (core + captains + base captain points). */
 async function store(
-  event: number,
+  /** 1 = the first counted GW (SEASON_CAPTAINS_FROM_EVENT), 2 = the next, ...; 0 or less = before the start. */
+  index: number,
   members: Member[],
   basePoints: Record<number, number>,
   specials: Special[] = [],
   opts: { leagueId?: number; version?: number; leagueName?: string; legacyNoTag?: boolean } = {},
 ): Promise<void> {
+  const event = SEASON_CAPTAINS_FROM_EVENT + index - 1;
   const table = members.map((m, i) => ({
     entryId: m.entryId,
     entryName: m.name,
@@ -138,16 +140,60 @@ const brief = (rows: { rank: number; name: string; points: number; gameweeks: nu
   rows.map((r) => [r.rank, r.name, r.points, r.gameweeks]);
 
 describe('GET /v1/league/season-captains', () => {
+  it('ignores GWs before the start for teams and special captains; the start GW itself counts; fromEvent is set', async () => {
+    await setLeague(LEAGUE);
+    const members = (captain: number): Member[] => [{ entryId: 11, name: 'Alpha', captain }];
+    const specials = (points: number): Special[] => [
+      { kind: 'community', label: 'Fans', playerId: 1, captainPoints: points },
+      { kind: 'fpl_lad', label: 'Lad', playerId: 1, captainPoints: points },
+    ];
+    await store(0, members(2), { 2: 13 }, specials(100)); // the GW before the start: ignored
+    await store(-5, members(2), { 2: 13 }, specials(100));
+    await store(1, members(1), { 1: 6 }, specials(12)); // the start GW: counted
+    const { body } = await season();
+    expect(body.fromEvent).toBe(SEASON_CAPTAINS_FROM_EVENT);
+    expect(body.throughEvent).toBe(SEASON_CAPTAINS_FROM_EVENT);
+    expect(brief(body.rows)).toEqual([
+      [1, 'Alpha', 12, 1],
+      [1, 'Fans', 12, 1],
+      [1, 'Lad', 12, 1],
+    ]);
+  });
+
+  it('is building (with fromEvent) while only GWs before the start are stored', async () => {
+    await setLeague(LEAGUE);
+    await store(0, [{ entryId: 11, name: 'Alpha', captain: 2 }], { 2: 13 });
+    const { body } = await season();
+    expect(body).toMatchObject({
+      status: 'building',
+      throughEvent: null,
+      fromEvent: SEASON_CAPTAINS_FROM_EVENT,
+      rows: [],
+    });
+  });
+
   it('is unavailable without a league', async () => {
     const { body, res } = await season();
-    expect(body).toMatchObject({ status: 'unavailable', league: null, throughEvent: null, rows: [] });
+    expect(body).toMatchObject({
+      status: 'unavailable',
+      league: null,
+      throughEvent: null,
+      fromEvent: null,
+      rows: [],
+    });
     expect(res.headers['cache-control']).toBe('public, max-age=60, stale-while-revalidate=120');
   });
 
   it('is building while the league has no stored roundup', async () => {
     await setLeague(LEAGUE);
     const { body } = await season();
-    expect(body).toMatchObject({ status: 'building', league: null, throughEvent: null, rows: [] });
+    expect(body).toMatchObject({
+      status: 'building',
+      league: null,
+      throughEvent: null,
+      fromEvent: SEASON_CAPTAINS_FROM_EVENT,
+      rows: [],
+    });
   });
 
   it('sums captain points over GWs (Triple Captain = ×3), ties share a rank, special captains rank with the teams', async () => {
@@ -187,7 +233,7 @@ describe('GET /v1/league/season-captains', () => {
     const { body, res } = await season();
     expect(body.status).toBe('ready');
     expect(body.league).toEqual({ id: LEAGUE, name: 'Podcast League' });
-    expect(body.throughEvent).toBe(2);
+    expect(body.throughEvent).toBe(SEASON_CAPTAINS_FROM_EVENT + 1);
     expect(brief(body.rows)).toEqual([
       [1, 'Alpha', 53, 2],
       [2, 'Bravo', 32, 2],
@@ -274,7 +320,7 @@ describe('GET /v1/league/season-captains', () => {
     await prisma.gameweekRoundup.create({
       data: {
         leagueId: LEAGUE,
-        event: 2,
+        event: SEASON_CAPTAINS_FROM_EVENT + 1,
         leagueName: 'x',
         data: { nonsense: true },
         captains: [],
@@ -284,8 +330,8 @@ describe('GET /v1/league/season-captains', () => {
       },
     });
     const { body } = await season();
-    expect([body.status, body.throughEvent]).toEqual(['ready', 1]);
-    await prisma.gameweekRoundup.deleteMany({ where: { event: 1 } });
+    expect([body.status, body.throughEvent]).toEqual(['ready', SEASON_CAPTAINS_FROM_EVENT]);
+    await prisma.gameweekRoundup.deleteMany({ where: { event: SEASON_CAPTAINS_FROM_EVENT } });
     app.hot.invalidateConfig();
     expect((await season()).body.status).toBe('building');
   });
@@ -346,11 +392,11 @@ describe('GET /v1/league/season-captains', () => {
 
     // A new roundup lands in the database: the shared copy is still the 60-second-old one...
     await store(2, [{ entryId: 11, name: 'Alpha', captain: 2 }], { 2: 13 });
-    expect((await season()).body.throughEvent).toBe(1);
+    expect((await season()).body.throughEvent).toBe(SEASON_CAPTAINS_FROM_EVENT);
     // ...until it ages out.
     clock.advance(60_000 + 120_000 + 1);
     const later = await season();
-    expect(later.body.throughEvent).toBe(2);
+    expect(later.body.throughEvent).toBe(SEASON_CAPTAINS_FROM_EVENT + 1);
     expect(brief(later.body.rows)).toEqual([[1, 'Alpha', 52, 2]]);
 
     const etag = later.res.headers['etag'];

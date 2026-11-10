@@ -76,3 +76,20 @@ export const gapKind = (gap: number): GapKind => (gap > 0 ? 'ahead' : gap < 0 ? 
 export function starPhoto(configured: string | null | undefined, failed: string | null): string | null {
   return configured && configured !== failed ? configured : null;
 }
+
+/**
+ * Which subtitle the season screen shows: a range ("GW 10 to GW 12"), a single GW (from == through), the old
+ * "through GW N" text (an API response without `fromEvent`), or none (no GW counted yet).
+ */
+export function seasonSubtitle(
+  from: number | null,
+  through: number | null,
+):
+  | { kind: 'range'; from: number; to: number }
+  | { kind: 'one'; gw: number }
+  | { kind: 'legacy'; gw: number }
+  | null {
+  if (through === null) return null;
+  if (from === null) return { kind: 'legacy', gw: through };
+  return from === through ? { kind: 'one', gw: through } : { kind: 'range', from, to: through };
+}
