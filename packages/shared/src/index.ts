@@ -6,3 +6,4 @@ export * from './community.js';
 export * from './broadcast.js';
 export * from './roundup.js';
 export * from './clientHosts.js';
+export * from './communityCaptain.js';
