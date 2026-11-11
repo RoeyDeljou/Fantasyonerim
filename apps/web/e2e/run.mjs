@@ -1,4 +1,4 @@
-/* global document, window, navigator, caches, Event, PromiseRejectionEvent, getComputedStyle */
+/* global document, window, navigator, caches, Event, PromiseRejectionEvent, getComputedStyle, fetch, btoa */
 // End-to-end suite for the web app: real apps/api (FPL_MODE=demo) + the static export, driven by Playwright.
 //
 //   npm run e2e -w @fant/web
@@ -4435,11 +4435,24 @@ async function seasonJourneys(browser, userPage) {
     season.body = seasonMock('ready', me, { fromEvent: 10, throughEvent: 10 });
     await p.goto(`${WEB}/table/?view=season`);
     await root.waitFor();
+    // The device-kept copy shows first; wait for the refetched (single-GW) subtitle instead of racing it.
+    await p
+      .waitForFunction(() => {
+        const t = document.querySelector('[data-testid=season-subtitle]')?.textContent ?? '';
+        return t.includes('מחזור 10') && !t.includes('עד');
+      })
+      .catch(() => undefined);
     const one = (await p.getByTestId('season-subtitle').innerText()).replace(/\s+/g, ' ');
     assert(one.includes('מחזור 10') && !one.includes('עד'), `single GW: ${one}`);
     season.body = seasonMock('ready', me, { fromEvent: null });
     await p.goto(`${WEB}/table/?view=season`);
     await root.waitFor();
+    await p
+      .waitForFunction(() => {
+        const t = document.querySelector('[data-testid=season-subtitle]')?.textContent ?? '';
+        return t.includes('עד מחזור 12') && !t.includes('ממחזור');
+      })
+      .catch(() => undefined);
     const legacy = (await p.getByTestId('season-subtitle').innerText()).replace(/\s+/g, ' ');
     assert(legacy.includes('עד מחזור 12') && !legacy.includes('ממחזור'), `legacy: ${legacy}`);
     assert(
