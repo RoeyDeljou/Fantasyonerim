@@ -254,3 +254,32 @@ export function liveJumpCopy(
         body: `Gameweek ${gameweek} · ${livePoints} pts so far`,
       };
 }
+
+// ---------- community captain vote (admins) ----------
+
+/** Max tied players named in the admin notification. */
+export const TIED_NAMES_SHOWN = 4;
+
+/** Admins: the vote for GW `gameweek` ended in a tie — pick the tie-breaker. */
+export function communityCaptainTieCopy(
+  locale: Locale,
+  gameweek: number,
+  names: readonly string[],
+): PushText {
+  const shown = names.slice(0, TIED_NAMES_SHOWN);
+  const more = names.length - shown.length;
+  const list = shown.join(', ') + (more > 0 ? (locale === 'he' ? ` ועוד ${more}` : ` +${more} more`) : '');
+  return locale === 'he'
+    ? { title: `🗳️ תיקו בהצבעה על קפטן הקהילה (מחזור ${gameweek})`, body: `${list}. בחרו מי הקפטן.` }
+    : { title: `🗳️ Community Captain vote tied (GW${gameweek})`, body: `${list}. Pick the tie-breaker.` };
+}
+
+/** Admins: nobody voted for GW `gameweek` — pick the community captain by hand. */
+export function communityCaptainNoVotesCopy(locale: Locale, gameweek: number): PushText {
+  return locale === 'he'
+    ? { title: `🗳️ אף אחד לא הצביע על קפטן הקהילה (מחזור ${gameweek})`, body: 'בחרו את קפטן הקהילה ידנית.' }
+    : {
+        title: `🗳️ Nobody voted for the Community Captain (GW${gameweek})`,
+        body: 'Pick the community captain by hand.',
+      };
+}

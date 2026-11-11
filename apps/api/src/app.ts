@@ -38,6 +38,7 @@ import { adminInviteRoutes } from './routes/adminInvites.js';
 import { adminNewsRoutes } from './routes/adminNews.js';
 import { blockRoutes } from './routes/blocks.js';
 import { communityRoutes } from './routes/community.js';
+import { communityCaptainRoutes } from './routes/communityCaptain.js';
 import { uploadRoutes } from './routes/uploads.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { internalRoutes } from './routes/internal.js';
@@ -271,6 +272,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   integrationRoutes(app, ctx, auth, jobs);
   adminNewsRoutes(app, ctx, auth);
   communityRoutes(app, ctx, auth, communityLimits);
+  communityCaptainRoutes(app, ctx, auth, communityLimits.writes);
   blockRoutes(app, ctx, auth, communityLimits.writes);
   uploadRoutes(app, ctx, auth, uploadLimit);
   adminCommunityRoutes(app, ctx, auth);

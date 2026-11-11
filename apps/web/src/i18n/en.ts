@@ -758,6 +758,9 @@ export const en: Messages = {
     pushResult: 'Delivered to {delivered} of {recipients} devices',
   },
   community: {
+    viewsLabel: 'Community views',
+    viewFeed: 'Feed',
+    viewCaptain: 'My Community Captain',
     block: 'Block user',
     blockTitle: 'Block {name}?',
     blockBody1: "You won't see {name}'s posts or comments any more.",

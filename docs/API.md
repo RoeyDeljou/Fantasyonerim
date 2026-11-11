@@ -177,6 +177,8 @@ Schemas: `packages/shared/src/broadcast.ts`.
 | `live_alerts`      | `captain`             | `live:<gw>:cap:<playerId>:g<n>` / `:a<n>`    | Your effective captain scored / assisted (every new goal or assist observed between two runs)                                                                                                              |
 | `live_alerts`      | `league`              | `live:<gw>:first:<n>` · `live:<gw>:jump:<n>` | Moved into first place of the live league (≤ 1/h) · jumped 5+ places vs the GW baseline / last alert (≤ 1 per 2 h, ≤ 3 per GW). ≤ 6 live alerts per user per GW in total                                   |
 
+| `community_captain` | none (kind `admin`) | `community_captain:<gw>:tied` / `:no_votes` | To every ADMIN user with a push subscription: the Community Captain vote for GW N ended in a tie (names up to 4 tied players) or nobody voted. URL `/admin/?card=vote` |
+
 `live_alerts` runs every 2 minutes while a fixture of the current GW is live (plus one pass after the last one ends);
 its first run of a GW only records a baseline. Pushes: urgency high, TTL 1 h, a unique tag per alert.
 
@@ -260,3 +262,43 @@ longer parse are skipped.
   are `null` until rebuilt.
 - Caching: one shared body per minute (hot cache, also dropped when the job stores a roundup or the league changes),
   `public, max-age=60, stale-while-revalidate=120`, `Vary: Accept-Encoding`, ETag. Nothing viewer-specific.
+
+## My Community Captain (קפטן הקהילה שלי)
+
+Fans vote for the community captain of the next GW; at the deadline the most-voted player becomes the community row of
+the captain battle. Contract: `packages/shared/src/communityCaptain.ts`.
+
+| Method | Path                                  | Auth                  | Body                               | Response                                                                                          |
+| ------ | ------------------------------------- | --------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------- |
+| GET    | `/v1/community-captain`               | 🌐 (👤 adds `myPick`) | –                                  | `CommunityCaptainState`                                                                           |
+| PUT    | `/v1/community-captain`               | 👤                    | `CommunityCaptainVoteBody`         | `CommunityCaptainState` · 400 wrong GW / unknown player · 403 banned · 409 closed or not open yet |
+| GET    | `/v1/admin/community-captain?event=`  | 🛡                     | –                                  | `AdminCommunityCaptain` (default GW = the target GW) · 404 unknown GW                             |
+| POST   | `/v1/admin/community-captain/resolve` | 🛡                     | `AdminCommunityCaptainResolveBody` | `AdminCommunityCaptain` · 400 unknown player / GW not resolvable                                  |
+
+- **Target GW N** = the first GW in the FPL bootstrap whose deadline is still ahead. The window is `open` when GW N-1 is
+  `finished` (always for GW 1), else `not_open`; a GW whose deadline passed is `locked`. Consequently, between GW N-1's
+  deadline and its end the state is `not_open` for N (the target has already moved on), and `locked` + `result` is only
+  seen for `event: null` (season over) or via the admin view of a past GW.
+- **PUT**: one vote per fan per GW (upsert, no delete). `event` must be the target GW, the window `open` and the
+  player in the bootstrap. A vote at or after the deadline (server clock vs the bootstrap deadline) is 409 "closed";
+  another future GW is 400. Signed in and not banned (same 403 as other community writes); write rate limit.
+- **GET** caching: guests get a shared body recomputed every ~15 s (hot cache) with
+  `public, max-age=15, stale-while-revalidate=30` and `Vary: Accept-Encoding, authorization`; a signed-in viewer gets
+  `private, no-cache`, `Vary: authorization` (carries their `myPick`). `voters` may lag ~15 s for guests. The tally is
+  never in the fan response: `result` (top 5) only when `locked`, `status: 'pending'` until the job has run.
+- **Admin view**: the live tally (up to 20), the stored result, and `battlePlayerId` (the community player set in the
+  battle saved for exactly that GW).
+- **Resolve** is allowed for the target GW or a GW whose deadline passed within the last 3 days. After the deadline it
+  stores `decided` with `decidedById`, `source: 'votes'` when the chosen player is among the top-count players, else
+  `'admin'`, and overwrites the battle's community player (an explicit admin choice). Before the deadline it only sets
+  the battle (a manual pick) and stores no result; the job then records it as `decided`/`admin`.
+- **Job `community_captain`** (every 2 min, also via `/internal/jobs/tick`): for GWs whose deadline passed within the
+  last 24 h (and at least 10 s ago) with no `CommunityCaptainResult` row (no back-fill of older GWs), in one
+  transaction (the result row, inserted with `skipDuplicates`, is the lock; the apply also takes a per-GW advisory
+  lock): a community captain already set by hand for that GW wins (`decided`, `source: 'admin'`, winner = that
+  player, vote untouched); else one clear winner is `decided`/`votes` and written to the captain battle; a tie is
+  `tied` (+ `tiedPlayerIds`) and zero votes `no_votes`, both pushing the admins (see "Notifications sent by jobs";
+  retried next run if the push failed, never re-sent). If no battle exists for N it is created from the latest earlier
+  battle (same rows, labels, tags, team-linked rows; the FPL Lad player is cleared as in the live rollover; hand-picked
+  custom rows keep their player because the DB check requires one), then the community row is set. The hot caches
+  (live battle, config, season captains, the vote state) are invalidated.

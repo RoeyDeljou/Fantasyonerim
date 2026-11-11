@@ -511,6 +511,7 @@ describe('failures, leases and the cron tick', () => {
       'deadline_reminders',
       'gameweek_summary',
       'gameweek_roundup',
+      'community_captain',
       'live_alerts',
       'cleanup',
       'image_variants',
@@ -553,7 +554,7 @@ describe('failures, leases and the cron tick', () => {
   it('runs a job only when due; the tick reports what ran', async () => {
     const tick = () =>
       app.inject({ method: 'POST', url: '/internal/jobs/tick', headers: { 'x-cron-secret': CRON } });
-    expect((await tick()).json().ran).toHaveLength(11);
+    expect((await tick()).json().ran).toHaveLength(12);
     expect((await tick()).json().ran).toEqual([]);
     clock.advance(5 * 60_000);
     expect((await tick()).json().ran).toEqual([
@@ -561,6 +562,7 @@ describe('failures, leases and the cron tick', () => {
       'instagram_stories',
       'deadline_reminders',
       'gameweek_roundup',
+      'community_captain',
       'live_alerts',
     ]);
   });

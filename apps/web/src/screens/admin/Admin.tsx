@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryParam } from '@/lib/useQueryParam';
 import { writeCardOpen } from '@/lib/localState';
@@ -41,8 +41,6 @@ import {
   useSaveAdminSettings,
 } from '@/lib/queries';
 import type { FplIndex } from '@/lib/queries';
-import { BottomSheet } from '@/components/BottomSheet';
-import { ImageWithFallback, fplImage } from '@/components/FplImages';
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -53,6 +51,7 @@ import {
   GlobeIcon,
   PlusIcon,
   SearchIcon,
+  ShareIcon,
   ShieldIcon,
   ShirtIcon,
   TableIcon,
@@ -84,6 +83,11 @@ import {
 } from '@/lib/captains';
 import type { PermanentKind } from '@/lib/captains';
 import { AdminFrame, AdminGuard } from './AdminShell';
+import { PlayerPicker } from './PlayerPicker';
+import { CommunityCaptainCard } from './CommunityCaptainCard';
+import { lazyWhenOpen } from '@/components/lazy';
+import { adminCaptainVote } from '@/i18n/sections/adminCaptainVote';
+import { useSection } from '@/i18n/section';
 
 export function AdminScreen() {
   const { t } = useI18n();
@@ -161,6 +165,7 @@ function AdminViews() {
           <LiveUpdateCard />
           <SettingsSection />
           <CaptainBattleEditor />
+          <CommunityCaptainCard />
           <InvitesCard />
           <AdminsSection />
         </>
@@ -565,7 +570,11 @@ function RemindersEditor({
 
 // ---------- captain battle editor ----------
 
-// ---------- captain battle editor ----------
+/** The share picture + sheet (canvas, QR code): a chunk of its own, fetched when the editor opens the sheet. */
+const ShareCaptainsSheet = lazyWhenOpen(
+  () => import('./ShareCaptains').then((m) => m.ShareCaptainsSheet),
+  (p) => p.open,
+);
 
 interface BattleRowDraft {
   uid: number;
@@ -671,6 +680,7 @@ function BattleForm({
   isDefault: boolean;
 }) {
   const { t } = useI18n();
+  const av = useSection(adminCaptainVote);
   const save = useSaveAdminCaptainBattle();
   const [flash, triggerFlash] = useFlash();
   // `/admin/?card=battle` (Captain Battle → "Pick"): open this card and bring it into view.
@@ -685,6 +695,7 @@ function BattleForm({
   const [event, setEvent] = useState(initialEvent === null ? '' : String(initialEvent));
   const [rows, setRows] = useState<BattleRowDraft[]>(initialRows);
   const [picking, setPicking] = useState<number | null>(null);
+  const [sharing, setSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const update = (uid: number, patch: Partial<BattleRowDraft>) =>
@@ -804,14 +815,26 @@ function BattleForm({
         {save.isError && (
           <InlineError>{errorMessage(t, save.error, { bad_request: t.admin.battleInvalid })}</InlineError>
         )}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" disabled={save.isPending}>
             {save.isPending && <Spinner />}
             {t.admin.saveBattle}
           </Button>
           <SaveFeedback ok={flash} />
+          {!isDefault && (
+            <Button
+              variant="secondary"
+              className="ms-auto"
+              onClick={() => setSharing(true)}
+              data-testid="battle-share"
+            >
+              <ShareIcon size={18} />
+              {av.share}
+            </Button>
+          )}
         </div>
       </Collapsible>
+      <ShareCaptainsSheet open={sharing} onClose={() => setSharing(false)} index={index} />
       <PlayerPicker
         open={picking !== null}
         index={index}
@@ -979,90 +1002,6 @@ function LinkedEntryField({ value, onChange }: { value: string; onChange(v: stri
         </p>
       )}
     </div>
-  );
-}
-
-function normalize(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase();
-}
-
-function PlayerPicker({
-  open,
-  index,
-  onClose,
-  onPick,
-}: {
-  open: boolean;
-  index: FplIndex;
-  onClose(): void;
-  onPick(id: FplPlayerId): void;
-}) {
-  const { t, f } = useI18n();
-  const [q, setQ] = useState('');
-  const results = useMemo(() => {
-    const needle = normalize(q.trim());
-    const all = index.bootstrap.players;
-    const list = needle
-      ? all.filter((p) => normalize(`${p.webName} ${p.firstName} ${p.secondName}`).includes(needle))
-      : [...all].sort((a, b) => b.selectedByPercent - a.selectedByPercent);
-    return list.slice(0, 40);
-  }, [q, index]);
-
-  return (
-    <BottomSheet open={open} onClose={onClose} title={t.admin.pickPlayer}>
-      <div className="sticky top-0 z-10 bg-surface pb-2">
-        <TextField
-          label={t.admin.searchPlayers}
-          type="search"
-          autoFocus
-          dir="ltr"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-      </div>
-      {results.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted">{t.admin.noPlayers}</p>
-      ) : (
-        <ul className="divide-y divide-line">
-          {results.map((p) => {
-            const team = index.teams.get(p.teamId);
-            return (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  onClick={() => onPick(p.id)}
-                  className="flex min-h-14 w-full items-center gap-3 py-2 text-start hover:bg-surface-2"
-                >
-                  <ImageWithFallback
-                    src={fplImage.photo(p.photoCode)}
-                    name={p.webName}
-                    className="h-11 w-9 shrink-0 rounded-md bg-surface-2 object-cover object-top"
-                    fallbackClassName="size-9 text-xs"
-                  />
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span dir="auto" className="name-start truncate font-semibold text-ink">
-                      {p.webName}
-                    </span>
-                    <span className="truncate text-xs text-muted">
-                      {p.firstName} {p.secondName}
-                    </span>
-                  </span>
-                  <span className="flex shrink-0 flex-col items-end gap-0.5">
-                    <Badge>{team?.shortName ?? '?'}</Badge>
-                    <span className="text-xs text-muted">
-                      {t.positions[p.position]} · {f.price(p.nowCost)}
-                    </span>
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </BottomSheet>
   );
 }
 

@@ -25,6 +25,8 @@ export const CACHE_CONTROL = {
    * "ready" may lag by a minute. Browser cache only (varies by Authorization: signed-in viewers get `private`).
    */
   roundup: 'public, max-age=60, stale-while-revalidate=120',
+  /** Community-captain vote for guests: the voter count moves, the shared part is recomputed every ~15 s. */
+  vote: 'public, max-age=15, stale-while-revalidate=30',
   /** Per-viewer responses: the browser may keep them, never a shared cache; always revalidated (ETag). */
   private: 'private, no-cache',
 } as const;

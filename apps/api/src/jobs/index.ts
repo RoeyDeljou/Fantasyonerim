@@ -1,5 +1,6 @@
 import type { IntegrationId } from '@fant/shared';
 import { cleanupJob, deadlineRemindersJob, gameweekSummaryJob } from './fpl.js';
+import { communityCaptainJob } from './communityCaptain.js';
 import { liveAlertsJob } from './liveAlerts.js';
 import { podcastJob } from './podcast.js';
 import { gameweekRoundupJob } from './roundup.js';
@@ -20,6 +21,8 @@ export const JOBS: readonly Job[] = [
   gameweekSummaryJob,
   // After the summary push: builds (and back-fills) the stored Gameweek Roundups, a bounded batch per run.
   gameweekRoundupJob,
+  // Tallies the Community Captain vote once a deadline has passed (and pushes the admins on a tie).
+  communityCaptainJob,
   liveAlertsJob,
   cleanupJob,
   // Last: smaller image copies for existing media, a few per run, outside matches and quiet hours.

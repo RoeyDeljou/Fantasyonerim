@@ -51,21 +51,22 @@ model User {
   /// Shown to admins only. Set together with bannedAt.
   banReason        String?
 
-  sessions          Session[]
-  adminCredential   AdminCredential?
-  pushSubscriptions PushSubscription[]
-  nativePushDevices NativePushDevice[]
-  notificationPrefs NotificationPrefs?
-  notificationLogs  NotificationLog[]
-  posts             CommunityPost[]
-  comments          Comment[]
-  likes             PostLike[]
-  uploads           Upload[]
-  reports           Report[]
-  blocking          UserBlock[]        @relation("blocker")
-  blockedBy         UserBlock[]        @relation("blocked")
-  invitesCreated    AdminInvite[]      @relation("inviteCreatedBy")
-  invitesUsed       AdminInvite[]      @relation("inviteUsedBy")
+  sessions              Session[]
+  adminCredential       AdminCredential?
+  pushSubscriptions     PushSubscription[]
+  nativePushDevices     NativePushDevice[]
+  notificationPrefs     NotificationPrefs?
+  notificationLogs      NotificationLog[]
+  posts                 CommunityPost[]
+  comments              Comment[]
+  likes                 PostLike[]
+  uploads               Upload[]
+  reports               Report[]
+  blocking              UserBlock[]            @relation("blocker")
+  blockedBy             UserBlock[]            @relation("blocked")
+  invitesCreated        AdminInvite[]          @relation("inviteCreatedBy")
+  invitesUsed           AdminInvite[]          @relation("inviteUsedBy")
+  communityCaptainVotes CommunityCaptainVote[]
 }
 
 model Session {
@@ -500,4 +501,41 @@ model AdminInvite {
   usedBy    User? @relation("inviteUsedBy", fields: [usedById], references: [id], onDelete: SetNull)
 
   @@index([createdAt(sort: Desc), id(sort: Desc)])
+}
+
+/// "My Community Captain": one vote per fan per GW for the community captain of the captain battle. Changeable until
+/// the GW's deadline (upsert); deleted with the account.
+model CommunityCaptainVote {
+  id        String   @id @default(cuid())
+  /// The GW being voted for (the next GW whose deadline is ahead).
+  event     Int
+  userId    String
+  playerId  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([event, userId])
+  @@index([event, playerId])
+}
+
+/// The outcome of one GW's vote; also the job's lock (the row is inserted once, `createMany skipDuplicates`).
+model CommunityCaptainResult {
+  event           Int       @id
+  /// "decided" | "tied" | "no_votes"
+  status          String
+  /// "votes" | "admin" (null unless decided)
+  source          String?
+  winnerPlayerId  Int?
+  /// Player ids sharing the top count while tied.
+  tiedPlayerIds   Json      @default("[]")
+  totalVotes      Int       @default(0)
+  /// [{ playerId, votes }] highest first, up to 20.
+  top             Json      @default("[]")
+  decidedAt       DateTime?
+  /// The admin who resolved it (no FK: deleting an admin keeps the history).
+  decidedById     String?
+  /// When the admins were pushed about a tie / no votes.
+  adminNotifiedAt DateTime?
 }

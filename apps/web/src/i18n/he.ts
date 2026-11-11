@@ -755,6 +755,9 @@ export const he = {
     pushResult: 'נשלח: {delivered} מתוך {recipients} מכשירים',
   },
   community: {
+    viewsLabel: 'תצוגת הקהילה',
+    viewFeed: 'פיד',
+    viewCaptain: 'קפטן הקהילה שלי',
     block: 'חסימת משתמש',
     blockTitle: 'לחסום את {name}?',
     blockBody1: 'לא תראו יותר את הפוסטים והתגובות של {name}.',

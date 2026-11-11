@@ -17,12 +17,15 @@ import { AuthorAvatar, BannedNotice, CommunityToastProvider } from '@/components
 import { MediaPriority } from '@/components/news/parts';
 import { SignUpPrompt } from '@/components/SignUpPrompt';
 import { useIsGuest } from '@/lib/guest';
+import { lazyWhenOpen } from '@/components/lazy';
 import {
   Button,
   EmptyState,
   ErrorState,
   InlineError,
+  Segmented,
   Skeleton,
+  SkeletonList,
   Spinner,
   errorMessage,
 } from '@/components/ui';
@@ -47,9 +50,24 @@ export function markOpenedFromFeed(): void {
   openedFromFeed = true;
 }
 
+type View = 'feed' | 'captain';
+
+/**
+ * "My Community Captain" (screens/CaptainVote.tsx) is its own chunk, with its own strings: fans reading the feed
+ * don't download it, and it is fetched in the background once the tab is idle so the sub-tab opens instantly.
+ */
+const CaptainVoteView = lazyWhenOpen(
+  () => import('./CaptainVote').then((m) => m.CaptainVoteView),
+  () => true,
+  <SkeletonList rows={3} />,
+);
+
 function CommunityInner() {
   const router = useRouter();
+  const { t } = useI18n();
   const [postParam] = useQueryParam('post');
+  const [viewParam, setView] = useQueryParam('view');
+  const view: View = viewParam === 'captain' ? 'captain' : 'feed';
   const postId = useMemo(() => {
     const p = PostIdSchema.safeParse(postParam);
     return p.success ? p.data : null;
@@ -63,7 +81,21 @@ function CommunityInner() {
   }, [router]);
 
   if (postId) return <Thread postId={postId} onBack={back} />;
-  return <FeedView />;
+  return (
+    <div className="flex flex-col gap-4">
+      <Segmented<View>
+        label={t.community.viewsLabel}
+        byLabel
+        value={view}
+        onChange={(v) => setView(v === 'feed' ? null : v)}
+        options={[
+          { value: 'feed', label: t.community.viewFeed },
+          { value: 'captain', label: t.community.viewCaptain },
+        ]}
+      />
+      {view === 'feed' ? <FeedView /> : <CaptainVoteView active />}
+    </div>
+  );
 }
 
 function FeedView() {

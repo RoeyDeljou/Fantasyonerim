@@ -10,6 +10,7 @@ export type JobName =
   | 'deadline_reminders'
   | 'gameweek_summary'
   | 'gameweek_roundup'
+  | 'community_captain'
   | 'live_alerts'
   | 'cleanup'
   | 'image_variants';
