@@ -5503,6 +5503,17 @@ async function voteJourneys(browser, userPage) {
       watch(ap, 'share');
       await ap.goto(`${WEB}/admin/?card=battle`);
       await openCard(ap, 'settings.battle');
+      // Another GW number clears the community / FPL Lad picks (one GW each), keeps custom player rows, hints once.
+      const rowOf = (kind) => ap.locator(`[data-battle-kind=${kind}]`);
+      assert((await rowOf('community').textContent()).includes('Højlund'), 'community player loaded');
+      await ap.getByTestId('battle-event').fill(String(EV < 38 ? EV + 1 : EV - 1));
+      assert(!(await rowOf('community').textContent()).includes('Højlund'), 'community pick cleared');
+      assert(!(await rowOf('fpl_lad').textContent()).includes('Raya'), 'FPL Lad pick cleared');
+      assert(
+        (await ap.locator('[data-battle-kind=custom]').nth(2).textContent()).includes('Arrizabalaga'),
+        'custom player row kept',
+      );
+      await ap.getByText('נוקו, כי הן שייכות למחזור אחד').waitFor();
       await ap.getByTestId('battle-share').click();
       const img = ap.getByTestId('share-image');
       await img.waitFor({ timeout: 30_000 });

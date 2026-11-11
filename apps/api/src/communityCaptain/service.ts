@@ -29,7 +29,8 @@ export interface Tally {
 export async function tallyOf(db: Db, event: number): Promise<Tally> {
   const groups = await db.communityCaptainVote.groupBy({
     by: ['playerId'],
-    where: { event },
+    // A banned account's earlier vote no longer counts.
+    where: { event, user: { bannedAt: null } },
     _count: { _all: true },
   });
   const rows = groups
@@ -130,6 +131,11 @@ export async function setCommunityPlayer(
   const current = await communityPickOf(tx, event);
   if (current.isSet && !overwrite) return { applied: false, existingPlayerId: current.playerId };
 
+  const newest = await tx.captainBattle.findFirst({
+    where: { event: { gt: event } },
+    orderBy: { updatedAt: 'desc' },
+    select: { updatedAt: true },
+  });
   let battle = await tx.captainBattle.findUnique({ where: { event }, include: { entries: true } });
   if (battle === null) {
     const earlier = await tx.captainBattle.findFirst({
@@ -160,7 +166,8 @@ export async function setCommunityPlayer(
       data: {
         event,
         createdAt: now,
-        updatedAt: now,
+        // A battle created for an older GW must not become the publicly shown (latest saved) one.
+        updatedAt: newest === null ? now : new Date(newest.updatedAt.getTime() - 1),
         entries: { create: rows.map((r, order) => ({ ...r, order })) },
       },
       include: { entries: true },
@@ -186,8 +193,11 @@ export async function setCommunityPlayer(
       data: { source: 'PLAYER', playerId, entryId: null },
     });
   }
-  // The most recently saved battle is the one shown publicly (like the admin save).
-  await tx.captainBattle.update({ where: { id: battle.id }, data: { updatedAt: now } });
+  // The most recently saved battle is the one shown publicly (like the admin save), unless a newer GW has a battle:
+  // a late tie-break of an older GW must not change what is shown.
+  if (newest === null) {
+    await tx.captainBattle.update({ where: { id: battle.id }, data: { updatedAt: now } });
+  }
   return { applied: true, existingPlayerId: current.playerId };
 }
 

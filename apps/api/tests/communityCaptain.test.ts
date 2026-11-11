@@ -562,3 +562,62 @@ describe('account deletion', () => {
     ]);
   });
 });
+
+describe('banned voters and late applies', () => {
+  it('a banned fan’s earlier vote does not count (winner, tie, voters, admin tally)', async () => {
+    const users = await castVotes([1, 2, 2]);
+    // Without the ban: player 2 leads. Ban both of its voters but one: 1 vs 2 is a tie.
+    await prisma.user.update({ where: { id: users[2]!.user.id }, data: { bannedAt: new Date() } });
+    const admin = await adminToken(app, prisma);
+    expect((await adminGet(admin)).tally).toEqual([
+      { playerId: 1, votes: 1 },
+      { playerId: 2, votes: 1 },
+    ]);
+    expect((await adminGet(admin)).totalVotes).toBe(2);
+    clock.advance(16_000);
+    expect((await getState()).state?.voters).toBe(2);
+    pastDeadline();
+    await runJob();
+    expect(await prisma.communityCaptainResult.findUniqueOrThrow({ where: { event: 12 } })).toMatchObject({
+      status: 'tied',
+      totalVotes: 2,
+    });
+    // Banning the other 2-voter too leaves a clear winner.
+    await prisma.communityCaptainResult.deleteMany();
+    await prisma.user.update({ where: { id: users[1]!.user.id }, data: { bannedAt: new Date() } });
+    await runJob();
+    expect(await prisma.communityCaptainResult.findUniqueOrThrow({ where: { event: 12 } })).toMatchObject({
+      status: 'decided',
+      winnerPlayerId: 1,
+    });
+  });
+
+  it('applying to an older GW does not change which battle is shown publicly', async () => {
+    const admin = await adminToken(app, prisma);
+    const save = (event: number, playerId: number) =>
+      app.inject({
+        method: 'PUT',
+        url: '/v1/admin/captain-battle',
+        headers: bearer(admin),
+        payload: {
+          event,
+          entries: [{ label: 'Crowd', source: 'player', playerId, kind: 'community' }],
+        },
+      });
+    // Latest saved battle is GW13; GW12 (older) has none and gets a tie-break after its deadline.
+    setSeason(GW12_DEADLINE + 5 * MIN, 11);
+    expect((await save(13, 4)).statusCode).toBe(200);
+    expect((await resolve(admin, { event: 12, playerId: 2 })).statusCode).toBe(200);
+    expect(await communityPlayer(12)).toBe(2);
+    const live = (await app.inject({ method: 'GET', url: '/v1/captain-battle' })).json();
+    expect(live.event).toBe(13);
+    expect(live.rows.find((r: { kind: string }) => r.kind === 'community').playerId).toBe(4);
+    // Same for an existing older battle being updated.
+    clock.advance(MIN);
+    expect((await save(12, 1)).statusCode).toBe(200);
+    clock.advance(MIN);
+    expect((await save(13, 4)).statusCode).toBe(200);
+    expect((await resolve(admin, { event: 12, playerId: 3 })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/v1/captain-battle' })).json().event).toBe(13);
+  });
+});

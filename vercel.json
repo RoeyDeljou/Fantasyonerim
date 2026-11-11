@@ -82,7 +82,7 @@
       ]
     },
     {
-      "source": "/fplimg/:path*",
+      "source": "/fplimg/(.*)",
       "headers": [
         {
           "key": "Cache-Control",

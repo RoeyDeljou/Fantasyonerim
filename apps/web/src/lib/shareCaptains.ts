@@ -62,9 +62,21 @@ export function captainVoteLink(origin: string): { link: string; short: string }
   };
 }
 
-/** The web address of the app: `NEXT_PUBLIC_SITE_URL` when set (the native shells' own origin is not shareable). */
+/** The production web address: what every shared link and QR code points at (never a preview or native origin). */
+export const PRODUCTION_SITE_URL = 'https://fantasyonerim.vercel.app';
+
+/** `NEXT_PUBLIC_SITE_URL` when set; the page's own origin on localhost / 127.0.0.1 (dev, e2e); else production. */
+export function resolveSiteOrigin(env: string | undefined, hostname: string, origin: string): string {
+  if (env) return env;
+  return hostname === 'localhost' || hostname === '127.0.0.1' ? origin : PRODUCTION_SITE_URL;
+}
+
 export function siteOrigin(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
+  return resolveSiteOrigin(
+    process.env.NEXT_PUBLIC_SITE_URL,
+    window.location.hostname,
+    window.location.origin,
+  );
 }
 
 // ---------- drawing helpers ----------

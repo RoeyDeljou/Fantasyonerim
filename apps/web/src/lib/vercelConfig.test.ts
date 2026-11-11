@@ -18,15 +18,17 @@ describe('vercel.json: /fplimg proxy for the share image', () => {
       destination: 'https://resources.premierleague.com/:path*',
     });
   });
-  it('sources use only the plain :path* parameter (Vercel rejects regex characters and then skips every deploy)', () => {
-    const sources = [...vercel.rewrites, ...vercel.headers]
-      .map((r) => r.source)
-      .filter((s) => s.startsWith('/fplimg'));
-    expect(sources.length).toBeGreaterThanOrEqual(2);
-    for (const s of sources) expect(s, s).toMatch(/^\/fplimg\/:path\*$/);
+  it('the header source uses the proven `(.*)` form, the rewrite the plain :path* form', () => {
+    // Vercel rejects header sources with any other regex characters and then skips every deploy.
+    expect(vercel.headers.filter((h) => h.source.startsWith('/fplimg')).map((h) => h.source)).toEqual([
+      '/fplimg/(.*)',
+    ]);
+    expect(vercel.rewrites.filter((r) => r.source.startsWith('/fplimg')).map((r) => r.source)).toEqual([
+      '/fplimg/:path*',
+    ]);
   });
   it('has long cache headers with rewrite caching on', () => {
-    const rule = vercel.headers.find((h) => h.source === '/fplimg/:path*');
+    const rule = vercel.headers.find((h) => h.source === '/fplimg/(.*)');
     const header = (k: string) =>
       rule?.headers.find((h) => h.key.toLowerCase() === k.toLowerCase())?.value ?? '';
     expect(header('x-vercel-enable-rewrite-caching')).toBe('1');

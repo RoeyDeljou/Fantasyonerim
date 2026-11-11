@@ -46,6 +46,8 @@ export const adminCaptainVote = defineSection(
     resolveFailed: 'השמירה נכשלה. נסו שוב.',
     tiedMark: 'תיקו',
 
+    permanentCleared: 'בחירות קפטן הקהילה ו־FPL Lad נוקו, כי הן שייכות למחזור אחד.',
+
     // ----- share -----
     share: 'שיתוף',
     shareSheetTitle: 'שיתוף קרב הקפטנים',
@@ -116,6 +118,8 @@ export const adminCaptainVote = defineSection(
     resolveFailed: 'Could not save. Try again.',
     tiedMark: 'Tied',
 
+    permanentCleared:
+      'The community and FPL Lad picks were cleared, because each belongs to a single gameweek.',
     share: 'Share',
     shareSheetTitle: 'Share the captain battle',
     shareBasedOn:

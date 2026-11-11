@@ -668,6 +668,11 @@ function CaptainBattleEditor() {
   );
 }
 
+/** A permanent row (community / FPL Lad) that is hand-picked and has a player set. */
+function isClearable(r: BattleRowDraft): boolean {
+  return isPermanentKind(r.kind) && r.source === 'player' && r.playerId !== null;
+}
+
 function BattleForm({
   index,
   initialEvent,
@@ -696,6 +701,7 @@ function BattleForm({
   const [rows, setRows] = useState<BattleRowDraft[]>(initialRows);
   const [picking, setPicking] = useState<number | null>(null);
   const [sharing, setSharing] = useState(false);
+  const [cleared, setCleared] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const update = (uid: number, patch: Partial<BattleRowDraft>) =>
@@ -772,7 +778,18 @@ function BattleForm({
           dir="ltr"
           className="w-28"
           value={event}
-          onChange={(e) => setEvent(e.target.value.replace(/[^\d]/g, '').slice(0, 2))}
+          hint={cleared ? av.permanentCleared : undefined}
+          data-testid="battle-event"
+          onChange={(e) => {
+            const next = e.target.value.replace(/[^\d]/g, '').slice(0, 2);
+            setEvent(next);
+            // The community / FPL Lad picks belong to ONE gameweek: another GW starts them empty (a carried-over
+            // community player would count as a manual pick and block the fan vote). Custom rows stay.
+            if (next !== '' && Number(next) !== initialEvent && rows.some(isClearable)) {
+              setRows((rs) => rs.map((r) => (isClearable(r) ? { ...r, playerId: null } : r)));
+              setCleared(true);
+            }
+          }}
         />
         <ol className="flex flex-col gap-2">
           {rows.map((r, i) => (

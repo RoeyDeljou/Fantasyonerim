@@ -63,7 +63,7 @@ export function communityCaptainRoutes(
       };
     }
     const [voters, row] = await Promise.all([
-      prisma.communityCaptainVote.count({ where: { event: target.event } }),
+      prisma.communityCaptainVote.count({ where: { event: target.event, user: { bannedAt: null } } }),
       target.status === 'locked'
         ? prisma.communityCaptainResult.findUnique({ where: { event: target.event } })
         : null,
