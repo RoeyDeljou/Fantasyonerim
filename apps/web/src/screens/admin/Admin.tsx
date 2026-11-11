@@ -86,7 +86,7 @@ import type { PermanentKind } from '@/lib/captains';
 import { AdminFrame, AdminGuard } from './AdminShell';
 import { PlayerPicker } from './PlayerPicker';
 import { CommunityCaptainCard } from './CommunityCaptainCard';
-import { lazyWhenOpen } from '@/components/lazy';
+import { ShareCaptainsSheet } from './ShareSheetLazy';
 import { adminCaptainVote } from '@/i18n/sections/adminCaptainVote';
 import { useSection } from '@/i18n/section';
 
@@ -570,12 +570,6 @@ function RemindersEditor({
 }
 
 // ---------- captain battle editor ----------
-
-/** The share picture + sheet (canvas, QR code): a chunk of its own, fetched when the editor opens the sheet. */
-const ShareCaptainsSheet = lazyWhenOpen(
-  () => import('./ShareCaptains').then((m) => m.ShareCaptainsSheet),
-  (p) => p.open,
-);
 
 interface BattleRowDraft {
   uid: number;

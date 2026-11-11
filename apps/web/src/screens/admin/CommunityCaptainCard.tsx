@@ -15,9 +15,17 @@ import { useQueryParam } from '@/lib/useQueryParam';
 import { Collapsible, loadProblem } from '@/components/Collapsible';
 import type { SummaryTone } from '@/components/Collapsible';
 import { ImageWithFallback, fplImage } from '@/components/FplImages';
-import { ChevronEndIcon, ChevronStartIcon, ClockIcon, CrownIcon, SearchIcon } from '@/components/icons';
+import {
+  ShareIcon,
+  ChevronEndIcon,
+  ChevronStartIcon,
+  ClockIcon,
+  CrownIcon,
+  SearchIcon,
+} from '@/components/icons';
 import { Badge, Button, IconButton, InlineError, Skeleton, Spinner, errorMessage, cx } from '@/components/ui';
 import { PlayerPicker } from './PlayerPicker';
+import { ShareCaptainsSheet } from './ShareSheetLazy';
 
 /** "1 vote" / "5 votes". */
 function votesText(n: number, s: Readonly<Record<'votesOne' | 'votesMany', string>>, f: Formatters): string {
@@ -71,6 +79,7 @@ export function CommunityCaptainCard() {
   const attention = needsAdmin(data);
   const resolve = useResolveCaptainVote();
   const [picking, setPicking] = useState(false);
+  const [inviting, setInviting] = useState(false);
   const [done, setDone] = useState<string | null>(null);
 
   let summary: string | undefined;
@@ -171,6 +180,12 @@ export function CommunityCaptainCard() {
                 {done}
               </p>
             )}
+            {data.status === 'open' && (
+              <Button variant="primary" onClick={() => setInviting(true)} data-testid="vote-invite">
+                <ShareIcon size={18} />
+                {s.shareVoteInvite}
+              </Button>
+            )}
             <Button
               variant={attention ? 'primary' : 'secondary'}
               disabled={eventNow === null || resolve.isPending}
@@ -185,6 +200,14 @@ export function CommunityCaptainCard() {
           </div>
         ) : null}
       </Collapsible>
+      {index && (
+        <ShareCaptainsSheet
+          open={inviting}
+          onClose={() => setInviting(false)}
+          index={index}
+          startMode="vote"
+        />
+      )}
       {index && (
         <PlayerPicker
           open={picking}

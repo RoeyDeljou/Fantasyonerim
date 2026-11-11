@@ -49,9 +49,32 @@ export const adminCaptainVote = defineSection(
     permanentCleared:
       'בשמירה למחזור אחר, בחירות קפטן הקהילה ו־FPL Lad שלא שונו יתנקו, כי הן שייכות למחזור אחד.',
 
+    // ----- share: the vote invitation -----
+    modesLabel: 'סוג התמונה',
+    modeBattle: 'קרב קפטנים',
+    modeVote: 'הצבעה',
+    voteNotOpen: 'ההצבעה תיפתח בסוף מחזור {gw}',
+    voteLocked: 'ההצבעה למחזור {gw} ננעלה',
+    voteNoEvent: 'אין מחזור להצבעה כרגע',
+    voteUnavailable: 'מצב ההצבעה לא זמין כרגע',
+    voteBasedOn: 'תמונת הזמנה להצבעה לקפטן הקהילה של מחזור {gw}, בלי קפטנים.',
+    voteCloses: 'ההצבעה נסגרת ב־{date} ב־{time}',
+    voteVotersOne: 'מצביע אחד כבר הצביע',
+    voteVotersMany: '{n} כבר הצביעו',
+    voteCaptionWithDeadline: 'הצביעו עכשיו לקפטן הקהילה של מחזור {gw}! ההצבעה נסגרת ב־{when} 👇',
+    voteCaptionNoDeadline: 'הצביעו עכשיו לקפטן הקהילה של מחזור {gw}! 👇',
+    voteWhen: '{date} ב־{time}',
+    voteShareTitle: 'הצביעו לקפטן הקהילה · מחזור {gw}',
+    voteFileName: 'community-captain-vote-gw{gw}.png',
+    shareVoteInvite: 'שיתוף הזמנה להצבעה',
+    imgVoteTitle: 'הצביעו לקפטן הקהילה',
+    imgVoteGw: 'מחזור {gw}',
+    imgVoteTagline: 'מי יהיה קפטן הקהילה? בחרו את השחקן שלכם עד הדדליין',
+    imgVoteCta: 'הצביעו עכשיו באפליקציה',
+
     // ----- share -----
     share: 'שיתוף',
-    shareSheetTitle: 'שיתוף קרב הקפטנים',
+    shareSheetTitle: 'שיתוף תמונה',
     shareBasedOn: 'התמונה מבוססת על הבחירה השמורה של מחזור {gw}. שמרו את הקרב לפני השיתוף אם שיניתם משהו.',
     shareHonest:
       'רשתות חברתיות לא הופכות תמונה מועלית ללחיצה. לכן הקישור מצורף לטקסט הפוסט, ובתמונה יש קוד QR.',
@@ -121,8 +144,30 @@ export const adminCaptainVote = defineSection(
 
     permanentCleared:
       'The community and FPL Lad picks were cleared, because each belongs to a single gameweek.',
+    modesLabel: 'Picture type',
+    modeBattle: 'Captain Battle',
+    modeVote: 'Vote',
+    voteNotOpen: 'Voting opens when GW {gw} ends',
+    voteLocked: 'Voting for GW {gw} is locked',
+    voteNoEvent: 'No gameweek to vote on right now',
+    voteUnavailable: 'The vote status is not available right now',
+    voteBasedOn: 'An invitation to vote for the GW {gw} community captain, with no captains shown.',
+    voteCloses: 'Voting closes {date} at {time}',
+    voteVotersOne: '1 person has already voted',
+    voteVotersMany: '{n} have already voted',
+    voteCaptionWithDeadline: 'Vote now for the GW {gw} community captain! Voting closes {when} 👇',
+    voteCaptionNoDeadline: 'Vote now for the GW {gw} community captain! 👇',
+    voteWhen: '{date} at {time}',
+    voteShareTitle: 'Vote for the Community Captain · GW {gw}',
+    voteFileName: 'community-captain-vote-gw{gw}.png',
+    shareVoteInvite: 'Share vote invitation',
+    imgVoteTitle: 'Vote for the Community Captain',
+    imgVoteGw: 'Gameweek {gw}',
+    imgVoteTagline: 'Who will be the Community Captain? Pick your player before the deadline',
+    imgVoteCta: 'Vote now in the app',
+
     share: 'Share',
-    shareSheetTitle: 'Share the captain battle',
+    shareSheetTitle: 'Share a picture',
     shareBasedOn:
       'The picture uses the saved selection for GW {gw}. Save the battle first if you changed anything.',
     shareHonest:

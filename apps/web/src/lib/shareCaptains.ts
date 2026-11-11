@@ -41,6 +41,17 @@ export interface ShareImageData {
   logoSrc: string;
   fplLadSrc: string;
   rows: readonly ShareImageRow[];
+  /** Set = the "vote invitation" poster: no captains, the text below instead of the rows. */
+  vote?: ShareVoteInvite;
+}
+
+/** The vote-invitation poster's own lines (the title / gw / cta / links come from `ShareImageData`). */
+export interface ShareVoteInvite {
+  tagline: string;
+  /** "ההצבעה נסגרת ב־21 בנוב׳ ב־13:00"; null = no deadline known. */
+  deadline: string | null;
+  /** "7 כבר הצביעו"; null when nobody voted yet. */
+  voters: string | null;
 }
 
 /** The photo of a player through the same-origin proxy (`/fplimg/:path*` → resources.premierleague.com). */
@@ -228,7 +239,13 @@ export async function renderShareImage(data: ShareImageData): Promise<Blob> {
   text(data.brand, rtl ? logoLeft - 24 : logoLeft + logoD + 24, logoCy + 19, 'start');
 
   ctx.fillStyle = pal.offwhite;
-  ctx.font = font(800, 92);
+  // A long headline shrinks to fit instead of being cut.
+  let titleSize = 92;
+  ctx.font = font(800, titleSize);
+  while (titleSize > 52 && ctx.measureText(data.title).width > W - 2 * M) {
+    titleSize -= 4;
+    ctx.font = font(800, titleSize);
+  }
   text(fit(ctx, data.title, W - 2 * M), W / 2, 282, 'center');
 
   ctx.font = font(700, 40);
@@ -241,128 +258,200 @@ export async function renderShareImage(data: ShareImageData): Promise<Blob> {
   ctx.fillStyle = pal.purple;
   text(data.gw, W / 2, 312 + 45, 'center');
 
-  // ----- the captain rows -----
-  const rows = data.rows.slice(0, SHARE_MAX_ROWS);
-  const top = 412;
-  const bottom = 1096;
-  const gap = 14;
-  const rowH = Math.min(158, Math.floor((bottom - top - gap * (rows.length - 1)) / Math.max(rows.length, 1)));
-  const photoD = rowH - 28;
-  const nameSize = Math.max(30, Math.min(46, Math.round(rowH * 0.31)));
-  const smallSize = Math.max(22, Math.round(nameSize * 0.6));
   const innerW = W - 2 * M;
-
-  rows.forEach((row, i) => {
-    const y = top + i * (rowH + gap);
-    roundRect(ctx, M, y, innerW, rowH, 30);
-    ctx.fillStyle = alpha(pal.offwhite, 0.09);
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = alpha(pal.mint, 0.25);
-    ctx.stroke();
-
-    // photo (or initials / "?")
-    const cx = boxX(M + 14, photoD) + photoD / 2;
-    const cy = y + rowH / 2;
-    const known = row.name !== null;
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, photoD / 2, 0, Math.PI * 2);
-    ctx.fillStyle = known ? pal.mint : alpha(pal.offwhite, 0.12);
-    ctx.fill();
-    const photo = photos[i];
-    if (known && photo) {
-      ctx.clip();
-      // A square cut from the top (the 110×140 portraits keep the face, the 250×250 ones are already square).
-      const side = Math.min(photo.naturalWidth, photo.naturalHeight);
-      ctx.drawImage(
-        photo,
-        (photo.naturalWidth - side) / 2,
-        0,
-        side,
-        side,
-        cx - photoD / 2,
-        cy - photoD / 2,
-        photoD,
-        photoD,
-      );
-      ctx.restore();
-    } else {
-      ctx.restore();
-      if (!known) {
-        ctx.setLineDash([8, 8]);
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = alpha(pal.mint, 0.6);
-        ctx.beginPath();
-        ctx.arc(cx, cy, photoD / 2 - 2, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-      ctx.fillStyle = known ? pal.purple : pal.mint;
-      ctx.font = font(800, Math.round(photoD * 0.38));
-      text(known ? row.initials : '?', cx, cy + photoD * 0.14, 'center');
-    }
-    ctx.beginPath();
-    ctx.arc(cx, cy, photoD / 2, 0, Math.PI * 2);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = alpha(pal.offwhite, 0.85);
-    ctx.stroke();
-
-    // tag pill at the end of the row
-    let tagW = 0;
-    const tagH = 40;
-    const tagText = row.tag;
-    if (tagText !== null || row.fplLad) {
-      ctx.font = font(700, 24);
-      const logoH = 28;
-      const logoW =
-        row.fplLad && fplLad ? Math.round((fplLad.naturalWidth / fplLad.naturalHeight) * logoH) : 0;
-      const textW = tagText ? Math.min(ctx.measureText(tagText).width, 190) : 0;
-      tagW = 28 + logoW + (logoW && textW ? 10 : 0) + textW;
-      // The chip hangs on the end side of the row (mirrored in Hebrew: on the left).
-      const chipX = rtl ? M + 22 : W - M - 22 - tagW;
-      roundRect(ctx, chipX, cy - tagH / 2, tagW, tagH, tagH / 2);
-      ctx.fillStyle = row.fplLad ? pal.plate : alpha(pal.mint, 0.2);
+  if (data.vote) {
+    // ----- the vote invitation: a ballot medallion of empty "?" slots instead of captains -----
+    const v = data.vote;
+    const cy = 590;
+    const slot = (cx: number, d: number, strong: boolean) => {
+      ctx.beginPath();
+      ctx.arc(cx, cy, d / 2, 0, Math.PI * 2);
+      ctx.fillStyle = alpha(pal.offwhite, strong ? 0.12 : 0.07);
       ctx.fill();
-      let cursor = rtl ? chipX + tagW - 14 : chipX + 14; // start side of the content inside the chip
-      const placeInChip = (w: number) => {
-        const left = rtl ? cursor - w : cursor;
-        cursor = rtl ? cursor - w : cursor + w;
-        return left;
-      };
-      if (logoW && fplLad) {
-        ctx.drawImage(fplLad, placeInChip(logoW), cy - logoH / 2, logoW, logoH);
-        if (textW) placeInChip(10);
-      }
-      if (tagText) {
-        ctx.fillStyle = row.fplLad ? pal.purple : pal.mint;
-        ctx.font = font(700, 24);
-        const shown = fit(ctx, tagText, 190);
-        const w = ctx.measureText(shown).width;
-        const left = placeInChip(w);
-        text(shown, rtl ? left + w : left, cy + 8, 'start');
+      ctx.setLineDash(strong ? [] : [10, 10]);
+      ctx.lineWidth = strong ? 6 : 3;
+      ctx.strokeStyle = alpha(pal.mint, strong ? 0.9 : 0.5);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = strong ? pal.mint : alpha(pal.mint, 0.55);
+      ctx.font = font(800, Math.round(d * 0.62));
+      ctx.direction = 'ltr';
+      text('?', cx, cy + d * 0.22, 'center');
+      ctx.direction = rtl ? 'rtl' : 'ltr';
+    };
+    const halo = ctx.createRadialGradient(W / 2, cy, 120, W / 2, cy, 420);
+    halo.addColorStop(0, alpha(pal.mint, 0.22));
+    halo.addColorStop(1, alpha(pal.mint, 0));
+    ctx.fillStyle = halo;
+    ctx.fillRect(0, cy - 420, W, 840);
+    slot(W / 2 - 330, 150, false);
+    slot(W / 2 + 330, 150, false);
+    slot(W / 2, 300, true);
+
+    ctx.fillStyle = pal.offwhite;
+    ctx.font = font(700, 46);
+    const tagWords = v.tagline.split(' ');
+    const tagLines: string[] = [];
+    let tagCur = '';
+    for (const w of tagWords) {
+      const next = tagCur ? `${tagCur} ${w}` : w;
+      if (ctx.measureText(next).width <= innerW - 40 || !tagCur) tagCur = next;
+      else {
+        tagLines.push(tagCur);
+        tagCur = w;
       }
     }
+    if (tagCur) tagLines.push(tagCur);
+    let ly = 830;
+    for (const l of tagLines.slice(0, 2)) {
+      text(fit(ctx, l, innerW - 40), W / 2, ly, 'center');
+      ly += 60;
+    }
+    let infoY = Math.max(ly + 24, 936);
+    if (v.deadline) {
+      ctx.font = font(700, 34);
+      const dw = Math.min(innerW, ctx.measureText(v.deadline).width + 80);
+      roundRect(ctx, (W - dw) / 2, infoY - 44, dw, 72, 36);
+      ctx.fillStyle = alpha(pal.offwhite, 0.1);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = alpha(pal.mint, 0.35);
+      ctx.stroke();
+      ctx.fillStyle = pal.offwhite;
+      text(fit(ctx, v.deadline, dw - 60), W / 2, infoY, 'center');
+      infoY += 76;
+    }
+    if (v.voters) {
+      ctx.fillStyle = pal.mint;
+      ctx.font = font(700, 34);
+      text(v.voters, W / 2, infoY, 'center');
+    }
+  } else {
+    // ----- the captain rows -----
+    const rows = data.rows.slice(0, SHARE_MAX_ROWS);
+    const top = 412;
+    const bottom = 1096;
+    const gap = 14;
+    const rowH = Math.min(
+      158,
+      Math.floor((bottom - top - gap * (rows.length - 1)) / Math.max(rows.length, 1)),
+    );
+    const photoD = rowH - 28;
+    const nameSize = Math.max(30, Math.min(46, Math.round(rowH * 0.31)));
+    const smallSize = Math.max(22, Math.round(nameSize * 0.6));
 
-    // text block between the photo and the tag
-    const textStart = M + 14 + photoD + 22;
-    const textMax = innerW - (textStart - M) - (tagW ? tagW + 44 : 22);
-    const anchor = sx(textStart);
-    const blockH = smallSize + 8 + nameSize + 8 + smallSize;
-    let ty = y + (rowH - blockH) / 2 + smallSize - 2;
-    ctx.fillStyle = alpha(pal.mint, 0.95);
-    ctx.font = font(600, smallSize);
-    text(fit(ctx, row.label, textMax), anchor, ty, 'start');
-    ty += 8 + nameSize;
-    ctx.fillStyle = known ? pal.offwhite : alpha(pal.offwhite, 0.75);
-    ctx.font = font(800, nameSize);
-    text(fit(ctx, known ? (row.name ?? '') : data.revealText, textMax), anchor, ty, 'start');
-    ty += 8 + smallSize;
-    ctx.fillStyle = alpha(pal.offwhite, 0.78);
-    ctx.font = font(400, smallSize);
-    const sub = [row.club, row.opponent].filter((p): p is string => !!p).join(' · ');
-    if (known && sub) text(fit(ctx, sub, textMax), anchor, ty, 'start');
-  });
+    rows.forEach((row, i) => {
+      const y = top + i * (rowH + gap);
+      roundRect(ctx, M, y, innerW, rowH, 30);
+      ctx.fillStyle = alpha(pal.offwhite, 0.09);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = alpha(pal.mint, 0.25);
+      ctx.stroke();
+
+      // photo (or initials / "?")
+      const cx = boxX(M + 14, photoD) + photoD / 2;
+      const cy = y + rowH / 2;
+      const known = row.name !== null;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, photoD / 2, 0, Math.PI * 2);
+      ctx.fillStyle = known ? pal.mint : alpha(pal.offwhite, 0.12);
+      ctx.fill();
+      const photo = photos[i];
+      if (known && photo) {
+        ctx.clip();
+        // A square cut from the top (the 110×140 portraits keep the face, the 250×250 ones are already square).
+        const side = Math.min(photo.naturalWidth, photo.naturalHeight);
+        ctx.drawImage(
+          photo,
+          (photo.naturalWidth - side) / 2,
+          0,
+          side,
+          side,
+          cx - photoD / 2,
+          cy - photoD / 2,
+          photoD,
+          photoD,
+        );
+        ctx.restore();
+      } else {
+        ctx.restore();
+        if (!known) {
+          ctx.setLineDash([8, 8]);
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = alpha(pal.mint, 0.6);
+          ctx.beginPath();
+          ctx.arc(cx, cy, photoD / 2 - 2, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.fillStyle = known ? pal.purple : pal.mint;
+        ctx.font = font(800, Math.round(photoD * 0.38));
+        text(known ? row.initials : '?', cx, cy + photoD * 0.14, 'center');
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy, photoD / 2, 0, Math.PI * 2);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = alpha(pal.offwhite, 0.85);
+      ctx.stroke();
+
+      // tag pill at the end of the row
+      let tagW = 0;
+      const tagH = 40;
+      const tagText = row.tag;
+      if (tagText !== null || row.fplLad) {
+        ctx.font = font(700, 24);
+        const logoH = 28;
+        const logoW =
+          row.fplLad && fplLad ? Math.round((fplLad.naturalWidth / fplLad.naturalHeight) * logoH) : 0;
+        const textW = tagText ? Math.min(ctx.measureText(tagText).width, 190) : 0;
+        tagW = 28 + logoW + (logoW && textW ? 10 : 0) + textW;
+        // The chip hangs on the end side of the row (mirrored in Hebrew: on the left).
+        const chipX = rtl ? M + 22 : W - M - 22 - tagW;
+        roundRect(ctx, chipX, cy - tagH / 2, tagW, tagH, tagH / 2);
+        ctx.fillStyle = row.fplLad ? pal.plate : alpha(pal.mint, 0.2);
+        ctx.fill();
+        let cursor = rtl ? chipX + tagW - 14 : chipX + 14; // start side of the content inside the chip
+        const placeInChip = (w: number) => {
+          const left = rtl ? cursor - w : cursor;
+          cursor = rtl ? cursor - w : cursor + w;
+          return left;
+        };
+        if (logoW && fplLad) {
+          ctx.drawImage(fplLad, placeInChip(logoW), cy - logoH / 2, logoW, logoH);
+          if (textW) placeInChip(10);
+        }
+        if (tagText) {
+          ctx.fillStyle = row.fplLad ? pal.purple : pal.mint;
+          ctx.font = font(700, 24);
+          const shown = fit(ctx, tagText, 190);
+          const w = ctx.measureText(shown).width;
+          const left = placeInChip(w);
+          text(shown, rtl ? left + w : left, cy + 8, 'start');
+        }
+      }
+
+      // text block between the photo and the tag
+      const textStart = M + 14 + photoD + 22;
+      const textMax = innerW - (textStart - M) - (tagW ? tagW + 44 : 22);
+      const anchor = sx(textStart);
+      const blockH = smallSize + 8 + nameSize + 8 + smallSize;
+      let ty = y + (rowH - blockH) / 2 + smallSize - 2;
+      ctx.fillStyle = alpha(pal.mint, 0.95);
+      ctx.font = font(600, smallSize);
+      text(fit(ctx, row.label, textMax), anchor, ty, 'start');
+      ty += 8 + nameSize;
+      ctx.fillStyle = known ? pal.offwhite : alpha(pal.offwhite, 0.75);
+      ctx.font = font(800, nameSize);
+      text(fit(ctx, known ? (row.name ?? '') : data.revealText, textMax), anchor, ty, 'start');
+      ty += 8 + smallSize;
+      ctx.fillStyle = alpha(pal.offwhite, 0.78);
+      ctx.font = font(400, smallSize);
+      const sub = [row.club, row.opponent].filter((p): p is string => !!p).join(' · ');
+      if (known && sub) text(fit(ctx, sub, textMax), anchor, ty, 'start');
+    });
+  }
 
   // ----- footer: call to action, the short link, the QR code -----
   const footTop = 1128;
@@ -389,26 +478,39 @@ export async function renderShareImage(data: ShareImageData): Promise<Blob> {
   }
 
   const copyMax = innerW - plate - 36;
-  ctx.fillStyle = pal.offwhite;
-  ctx.font = font(800, 44);
-  // The call to action wraps onto two lines when it is too long for the space next to the QR code.
-  const words = data.ctaText.split(' ');
-  const lines: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    const next = cur ? `${cur} ${w}` : w;
-    if (ctx.measureText(next).width <= copyMax || !cur) cur = next;
-    else {
-      lines.push(cur);
-      cur = w;
+  if (data.vote) {
+    // A button-looking call to action next to the QR code.
+    const btnH = 96;
+    const btnY = plateY + 18;
+    const btnX = boxX(M, copyMax);
+    roundRect(ctx, btnX, btnY, copyMax, btnH, btnH / 2);
+    ctx.fillStyle = pal.mint;
+    ctx.fill();
+    ctx.fillStyle = pal.purple;
+    ctx.font = font(800, 38);
+    text(fit(ctx, data.ctaText, copyMax - 48), btnX + copyMax / 2, btnY + btnH / 2 + 14, 'center');
+  } else {
+    ctx.fillStyle = pal.offwhite;
+    ctx.font = font(800, 44);
+    // The call to action wraps onto two lines when it is too long for the space next to the QR code.
+    const words = data.ctaText.split(' ');
+    const lines: string[] = [];
+    let cur = '';
+    for (const w of words) {
+      const next = cur ? `${cur} ${w}` : w;
+      if (ctx.measureText(next).width <= copyMax || !cur) cur = next;
+      else {
+        lines.push(cur);
+        cur = w;
+      }
     }
-  }
-  if (cur) lines.push(cur);
-  const shownLines = lines.slice(0, 2);
-  let fy = plateY + 56;
-  for (const l of shownLines) {
-    text(fit(ctx, l, copyMax), sx(M), fy, 'start');
-    fy += 56;
+    if (cur) lines.push(cur);
+    const shownLines = lines.slice(0, 2);
+    let fy = plateY + 56;
+    for (const l of shownLines) {
+      text(fit(ctx, l, copyMax), sx(M), fy, 'start');
+      fy += 56;
+    }
   }
   ctx.fillStyle = pal.mint;
   ctx.font = font(600, 28);

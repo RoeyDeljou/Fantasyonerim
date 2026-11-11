@@ -5508,6 +5508,7 @@ async function voteJourneys(browser, userPage) {
         };
       });
       a.V.admin = tiedAdmin();
+      a.V.state = lockedState(a.V, null);
       const ap = await a.ctx.newPage();
       watch(ap, 'share');
       await ap.goto(`${WEB}/admin/?card=battle`);
@@ -5645,6 +5646,7 @@ async function voteJourneys(browser, userPage) {
       en.V.battleConfig = a.V.battleConfig;
       en.V.battle = a.V.battle;
       en.V.admin = tiedAdmin();
+      en.V.state = lockedState(en.V, null);
       const ep = await en.ctx.newPage();
       watch(ep, 'share-en');
       await ep.goto(`${WEB}/admin/?card=battle`);
@@ -5669,6 +5671,199 @@ async function voteJourneys(browser, userPage) {
         await adminCard(ep).screenshot({ path: path.join(VOTE_SHOTS, 'en-dark-admin-tie.png') });
       }
       await en.ctx.close();
+    },
+  );
+
+  // ----- the vote-invitation poster (second mode of the share sheet) -----
+  const POSTER_SHOTS = process.env.E2E_POSTER_SHOTS;
+  const posterShot = async (pg, name) => {
+    if (POSTER_SHOTS) await pg.screenshot({ path: path.join(POSTER_SHOTS, `${name}.png`) });
+  };
+  const imageInfo = (pg) =>
+    pg.evaluate(async () => {
+      const el = document.querySelector('[data-testid=share-image]');
+      const bytes = new Uint8Array(await (await fetch(el.src)).arrayBuffer());
+      let bin = '';
+      for (const b of bytes) bin += String.fromCharCode(b);
+      return { w: el.naturalWidth, h: el.naturalHeight, src: el.src, b64: btoa(bin) };
+    });
+  const posterContext = async (opts) => {
+    const a = await voteContext(browser, { token: adminToken, bootstrap, EV, ...opts });
+    const star = bootstrap.players.slice(0, 2);
+    a.V.battleConfig = {
+      event: EV,
+      entries: [
+        { source: 'player', label: 'קפטן הקהילה', kind: 'community', tag: null, playerId: 9001 },
+        { source: 'player', label: 'FPL Lad', kind: 'fpl_lad', tag: null, playerId: star[0].id },
+      ],
+    };
+    a.V.battle = {
+      event: EV,
+      updatedAt: new Date().toISOString(),
+      rows: [
+        {
+          key: 'community',
+          label: 'קפטן הקהילה',
+          kind: 'community',
+          tag: null,
+          source: 'player',
+          entryId: null,
+          playerId: 9001,
+          captainPoints: 0,
+          multiplier: 2,
+          live: null,
+        },
+      ],
+    };
+    await a.ctx.addInitScript(() => {
+      navigator.canShare = (d) => Boolean(d && d.files && d.files.length);
+      navigator.share = async (d) => {
+        globalThis.__shared = {
+          title: d.title,
+          text: d.text,
+          url: d.url,
+          files: (d.files || []).map((f) => ({ name: f.name, type: f.type, size: f.size })),
+        };
+      };
+    });
+    return a;
+  };
+
+  await step(
+    'admin: vote-invitation poster (default mode by status, switching, share, blocked reasons)',
+    async () => {
+      const a = await posterContext({});
+      a.V.state = openState(a.V, { voters: 7 });
+      a.V.admin = tiedAdmin({ status: 'open', deadline: inHours(20), result: null, battlePlayerId: null });
+      const ap = await a.ctx.newPage();
+      watch(ap, 'poster');
+      const open = async () => {
+        await ap.goto(`${WEB}/admin/?card=battle`);
+        await openCard(ap, 'settings.battle');
+        await ap.getByTestId('battle-share').click();
+      };
+      // Open vote → the sheet starts in vote mode.
+      await open();
+      await ap.locator('[data-testid=share-sheet][data-mode=vote]').waitFor();
+      await ap.getByTestId('share-image').waitFor({ timeout: 30_000 });
+      let info = await imageInfo(ap);
+      assert(info.w === 1080 && info.h === 1350, `vote poster ${info.w}x${info.h}`);
+      const voteBytes = Buffer.from(info.b64, 'base64');
+      const sz = pngSize(voteBytes);
+      assert(sz.w === 1080 && sz.h === 1350, 'vote poster PNG header');
+      assert(
+        (await ap.getByTestId('share-mode-vote').getAttribute('aria-selected')) === 'true',
+        'vote tab selected',
+      );
+      if (POSTER_SHOTS) {
+        writeFileSync(path.join(POSTER_SHOTS, 'poster-he.png'), voteBytes);
+        await posterShot(ap, 'he-light-sheet-vote');
+      }
+      // Switching to the battle regenerates a different valid PNG, and back again.
+      await ap.getByTestId('share-mode-battle').click();
+      await ap.waitForFunction(
+        (old) => (document.querySelector('[data-testid=share-image]')?.src ?? old) !== old,
+        info.src,
+      );
+      const battleInfo = await imageInfo(ap);
+      assert(battleInfo.w === 1080 && battleInfo.h === 1350, 'battle poster size after switching');
+      assert(battleInfo.b64 !== info.b64, 'the battle picture differs from the vote picture');
+      await ap.getByTestId('share-mode-vote').click();
+      await ap.waitForFunction(
+        (old) => (document.querySelector('[data-testid=share-image]')?.src ?? old) !== old,
+        battleInfo.src,
+      );
+      // Share: the PNG, the vote title/caption and the deep link.
+      await ap.getByTestId('share-native').click();
+      await ap.waitForFunction(() => globalThis.__shared !== undefined);
+      const shared = await ap.evaluate(() => globalThis.__shared);
+      assert(shared.files.length === 1 && shared.files[0].type === 'image/png', 'shared the PNG');
+      assert(
+        shared.files[0].name === `community-captain-vote-gw${EV}.png`,
+        `file name ${shared.files[0].name}`,
+      );
+      assert(shared.title === `הצביעו לקפטן הקהילה · מחזור ${EV}`, `title ${shared.title}`);
+      assert(
+        shared.text.includes(`הצביעו עכשיו לקפטן הקהילה של מחזור ${EV}!`) &&
+          shared.text.includes('ההצבעה נסגרת ב'),
+        `text ${shared.text}`,
+      );
+      assert(shared.url.endsWith('/community/?view=captain'), `url ${shared.url}`);
+      const [download] = await Promise.all([
+        ap.waitForEvent('download'),
+        ap.getByTestId('share-download').click(),
+      ]);
+      assert(download.suggestedFilename() === `community-captain-vote-gw${EV}.png`, 'download name');
+      await ap.getByTestId('share-copy').click();
+      await ap.getByText('הקישור הועתק').waitFor();
+      await noHorizontalScroll(ap, 'poster sheet');
+      // The vote card's own button opens the sheet straight in vote mode.
+      await ap.goto(`${WEB}/admin/?card=vote`);
+      await ap.getByTestId('vote-invite').click();
+      await ap.locator('[data-testid=share-sheet][data-mode=vote]').waitFor();
+      await ap.getByTestId('share-image').waitFor({ timeout: 30_000 });
+      // Not open yet: the sheet opens on the battle, the vote tab is disabled with the reason.
+      a.V.state = openState(a.V, { status: 'not_open', voters: 0, deadline: inHours(200) });
+      await open();
+      await ap.locator('[data-testid=share-sheet][data-mode=battle]').waitFor();
+      assert(
+        await ap.getByTestId('share-mode-vote').isDisabled(),
+        'vote tab disabled before the window opens',
+      );
+      assert(
+        (await ap.getByTestId('share-vote-reason').textContent()) === `ההצבעה תיפתח בסוף מחזור ${EV - 1}`,
+        'not_open reason',
+      );
+      // Locked: the reason names the GW; the vote card has no invitation button.
+      a.V.state = lockedState(a.V, {
+        status: 'pending',
+        source: null,
+        winnerPlayerId: null,
+        tiedPlayerIds: [],
+        totalVotes: 7,
+        top: [],
+      });
+      await open();
+      await ap.locator('[data-testid=share-sheet][data-mode=battle]').waitFor();
+      assert(await ap.getByTestId('share-mode-vote').isDisabled(), 'vote tab disabled when locked');
+      assert(
+        (await ap.getByTestId('share-vote-reason').textContent()) === `ההצבעה למחזור ${EV} ננעלה`,
+        'locked reason',
+      );
+      a.V.admin = tiedAdmin();
+      await ap.goto(`${WEB}/admin/?card=vote`);
+      await adminCard(ap).waitFor();
+      assert((await ap.getByTestId('vote-invite').count()) === 0, 'no invitation button on a locked vote');
+      await a.ctx.close();
+
+      // Screenshots / English poster / dark theme.
+      for (const [locale, theme] of [
+        ['he', 'dark'],
+        ['en', 'light'],
+        ['en', 'dark'],
+      ]) {
+        const b = await posterContext({ locale, theme });
+        b.V.state = openState(b.V, { voters: 7 });
+        b.V.admin = tiedAdmin({ status: 'open', deadline: inHours(20), result: null, battlePlayerId: null });
+        const bp = await b.ctx.newPage();
+        watch(bp, `poster-${locale}-${theme}`);
+        await bp.goto(`${WEB}/admin/?card=battle`);
+        await openCard(bp, 'settings.battle');
+        await bp.getByTestId('battle-share').click();
+        await bp.getByTestId('share-image').waitFor({ timeout: 30_000 });
+        assert(
+          (await bp.locator('[data-testid=share-sheet]').getAttribute('data-mode')) === 'vote',
+          'vote mode',
+        );
+        const i2 = await imageInfo(bp);
+        assert(i2.w === 1080 && i2.h === 1350, `poster ${locale} size`);
+        if (POSTER_SHOTS) {
+          if (locale === 'en' && theme === 'light')
+            writeFileSync(path.join(POSTER_SHOTS, 'poster-en.png'), Buffer.from(i2.b64, 'base64'));
+          await posterShot(bp, `${locale}-${theme}-sheet-vote`);
+        }
+        await b.ctx.close();
+      }
     },
   );
 
