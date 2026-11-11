@@ -222,3 +222,17 @@ export function availabilityFlag(
       return null;
   }
 }
+
+/**
+ * The pick a PERMANENT captain row (community / FPL Lad) is saved with. Such a pick belongs to one gameweek: saving
+ * for a different GW than the config was loaded for drops a carried-over pick the admin did not touch this session.
+ * `loadedEvent` null = no saved config (first load): nothing is carried over.
+ */
+export function permanentPickForSave<T>(
+  playerId: T | null,
+  touched: boolean,
+  event: number | null,
+  loadedEvent: number | null,
+): T | null {
+  return loadedEvent !== null && event !== null && event !== loadedEvent && !touched ? null : playerId;
+}

@@ -46,7 +46,8 @@ export const adminCaptainVote = defineSection(
     resolveFailed: 'השמירה נכשלה. נסו שוב.',
     tiedMark: 'תיקו',
 
-    permanentCleared: 'בחירות קפטן הקהילה ו־FPL Lad נוקו, כי הן שייכות למחזור אחד.',
+    permanentCleared:
+      'בשמירה למחזור אחר, בחירות קפטן הקהילה ו־FPL Lad שלא שונו יתנקו, כי הן שייכות למחזור אחד.',
 
     // ----- share -----
     share: 'שיתוף',

@@ -8,6 +8,7 @@ import {
   normalizeName,
   opponentText,
   opponentsOf,
+  permanentPickForSave,
   searchPlayers,
   timeLeft,
   voteMode,
@@ -218,5 +219,23 @@ describe('availabilityFlag', () => {
     expect(availabilityFlag({ status: 'i' })).toBe('injured');
     expect(availabilityFlag({ status: 's' })).toBe('suspended');
     expect(availabilityFlag({ status: 'u' })).toBe('unavailable');
+  });
+});
+
+describe('permanentPickForSave', () => {
+  it('keeps everything while the GW is the loaded one (also mid-typing back to it)', () => {
+    expect(permanentPickForSave(5, false, 12, 12)).toBe(5);
+  });
+  it('drops an untouched carried-over pick for another GW', () => {
+    expect(permanentPickForSave(5, false, 13, 12)).toBeNull();
+  });
+  it('keeps a pick chosen in this session whatever the GW does afterwards', () => {
+    expect(permanentPickForSave(5, true, 13, 12)).toBe(5);
+    expect(permanentPickForSave(5, true, 14, 12)).toBe(5);
+  });
+  it('no saved config (first load) or an empty GW field: unaffected', () => {
+    expect(permanentPickForSave(5, false, 13, null)).toBe(5);
+    expect(permanentPickForSave(5, false, null, 12)).toBe(5);
+    expect(permanentPickForSave(null, false, 13, 12)).toBeNull();
   });
 });

@@ -73,6 +73,7 @@ import {
   errorMessage,
 } from '@/components/ui';
 import { useAdminCaptainBattle, useSaveAdminCaptainBattle } from '@/lib/adminCaptainBattle';
+import { permanentPickForSave } from '@/lib/captainVote';
 import { CLIENT_HOSTS } from '@/lib/clientConfig';
 import {
   MAX_TAG_LENGTH,
@@ -668,11 +669,6 @@ function CaptainBattleEditor() {
   );
 }
 
-/** A permanent row (community / FPL Lad) that is hand-picked and has a player set. */
-function isClearable(r: BattleRowDraft): boolean {
-  return isPermanentKind(r.kind) && r.source === 'player' && r.playerId !== null;
-}
-
 function BattleForm({
   index,
   initialEvent,
@@ -701,7 +697,9 @@ function BattleForm({
   const [rows, setRows] = useState<BattleRowDraft[]>(initialRows);
   const [picking, setPicking] = useState<number | null>(null);
   const [sharing, setSharing] = useState(false);
-  const [cleared, setCleared] = useState(false);
+  // Permanent rows (community / FPL Lad) the admin picked a player for in this session.
+  const [touched, setTouched] = useState<ReadonlySet<number>>(new Set());
+  const carried = isDefault ? null : initialEvent;
   const [error, setError] = useState<string | null>(null);
 
   const update = (uid: number, patch: Partial<BattleRowDraft>) =>
@@ -735,7 +733,9 @@ function BattleForm({
               kind: r.kind,
               tag: normalizeTag(r.tag),
               // Permanent rows may be saved "not picked yet" (null); a custom row without a player is invalid.
-              playerId: r.playerId ?? (isPermanentKind(r.kind) ? null : undefined),
+              playerId: isPermanentKind(r.kind)
+                ? permanentPickForSave(r.playerId, touched.has(r.uid), ev.data, carried)
+                : (r.playerId ?? undefined),
             }
           : {
               source: 'entry',
@@ -778,18 +778,18 @@ function BattleForm({
           dir="ltr"
           className="w-28"
           value={event}
-          hint={cleared ? av.permanentCleared : undefined}
+          hint={
+            rows.some(
+              (r) =>
+                isPermanentKind(r.kind) &&
+                r.playerId !== null &&
+                permanentPickForSave(r.playerId, touched.has(r.uid), Number(event) || null, carried) === null,
+            )
+              ? av.permanentCleared
+              : undefined
+          }
           data-testid="battle-event"
-          onChange={(e) => {
-            const next = e.target.value.replace(/[^\d]/g, '').slice(0, 2);
-            setEvent(next);
-            // The community / FPL Lad picks belong to ONE gameweek: another GW starts them empty (a carried-over
-            // community player would count as a manual pick and block the fan vote). Custom rows stay.
-            if (next !== '' && Number(next) !== initialEvent && rows.some(isClearable)) {
-              setRows((rs) => rs.map((r) => (isClearable(r) ? { ...r, playerId: null } : r)));
-              setCleared(true);
-            }
-          }}
+          onChange={(e) => setEvent(e.target.value.replace(/[^\d]/g, '').slice(0, 2))}
         />
         <ol className="flex flex-col gap-2">
           {rows.map((r, i) => (
@@ -857,7 +857,10 @@ function BattleForm({
         index={index}
         onClose={() => setPicking(null)}
         onPick={(id) => {
-          if (picking !== null) update(picking, { playerId: id });
+          if (picking !== null) {
+            update(picking, { playerId: id });
+            setTouched((t0) => new Set(t0).add(picking));
+          }
           setPicking(null);
         }}
       />

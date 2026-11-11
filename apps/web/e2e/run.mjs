@@ -4838,6 +4838,7 @@ async function voteMocks(ctx, bootstrap, EV) {
     resolveFail: null,
     battle: null,
     battleConfig: null,
+    battlePuts: [],
     me: null,
   };
   await ctx.route(
@@ -4914,7 +4915,15 @@ async function voteMocks(ctx, bootstrap, EV) {
   );
   await ctx.route(
     (u) => u.origin === API && u.pathname === '/v1/admin/captain-battle',
-    (r) => (r.request().method() === 'GET' ? r.fulfill(json(V.battleConfig)) : r.continue()),
+    (r) => {
+      const m = r.request().method();
+      if (m === 'OPTIONS') return r.continue();
+      if (m === 'PUT') {
+        V.battlePuts.push(r.request().postDataJSON());
+        return r.fulfill(json(r.request().postDataJSON()));
+      }
+      return r.fulfill(json(V.battleConfig));
+    },
   );
   await ctx.route(
     (u) => u.origin === API && u.pathname === '/v1/captain-battle',
@@ -5503,17 +5512,58 @@ async function voteJourneys(browser, userPage) {
       watch(ap, 'share');
       await ap.goto(`${WEB}/admin/?card=battle`);
       await openCard(ap, 'settings.battle');
-      // Another GW number clears the community / FPL Lad picks (one GW each), keeps custom player rows, hints once.
+      // Saving for ANOTHER gameweek drops the community / FPL Lad picks the admin did not touch (one GW each).
       const rowOf = (kind) => ap.locator(`[data-battle-kind=${kind}]`);
-      assert((await rowOf('community').textContent()).includes('Højlund'), 'community player loaded');
-      await ap.getByTestId('battle-event').fill(String(EV < 38 ? EV + 1 : EV - 1));
-      assert(!(await rowOf('community').textContent()).includes('Højlund'), 'community pick cleared');
-      assert(!(await rowOf('fpl_lad').textContent()).includes('Raya'), 'FPL Lad pick cleared');
+      const gwField = ap.getByTestId('battle-event');
+      const hint = ap.getByText('שלא שונו יתנקו');
+      const saveBattle = async () => {
+        const n = a.V.battlePuts.length;
+        await ap.getByRole('button', { name: 'שמירת קרב הקפטנים' }).click();
+        await waitUntil(() => a.V.battlePuts.length > n, 'the battle PUT');
+        return a.V.battlePuts.at(-1);
+      };
+      const picks = (body) =>
+        Object.fromEntries(body.entries.map((e) => [e.kind + (e.entryId ? e.label : ''), e.playerId]));
+      const reopen = async () => {
+        await ap.goto(`${WEB}/admin/?card=battle`);
+        await openCard(ap, 'settings.battle');
+      };
+      // "1" then back to the loaded GW while typing: nothing is cleared, the PUT keeps both picks.
+      await gwField.fill('1');
+      await hint.waitFor();
+      await gwField.fill(String(EV));
+      await hint.waitFor({ state: 'detached' });
+      let body = await saveBattle();
       assert(
-        (await ap.locator('[data-battle-kind=custom]').nth(2).textContent()).includes('Arrizabalaga'),
-        'custom player row kept',
+        body.event === EV && picks(body).community === 9001 && picks(body).fpl_lad === star[0].id,
+        'same GW keeps picks',
       );
-      await ap.getByText('נוקו, כי הן שייכות למחזור אחד').waitFor();
+      // Another GW without touching anything: both permanent picks are null, the custom player row stays.
+      await reopen();
+      await gwField.fill(String(EV + 1));
+      await hint.waitFor();
+      body = await saveBattle();
+      assert(picks(body).community === null && picks(body).fpl_lad === null, 'untouched picks cleared');
+      assert(
+        body.entries.find((e) => e.label === 'הבחירה של דנה').playerId === star[1].id,
+        'custom player kept',
+      );
+      // Another GW, then a community pick, then more GW edits: the touched pick survives, FPL Lad (untouched) is cleared.
+      await reopen();
+      await gwField.fill(String(EV + 1));
+      await rowOf('community')
+        .getByRole('button', { name: /Højlund/ })
+        .click();
+      await ap.getByLabel('חיפוש לפי שם שחקן').fill('groß');
+      await ap.getByRole('button', { name: /Groß/ }).first().click();
+      await gwField.fill(String(EV + 2));
+      await gwField.fill(String(EV + 1));
+      body = await saveBattle();
+      assert(
+        picks(body).community === 9002 && picks(body).fpl_lad === null,
+        `touched pick kept: ${JSON.stringify(picks(body))}`,
+      );
+      await reopen();
       await ap.getByTestId('battle-share').click();
       const img = ap.getByTestId('share-image');
       await img.waitFor({ timeout: 30_000 });
