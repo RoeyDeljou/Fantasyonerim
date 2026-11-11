@@ -42,3 +42,15 @@ export function targetWindow(events: readonly GameweekInfo[], nowMs: number): Vo
   const next = [...events].sort((a, b) => a.id - b.id).find((e) => Date.parse(e.deadlineTime) > nowMs);
   return next === undefined ? null : windowOf(events, next.id, nowMs);
 }
+
+/**
+ * The GW the fan screen shows: the GW in progress (deadline passed, not finished yet) as `locked`, so fans see the
+ * lock and the result until it ends; otherwise the next GW to vote for (`targetWindow`). Per GW N the sequence is
+ * open (N-1 finished … deadline N) → locked (deadline N … N finished) → the view moves on to N+1.
+ */
+export function displayWindow(events: readonly GameweekInfo[], nowMs: number): VoteWindow | null {
+  const inProgress = [...events]
+    .sort((a, b) => b.id - a.id)
+    .find((e) => Date.parse(e.deadlineTime) <= nowMs && !e.finished);
+  return inProgress === undefined ? targetWindow(events, nowMs) : windowOf(events, inProgress.id, nowMs);
+}

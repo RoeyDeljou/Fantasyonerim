@@ -21,7 +21,7 @@ import {
   setCommunityPlayer,
   tallyOf,
 } from '../communityCaptain/service.js';
-import { RESOLVE_GRACE_MS, targetWindow, windowOf } from '../communityCaptain/window.js';
+import { RESOLVE_GRACE_MS, displayWindow, targetWindow, windowOf } from '../communityCaptain/window.js';
 import { requireWriter } from '../community/guard.js';
 import type { AppContext } from '../context.js';
 import { badRequest, conflict, notFound } from '../errors.js';
@@ -50,7 +50,7 @@ export function communityCaptainRoutes(
   async function sharedState(): Promise<SharedState> {
     const now = ctx.clock.now();
     const bootstrap = await ctx.fpl.getBootstrap();
-    const target = targetWindow(bootstrap.events, now.getTime());
+    const target = displayWindow(bootstrap.events, now.getTime());
     if (target === null) {
       return {
         event: null,
@@ -156,7 +156,7 @@ export function communityCaptainRoutes(
     const bootstrap = await ctx.fpl.getBootstrap();
     const window =
       event === null
-        ? targetWindow(bootstrap.events, now.getTime())
+        ? displayWindow(bootstrap.events, now.getTime())
         : windowOf(bootstrap.events, event, now.getTime());
     if (window === null) {
       if (event !== null) throw notFound(`Gameweek ${event} does not exist`);
@@ -213,7 +213,9 @@ export function communityCaptainRoutes(
       const asked = windowOf(bootstrap.events, body.event, now.getTime());
       if (asked === null) throw notFound(`Gameweek ${body.event} does not exist`);
       const target = targetWindow(bootstrap.events, now.getTime());
-      const current = target?.event === asked.event;
+      const current =
+        target?.event === asked.event ||
+        displayWindow(bootstrap.events, now.getTime())?.event === asked.event;
       const recent = asked.status === 'locked' && now.getTime() - asked.deadlineMs <= RESOLVE_GRACE_MS;
       if (!current && !recent) {
         throw badRequest(

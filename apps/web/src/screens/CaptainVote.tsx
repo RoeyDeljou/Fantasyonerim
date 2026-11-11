@@ -88,7 +88,7 @@ function useOnline(): boolean {
 
 function CaptainVote() {
   const s = useSection(captainVote);
-  const { t } = useI18n();
+  const { t, f } = useI18n();
   const guest = useIsGuest();
   const banned = useBanned();
   const fpl = useFplIndex();
@@ -171,6 +171,11 @@ function CaptainVote() {
             </p>
           )}
           <ResultCard result={state.result} index={index} gw={state.event} />
+          {state.event !== null && state.event < 38 && (
+            <p className="text-center text-sm text-muted" data-testid="cv-next-opens">
+              {fmt(s.nextOpens, { next: f.num(state.event + 1), gw: f.num(state.event) })}
+            </p>
+          )}
         </>
       );
       break;

@@ -57,6 +57,7 @@ export const captainVote = defineSection(
 
     lockedTitle: 'ההצבעה ננעלה',
     lockedBody: 'הדדליין של מחזור {gw} עבר. הבחירות סגורות.',
+    nextOpens: 'ההצבעה לקפטן מחזור {next} תיפתח בסוף מחזור {gw}.',
     noPick: 'לא הצבעתם במחזור הזה.',
     resultPendingTitle: 'מחשבים את התוצאות',
     resultPendingBody: 'ההצבעה נסגרה. התוצאה תופיע כאן תוך כמה דקות.',
@@ -125,6 +126,7 @@ export const captainVote = defineSection(
 
     lockedTitle: 'Voting is locked',
     lockedBody: 'The GW {gw} deadline has passed. Picks are closed.',
+    nextOpens: "Voting for GW {next}'s captain opens when GW {gw} ends.",
     noPick: 'You did not vote this gameweek.',
     resultPendingTitle: 'Counting the votes',
     resultPendingBody: 'Voting has closed. The result will show up here in a few minutes.',
