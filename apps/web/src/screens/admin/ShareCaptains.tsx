@@ -129,7 +129,6 @@ function ShareBody({ index, startMode }: { index: FplIndex; startMode: ShareMode
   );
   const voteData = useMemo<ShareImageData | null>(() => {
     if (mode !== 'vote' || !voteState || voteEvent === null) return null;
-    const voters = voteState.voters;
     return {
       rtl: locale === 'he',
       brand: t.app.name,
@@ -145,8 +144,6 @@ function ShareBody({ index, startMode }: { index: FplIndex; startMode: ShareMode
       vote: {
         tagline: s.imgVoteTagline,
         deadline: voteWhen ? fmt(s.voteCloses, voteWhen) : null,
-        voters:
-          voters > 0 ? (voters === 1 ? s.voteVotersOne : fmt(s.voteVotersMany, { n: f.num(voters) })) : null,
       },
     };
   }, [mode, voteState, voteEvent, voteWhen, locale, link, s, t, f]);

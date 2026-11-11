@@ -50,8 +50,6 @@ export interface ShareVoteInvite {
   tagline: string;
   /** "ההצבעה נסגרת ב־21 בנוב׳ ב־13:00"; null = no deadline known. */
   deadline: string | null;
-  /** "7 כבר הצביעו"; null when nobody voted yet. */
-  voters: string | null;
 }
 
 /** The photo of a player through the same-origin proxy (`/fplimg/:path*` → resources.premierleague.com). */
@@ -262,7 +260,7 @@ export async function renderShareImage(data: ShareImageData): Promise<Blob> {
   if (data.vote) {
     // ----- the vote invitation: a ballot medallion of empty "?" slots instead of captains -----
     const v = data.vote;
-    const cy = 590;
+    const cy = 612;
     const slot = (cx: number, d: number, strong: boolean) => {
       ctx.beginPath();
       ctx.arc(cx, cy, d / 2, 0, Math.PI * 2);
@@ -302,12 +300,12 @@ export async function renderShareImage(data: ShareImageData): Promise<Blob> {
       }
     }
     if (tagCur) tagLines.push(tagCur);
-    let ly = 830;
+    let ly = 858;
     for (const l of tagLines.slice(0, 2)) {
       text(fit(ctx, l, innerW - 40), W / 2, ly, 'center');
       ly += 60;
     }
-    let infoY = Math.max(ly + 24, 936);
+    const infoY = ly + 36;
     if (v.deadline) {
       ctx.font = font(700, 34);
       const dw = Math.min(innerW, ctx.measureText(v.deadline).width + 80);
@@ -319,12 +317,6 @@ export async function renderShareImage(data: ShareImageData): Promise<Blob> {
       ctx.stroke();
       ctx.fillStyle = pal.offwhite;
       text(fit(ctx, v.deadline, dw - 60), W / 2, infoY, 'center');
-      infoY += 76;
-    }
-    if (v.voters) {
-      ctx.fillStyle = pal.mint;
-      ctx.font = font(700, 34);
-      text(v.voters, W / 2, infoY, 'center');
     }
   } else {
     // ----- the captain rows -----

@@ -5733,7 +5733,7 @@ async function voteJourneys(browser, userPage) {
     'admin: vote-invitation poster (default mode by status, switching, share, blocked reasons)',
     async () => {
       const a = await posterContext({});
-      a.V.state = openState(a.V, { voters: 7 });
+      a.V.state = openState(a.V);
       a.V.admin = tiedAdmin({ status: 'open', deadline: inHours(20), result: null, battlePlayerId: null });
       const ap = await a.ctx.newPage();
       watch(ap, 'poster');
@@ -5843,7 +5843,7 @@ async function voteJourneys(browser, userPage) {
         ['en', 'dark'],
       ]) {
         const b = await posterContext({ locale, theme });
-        b.V.state = openState(b.V, { voters: 7 });
+        b.V.state = openState(b.V);
         b.V.admin = tiedAdmin({ status: 'open', deadline: inHours(20), result: null, battlePlayerId: null });
         const bp = await b.ctx.newPage();
         watch(bp, `poster-${locale}-${theme}`);
