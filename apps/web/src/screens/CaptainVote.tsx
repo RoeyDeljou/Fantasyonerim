@@ -2,12 +2,7 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import type {
-  CommunityCaptainResult,
-  CommunityCaptainState,
-  FplPlayerId,
-  Player,
-} from '@fant/shared';
+import type { CommunityCaptainResult, CommunityCaptainState, FplPlayerId, Player } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import type { Formatters } from '@/i18n';
 import { captainVote } from '@/i18n/sections/captainVote';
@@ -129,13 +124,22 @@ function CaptainVote() {
   const index = fpl.index;
 
   const mode = voteMode({ state, guest, banned, draft, changing });
-  const playerOf = (id: FplPlayerId | null): Player | undefined => (id === null ? undefined : index.players.get(id));
+  const playerOf = (id: FplPlayerId | null): Player | undefined =>
+    id === null ? undefined : index.players.get(id);
   const mine = playerOf(state.myPick);
   const chosen = playerOf(draft);
 
   function confirm() {
     if (state === undefined || state.event === null || draft === null) return;
-    save.mutate({ event: state.event, playerId: draft });
+    save.mutate(
+      { event: state.event, playerId: draft },
+      {
+        onSuccess: () => {
+          setDraft(null);
+          setChanging(false);
+        },
+      },
+    );
   }
   const startOver = () => {
     save.reset();
@@ -146,7 +150,9 @@ function CaptainVote() {
   let body: ReactNode;
   switch (mode) {
     case 'no_event':
-      body = <EmptyState icon={<CrownIcon width={32} height={32} />} title={s.noEventTitle} body={s.noEventBody} />;
+      body = (
+        <EmptyState icon={<CrownIcon width={32} height={32} />} title={s.noEventTitle} body={s.noEventBody} />
+      );
       break;
     case 'not_open':
       body = <NotOpen state={state} />;
@@ -155,7 +161,8 @@ function CaptainVote() {
       body = (
         <>
           <p className="text-sm text-muted" data-testid="cv-locked">
-            <strong className="text-ink">{s.lockedTitle}.</strong> {fmt(s.lockedBody, { gw: state.event ?? '' })}
+            <strong className="text-ink">{s.lockedTitle}.</strong>{' '}
+            {fmt(s.lockedBody, { gw: state.event ?? '' })}
           </p>
           {mine ? (
             <PickCard
@@ -166,7 +173,10 @@ function CaptainVote() {
               label={s.youVoted}
             />
           ) : (
-            <p className="rounded-2xl border border-dashed border-line px-4 py-4 text-center text-sm text-muted" data-testid="cv-no-pick">
+            <p
+              className="rounded-2xl border border-dashed border-line px-4 py-4 text-center text-sm text-muted"
+              data-testid="cv-no-pick"
+            >
               {s.noPick}
             </p>
           )}
@@ -225,7 +235,13 @@ function CaptainVote() {
               {save.isPending ? <Spinner /> : <CheckIcon size={18} />}
               {save.isPending ? s.saving : s.confirm}
             </Button>
-            <Button variant="secondary" className="flex-1" disabled={save.isPending} onClick={startOver} data-testid="cv-change">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              disabled={save.isPending}
+              onClick={startOver}
+              data-testid="cv-change"
+            >
               {s.changePick}
             </Button>
           </div>
@@ -277,7 +293,12 @@ function CaptainVote() {
       <PullToRefresh refreshing={refresh.refreshing} onRefresh={() => void refresh.refresh()} />
       <RefreshDone state={refresh.state} />
       {mode !== 'no_event' && (
-        <StateHeader state={state} now={now} refreshing={refresh.refreshing} onRefresh={() => void refresh.refresh()} />
+        <StateHeader
+          state={state}
+          now={now}
+          refreshing={refresh.refreshing}
+          onRefresh={() => void refresh.refresh()}
+        />
       )}
       {body}
     </div>
@@ -351,8 +372,7 @@ function StateHeader({
               : count(left.n, s.minOne, s.minMany, f),
       })
     : null;
-  const voters =
-    state.voters === 0 ? s.votersNone : count(state.voters, s.votersOne, s.votersMany, f);
+  const voters = state.voters === 0 ? s.votersNone : count(state.voters, s.votersOne, s.votersMany, f);
   return (
     <header className="flex items-start gap-2" data-testid="cv-header">
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -364,7 +384,7 @@ function StateHeader({
               {fmt(s.deadline, { when: f.dateTime(state.deadline) })}
             </span>
             {leftText && (
-              <Badge tone="primary" className="px-2.5 py-1" >
+              <Badge tone="primary" className="px-2.5 py-1">
                 <span data-testid="cv-left">{leftText}</span>
               </Badge>
             )}
@@ -376,7 +396,12 @@ function StateHeader({
           </p>
         )}
       </div>
-      <IconButton label={t.refresh.button} onClick={onRefresh} aria-busy={refreshing} data-testid="cv-refresh">
+      <IconButton
+        label={t.refresh.button}
+        onClick={onRefresh}
+        aria-busy={refreshing}
+        data-testid="cv-refresh"
+      >
         <RefreshIcon size={20} className={cx(refreshing && 'animate-spin')} />
       </IconButton>
     </header>
@@ -441,17 +466,21 @@ function ResultCard({
                   className="h-8 w-6 shrink-0 rounded bg-surface-2 object-cover object-top"
                   fallbackClassName="size-7 text-[10px]"
                 />
-                <span dir="auto" className="name-start min-w-0 flex-1 truncate text-sm font-semibold text-ink">
+                <span
+                  dir="auto"
+                  className="name-start min-w-0 flex-1 truncate text-sm font-semibold text-ink"
+                >
                   {p?.webName ?? '?'}
                 </span>
                 <span className="text-sm text-muted">
-                  <bdi dir="ltr">
-                    {count(row.votes, s.votesOne, s.votesMany, f)}
-                  </bdi>
+                  <bdi dir="ltr">{count(row.votes, s.votesOne, s.votesMany, f)}</bdi>
                 </span>
               </span>
               <span aria-hidden="true" className="h-1.5 overflow-hidden rounded-full bg-surface-2">
-                <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.max(share, 3)}%` }} />
+                <span
+                  className="block h-full rounded-full bg-primary"
+                  style={{ width: `${Math.max(share, 3)}%` }}
+                />
               </span>
             </li>
           );
@@ -476,10 +505,18 @@ function ResultCard({
               <CrownIcon size={16} className="shrink-0 text-primary" />
               {fmt(s.resultDecidedTitle, { gw: f.num(gw ?? 0) })}
             </h2>
-            <p dir="auto" className="name-start truncate text-2xl leading-tight font-extrabold text-ink" data-testid="cv-winner">
+            <p
+              dir="auto"
+              className="name-start truncate text-2xl leading-tight font-extrabold text-ink"
+              data-testid="cv-winner"
+            >
               {winner?.webName ?? '?'}
             </p>
-            <span className="flex items-center gap-1.5 text-sm text-muted" data-testid="cv-source" data-source={result.source ?? ''}>
+            <span
+              className="flex items-center gap-1.5 text-sm text-muted"
+              data-testid="cv-source"
+              data-source={result.source ?? ''}
+            >
               {result.source === 'admin' && <ShieldIcon size={14} className="shrink-0" />}
               {result.source === 'admin' ? s.sourceAdmin : s.sourceVotes}
             </span>
@@ -516,4 +553,3 @@ function VoteSkeleton() {
     </div>
   );
 }
-

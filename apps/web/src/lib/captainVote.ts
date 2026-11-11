@@ -108,7 +108,11 @@ export function opponentsOf(
   event?: number | null,
 ): Opponent[] {
   return [...(fixtures ?? [])]
-    .filter((f) => (f.teamH === teamId || f.teamA === teamId) && (event == null || f.event === event))
+    .filter(
+      (f) =>
+        (f.teamH === teamId || f.teamA === teamId) &&
+        (event === undefined || event === null || f.event === event),
+    )
     .sort((a, b) => Date.parse(a.kickoffTime ?? '') - Date.parse(b.kickoffTime ?? '') || a.id - b.id)
     .map((f) => (f.teamH === teamId ? { teamId: f.teamA, home: true } : { teamId: f.teamH, home: false }));
 }
@@ -180,7 +184,9 @@ export function voteMode(i: VoteModeInput): VoteMode {
 /** Re-check the state about every 30 s while the server hasn't tallied a locked vote yet. */
 export const RESULT_POLL_MS = 30_000;
 
-export function needsResultPoll(state: Pick<CommunityCaptainState, 'status' | 'result'> | undefined): boolean {
+export function needsResultPoll(
+  state: Pick<CommunityCaptainState, 'status' | 'result'> | undefined,
+): boolean {
   return state?.status === 'locked' && (state.result === null || state.result.status === 'pending');
 }
 
@@ -199,7 +205,9 @@ export function timeLeft(deadlineIso: string, now: number): TimeLeft {
 }
 
 /** FPL availability flag worth showing next to a pick (null = fit). */
-export function availabilityFlag(p: Pick<Player, 'status'>): 'doubtful' | 'injured' | 'suspended' | 'unavailable' | null {
+export function availabilityFlag(
+  p: Pick<Player, 'status'>,
+): 'doubtful' | 'injured' | 'suspended' | 'unavailable' | null {
   switch (p.status) {
     case 'd':
       return 'doubtful';

@@ -146,7 +146,8 @@ function ShareBody({ index }: { index: FplIndex }) {
       }
       setNotice({ text: s.shareDone, ok: true });
     } catch (e) {
-      if (!(e instanceof DOMException && e.name === 'AbortError')) setNotice({ text: s.shareFailed, ok: false });
+      if (!(e instanceof DOMException && e.name === 'AbortError'))
+        setNotice({ text: s.shareFailed, ok: false });
     }
   }
 
@@ -203,7 +204,10 @@ function ShareBody({ index }: { index: FplIndex }) {
         )}
       </div>
       <p className="text-xs leading-relaxed text-muted">{fmt(s.shareBasedOn, { gw: f.num(event) })}</p>
-      <p className="rounded-xl bg-surface-2 px-3 py-2 text-sm leading-relaxed text-ink" data-testid="share-honest">
+      <p
+        className="rounded-xl bg-surface-2 px-3 py-2 text-sm leading-relaxed text-ink"
+        data-testid="share-honest"
+      >
         {s.shareHonest}
       </p>
       <p dir="ltr" className="truncate text-start text-xs text-muted" aria-label={s.shareLinkLabel}>
@@ -211,7 +215,12 @@ function ShareBody({ index }: { index: FplIndex }) {
       </p>
       <div className="grid grid-cols-2 gap-2">
         {typeof navigator.share === 'function' && (
-          <Button className="col-span-2" disabled={!ready} onClick={() => void share()} data-testid="share-native">
+          <Button
+            className="col-span-2"
+            disabled={!ready}
+            onClick={() => void share()}
+            data-testid="share-native"
+          >
             <ShareIcon size={18} />
             {s.shareAction}
           </Button>
@@ -228,7 +237,10 @@ function ShareBody({ index }: { index: FplIndex }) {
       {notice && (
         <p
           role="status"
-          className={cx('flex items-center gap-1.5 text-sm font-semibold', notice.ok ? 'text-success' : 'text-live')}
+          className={cx(
+            'flex items-center gap-1.5 text-sm font-semibold',
+            notice.ok ? 'text-success' : 'text-live',
+          )}
           data-testid="share-notice"
         >
           {notice.ok && <CheckIcon size={16} />}

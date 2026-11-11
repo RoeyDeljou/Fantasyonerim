@@ -127,11 +127,7 @@ describe('opponentText', () => {
     fx(3, 5, 1, '2026-11-24T19:30:00Z'),
   ];
   const text = (teamId: number) =>
-    opponentText(
-      opponentsOf(teamId as never, fixtures),
-      (id) => TEAM(id),
-      labels,
-    );
+    opponentText(opponentsOf(teamId as never, fixtures), (id) => TEAM(id), labels);
   it('home and away', () => {
     expect(text(2)).toBe('מול LIV (חוץ)');
     expect(text(3)).toBe('מול ? (בית)');
@@ -168,9 +164,9 @@ describe('voteMode', () => {
   });
   it('the server status decides before anything local', () => {
     expect(voteMode(base({ state: { status: 'not_open' }, draft: pid(1) }))).toBe('not_open');
-    expect(voteMode(base({ state: { status: 'locked', myPick: pid(1) }, draft: pid(2), changing: true }))).toBe(
-      'locked',
-    );
+    expect(
+      voteMode(base({ state: { status: 'locked', myPick: pid(1) }, draft: pid(2), changing: true })),
+    ).toBe('locked');
     expect(voteMode(base({ state: { event: null } }))).toBe('no_event');
   });
   it('guests and suspended accounts never get the picker', () => {

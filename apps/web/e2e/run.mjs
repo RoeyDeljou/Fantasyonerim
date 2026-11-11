@@ -723,8 +723,15 @@ async function journeys(browser) {
     return;
   }
 
+  if (process.env.E2E_ONLY_VOTE) {
+    await voteJourneys(browser, page);
+    await user.close();
+    return;
+  }
+
   await roundupJourneys(browser, page);
   await seasonJourneys(browser, page);
+  await voteJourneys(browser, page);
   if (process.env.E2E_ONLY_ROUNDUP) {
     await user.close();
     return;
@@ -4731,6 +4738,845 @@ async function seasonJourneys(browser, userPage) {
         }
     });
   }
+}
+
+// ---------- My Community Captain (Community → "קפטן הקהילה שלי") + admin vote card + share image ----------
+// Every vote endpoint is MOCKED with page.route (the real ones are covered by apps/api tests); bootstrap gets a few
+// accented players and the target gameweek's fixtures are canned (home, away, a double gameweek, a blank).
+
+const VOTE_SHOTS = process.env.E2E_VOTE_SHOTS;
+const EXTRA = [
+  {
+    id: 9001,
+    webName: 'Højlund',
+    firstName: 'Martin',
+    secondName: 'Højlund',
+    form: 8.4,
+    total: 140,
+    own: 30,
+  },
+  { id: 9002, webName: 'Groß', firstName: 'Pascal', secondName: 'Groß', form: 5.1, total: 90, own: 12 },
+  {
+    id: 9003,
+    webName: 'Muharemović',
+    firstName: 'Tarik',
+    secondName: 'Muharemović',
+    form: 4,
+    total: 60,
+    own: 3,
+  },
+  {
+    id: 9004,
+    webName: 'Bergvall',
+    firstName: 'Lucas',
+    secondName: 'Bergvall',
+    form: 2,
+    total: 20,
+    own: 1,
+    status: 'd',
+    chance: 50,
+  },
+];
+
+async function voteMocks(ctx, bootstrap, EV) {
+  const T = bootstrap.teams.map((t) => t.id);
+  const teamOf = { 9001: T[0], 9002: T[1], 9003: T[2], 9004: T[5] };
+  const players = [
+    ...bootstrap.players,
+    ...EXTRA.map((e) => ({
+      id: e.id,
+      webName: e.webName,
+      firstName: e.firstName,
+      secondName: e.secondName,
+      teamId: teamOf[e.id],
+      position: 'MID',
+      nowCost: 70,
+      photoCode: String(e.id),
+      status: e.status ?? 'a',
+      news: e.status ? 'Knock' : '',
+      chanceOfPlayingNextRound: e.chance ?? null,
+      selectedByPercent: e.own,
+      totalPoints: e.total,
+      eventPoints: 0,
+      form: e.form,
+    })),
+  ];
+  const fx = (id, h, a, day) => ({
+    id,
+    event: EV,
+    kickoffTime: `2030-01-${day}T15:00:00Z`,
+    teamH: h,
+    teamA: a,
+    teamHScore: null,
+    teamAScore: null,
+    minutes: 0,
+    status: 'not_started',
+  });
+  // T0 home v T1 · T2 home v T3 and (later) T4 home v T2: a double gameweek for T2 · T5 has no game.
+  const fixtures = [fx(9101, T[0], T[1], '10'), fx(9102, T[2], T[3], '10'), fx(9103, T[4], T[2], '13')];
+  const V = {
+    EV,
+    T,
+    state: null,
+    puts: [],
+    putFail: null,
+    admin: null,
+    resolves: [],
+    resolveFail: null,
+    battle: null,
+    battleConfig: null,
+    me: null,
+  };
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/fpl/bootstrap',
+    async (r) => {
+      if (r.request().method() === 'OPTIONS') return r.continue();
+      await r.fulfill(json({ ...bootstrap, players }));
+    },
+  );
+  await ctx.route(
+    (u) =>
+      u.origin === API && u.pathname === '/v1/fpl/fixtures' && u.searchParams.get('event') === String(EV),
+    (r) => (r.request().method() === 'OPTIONS' ? r.continue() : r.fulfill(json(fixtures))),
+  );
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/community-captain',
+    async (r) => {
+      const m = r.request().method();
+      if (m === 'OPTIONS') return r.continue();
+      if (m === 'PUT') {
+        const body = r.request().postDataJSON();
+        V.puts.push(body);
+        if (V.putFail)
+          return r.fulfill(
+            json({ error: { code: V.putFail.code, message: 'voting is closed' } }, V.putFail.status),
+          );
+        V.state = { ...V.state, myPick: body.playerId, voters: V.state.voters + 1 };
+      }
+      return r.fulfill(json(V.state));
+    },
+  );
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/admin/community-captain',
+    (r) => {
+      if (r.request().method() === 'OPTIONS') return r.continue();
+      const ev = r.request().url().includes('event=')
+        ? Number(new URL(r.request().url()).searchParams.get('event'))
+        : null;
+      if (ev !== null && ev !== V.admin.event)
+        return r.fulfill(
+          json({
+            ...V.admin,
+            event: ev,
+            status: 'not_open',
+            result: null,
+            tally: [],
+            totalVotes: 0,
+            battlePlayerId: null,
+          }),
+        );
+      return r.fulfill(json(V.admin));
+    },
+  );
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/admin/community-captain/resolve',
+    (r) => {
+      if (r.request().method() === 'OPTIONS') return r.continue();
+      const body = r.request().postDataJSON();
+      V.resolves.push(body);
+      if (V.resolveFail) return r.fulfill(json({ error: { code: 'conflict', message: 'boom' } }, 409));
+      V.admin = {
+        ...V.admin,
+        battlePlayerId: body.playerId,
+        result: {
+          ...V.admin.result,
+          status: 'decided',
+          source: 'admin',
+          winnerPlayerId: body.playerId,
+          tiedPlayerIds: [],
+        },
+      };
+      return r.fulfill(json(V.admin));
+    },
+  );
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/admin/captain-battle',
+    (r) => (r.request().method() === 'GET' ? r.fulfill(json(V.battleConfig)) : r.continue()),
+  );
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/captain-battle',
+    (r) => (r.request().method() === 'OPTIONS' ? r.continue() : r.fulfill(json(V.battle))),
+  );
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/me',
+    async (r) => {
+      if (r.request().method() !== 'GET' || !V.me) return r.continue();
+      const res = await r.fetch();
+      await r.fulfill({ response: res, json: { ...(await res.json()), ...V.me } });
+    },
+  );
+  return V;
+}
+
+const inHours = (h) => new Date(Date.now() + h * 3_600_000).toISOString();
+function openState(V, over = {}) {
+  return {
+    event: V.EV,
+    status: 'open',
+    opensAfterEvent: V.EV - 1,
+    deadline: inHours(30),
+    voters: 3,
+    myPick: null,
+    result: null,
+    updatedAt: new Date().toISOString(),
+    ...over,
+  };
+}
+const topRows = (rows) => rows.map(([playerId, votes]) => ({ playerId, votes }));
+function lockedState(V, result, over = {}) {
+  return openState(V, { status: 'locked', deadline: inHours(-2), voters: 7, result, ...over });
+}
+
+async function voteContext(browser, { token, locale = 'he', theme = 'light', guest = false, bootstrap, EV }) {
+  const ctx = await newContext(browser, { colorScheme: theme });
+  await ctx.addInitScript(
+    ([tok, loc, th, g]) => {
+      if (tok) globalThis.localStorage.setItem('fant.token', tok);
+      if (g) globalThis.localStorage.setItem('fant.guest', '1');
+      globalThis.localStorage.setItem('fant.locale', loc);
+      globalThis.localStorage.setItem('fant.theme', th);
+    },
+    [token, locale, theme, guest],
+  );
+  const V = await voteMocks(ctx, bootstrap, EV);
+  return { ctx, V };
+}
+
+function pngSize(bytes) {
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  assert(
+    sig.every((b, i) => bytes[i] === b),
+    'the share image is a PNG',
+  );
+  const dv = new DataView(new Uint8Array(bytes).buffer);
+  return { w: dv.getUint32(16), h: dv.getUint32(20) };
+}
+
+async function voteJourneys(browser, userPage) {
+  const token = await userPage.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+  const bootstrap = await (await globalThis.fetch(`${API}/v1/fpl/bootstrap`)).json();
+  const EV = bootstrap.nextEvent ?? bootstrap.currentEvent;
+  const teamName = (id) => bootstrap.teams.find((t) => t.id === id).shortName;
+  const shot = async (p, name) => {
+    if (VOTE_SHOTS) await p.screenshot({ path: path.join(VOTE_SHOTS, `${name}.png`) });
+  };
+
+  const { ctx, V } = await voteContext(browser, { token, bootstrap, EV });
+  const p = await ctx.newPage();
+  watch(p, 'vote');
+  const T = V.T;
+  const vote = p.getByTestId('captain-vote');
+  const go = async (state) => {
+    V.state = state;
+    await p.goto(`${WEB}/community/?view=captain`);
+    await vote.waitFor();
+  };
+
+  await step('Community: Feed stays the default; "קפטן הקהילה שלי" is a deep-linkable sub-tab', async () => {
+    await p.goto(`${WEB}/community/`);
+    const tabs = p.getByRole('tablist', { name: 'תצוגת הקהילה' });
+    await tabs.waitFor();
+    assert(
+      (await tabs.getByRole('tab', { name: 'פיד' }).getAttribute('aria-selected')) === 'true',
+      'Feed is default',
+    );
+    assert((await vote.count()) === 0, 'the vote is not rendered on the Feed');
+    V.state = openState(V);
+    await tabs.getByRole('tab', { name: 'קפטן הקהילה שלי' }).click();
+    await p.waitForURL('**/community/?view=captain');
+    await vote.waitFor();
+    await tabs.getByRole('tab', { name: 'פיד' }).click();
+    await p.waitForURL((u) => u.pathname === '/community/' && !u.search);
+    await p.goto(`${WEB}/community/?view=captain`);
+    await vote.waitFor();
+    assert(
+      (await p.getByRole('tab', { name: 'קפטן הקהילה שלי' }).getAttribute('aria-selected')) === 'true',
+      'deep link selects the sub-tab',
+    );
+    // The existing ?post= links keep working (no sub-tabs inside a thread).
+    await p.goto(`${WEB}/community/?post=nope`);
+    await p.waitForFunction(
+      () => !document.querySelector('[role=tablist][aria-label="תצוגת הקהילה"]'),
+      null,
+      { timeout: 15_000 },
+    );
+  });
+
+  await step('not_open: friendly message with the opening GW and the deadline, no picker', async () => {
+    await go(openState(V, { status: 'not_open', voters: 0, deadline: inHours(200) }));
+    const t = await p.getByTestId('cv-not-open').textContent();
+    assert(t.includes(`מחזור ${EV - 1} מסתיים`), `not-open text: ${t}`);
+    assert((await p.getByTestId('cv-deadline').count()) === 1, 'deadline shown');
+    assert((await p.getByTestId('cv-search').count()) === 0, 'no picker');
+    await noHorizontalScroll(p, 'vote not_open');
+  });
+
+  await step(
+    'open: header, accent-insensitive search, opponents (H/A, double GW, none), keyboard',
+    async () => {
+      await go(openState(V));
+      assert(
+        (await p.getByRole('heading', { name: `קפטן הקהילה למחזור ${EV}` }).count()) === 1,
+        'GW heading',
+      );
+      assert((await p.getByTestId('cv-voters').textContent()).includes('3 הצביעו'), 'voters');
+      assert((await p.getByTestId('cv-left').textContent()).includes('שעות'), 'hours left');
+      const input = p.getByRole('combobox');
+      await input.click();
+      await p.getByRole('listbox').waitFor();
+      assert((await input.getAttribute('aria-expanded')) === 'true', 'expanded on focus');
+      assert((await p.getByRole('option').count()) === 8, 'top 8 suggestions for an empty query');
+      const opt = (id) => p.locator(`[role=option][data-player="${id}"]`);
+      await input.fill('hojlund');
+      assert((await p.getByRole('option').count()) === 1, 'Højlund found from "hojlund"');
+      assert(
+        (await opt(9001).getByTestId('cv-opponent').textContent()) === `מול ${teamName(T[1])} (בית)`,
+        'home',
+      );
+      await input.fill('GROSS');
+      assert(
+        (await opt(9002).getByTestId('cv-opponent').textContent()) === `מול ${teamName(T[0])} (חוץ)`,
+        'away',
+      );
+      await input.fill('muharemovic');
+      assert(
+        (await opt(9003).getByTestId('cv-opponent').textContent()) ===
+          `מול ${teamName(T[3])} (בית) · מול ${teamName(T[4])} (חוץ)`,
+        'double gameweek lists both',
+      );
+      await input.fill('bergv');
+      assert((await opt(9004).getByTestId('cv-opponent').textContent()) === 'אין משחק במחזור', 'no game');
+      await input.fill('zzzzz');
+      await p.getByText('לא נמצא שחקן בשם הזה').waitFor();
+      assert((await input.getAttribute('aria-expanded')) === 'false', 'collapsed with no results');
+      // Keyboard: ↓ moves the active descendant, Esc closes, Enter picks.
+      await input.fill('mar');
+      const n = await p.getByRole('option').count();
+      assert(n >= 2, `several matches for "mar" (${n})`);
+      const second = await p.getByRole('option').nth(1).getAttribute('id');
+      await input.press('ArrowDown');
+      assert(
+        (await input.getAttribute('aria-activedescendant')) === second,
+        'aria-activedescendant follows ↓',
+      );
+      assert(
+        (await p.getByRole('option').nth(1).getAttribute('aria-selected')) === 'true',
+        'second option selected',
+      );
+      await input.press('ArrowUp');
+      await input.press('ArrowUp');
+      assert(
+        (await input.getAttribute('aria-activedescendant')) ===
+          (await p
+            .getByRole('option')
+            .nth(n - 1)
+            .getAttribute('id')),
+        '↑ wraps to the last option',
+      );
+      await input.press('Escape');
+      assert((await input.getAttribute('aria-expanded')) === 'false', 'Esc closes');
+      await input.press('ArrowDown');
+      assert((await input.getAttribute('aria-expanded')) === 'true', '↓ reopens');
+      const active = await input.getAttribute('aria-activedescendant');
+      const target = await p.locator(`[id="${active}"]`).getAttribute('data-player');
+      await input.press('Enter');
+      await p.getByTestId('cv-pick').waitFor();
+      assert(
+        (await p.getByTestId('cv-pick').getAttribute('data-player')) === target,
+        'Enter picked the active option',
+      );
+      await noHorizontalScroll(p, 'vote open');
+    },
+  );
+
+  await step(
+    'draft → Confirm (PUT) → confirmed → Change pick → new Confirm; Change pick on a draft goes back',
+    async () => {
+      await go(openState(V));
+      V.puts.length = 0;
+      const input = p.getByRole('combobox');
+      await input.fill('hojl');
+      await p.locator('[role=option][data-player="9001"]').click();
+      const card = p.getByTestId('cv-pick');
+      assert((await card.getAttribute('data-state')) === 'draft', 'draft card');
+      const text = await card.textContent();
+      assert(
+        text.includes('הבחירה שלך:') && text.includes('Højlund') && text.includes('פורמה'),
+        `draft card: ${text}`,
+      );
+      assert((await p.getByTestId('cv-form').textContent()).includes('8.4'), 'form value');
+      assert(
+        (await p.getByTestId('cv-pick-fixture').textContent()).includes(`מול ${teamName(T[1])} (בית)`),
+        'plays',
+      );
+      assert((await p.getByTestId('cv-confirmed').count()) === 0, 'not confirmed yet');
+      // Change pick on a draft: back to the search.
+      await p.getByTestId('cv-change').click();
+      await p.getByRole('combobox').waitFor();
+      assert(V.puts.length === 0, 'nothing sent for a draft');
+      await p.getByRole('combobox').fill('hojl');
+      await p.locator('[role=option][data-player="9001"]').click();
+      await p.getByTestId('cv-confirm').click();
+      await p.getByTestId('cv-confirmed').waitFor();
+      assert(
+        JSON.stringify(V.puts) === JSON.stringify([{ event: EV, playerId: 9001 }]),
+        `PUT body ${JSON.stringify(V.puts)}`,
+      );
+      assert((await p.getByTestId('cv-pick').getAttribute('data-state')) === 'confirmed', 'confirmed card');
+      assert((await p.getByTestId('cv-pick-name').textContent()) === 'Højlund', 'name');
+      // Reload: the existing myPick shows as confirmed.
+      await p.goto(`${WEB}/community/?view=captain`);
+      await p.getByTestId('cv-confirmed').waitFor();
+      // Change pick → search (with Cancel), a new pick → draft → confirm.
+      await p.getByTestId('cv-change').click();
+      await p.getByRole('combobox').waitFor();
+      await p.getByTestId('cv-cancel').click();
+      await p.getByTestId('cv-confirmed').waitFor();
+      await p.getByTestId('cv-change').click();
+      await p.getByRole('combobox').fill('muhar');
+      await p.locator('[role=option][data-player="9003"]').click();
+      assert((await p.getByTestId('cv-pick').getAttribute('data-state')) === 'draft', 'new draft');
+      await p.getByTestId('cv-confirm').click();
+      await p.locator('[data-testid=cv-pick][data-player="9003"][data-state=confirmed]').waitFor();
+      assert(
+        JSON.stringify(V.puts) ===
+          JSON.stringify([
+            { event: EV, playerId: 9001 },
+            { event: EV, playerId: 9003 },
+          ]),
+        `PUT bodies ${JSON.stringify(V.puts)}`,
+      );
+    },
+  );
+
+  await step('a "voting closed" 4xx locks the screen (server is the authority) and refetches', async () => {
+    await go(openState(V, { myPick: 9001 }));
+    await p.getByTestId('cv-change').click();
+    await p.getByRole('combobox').fill('gross');
+    await p.locator('[role=option][data-player="9002"]').click();
+    V.putFail = { status: 409, code: 'conflict' };
+    await p.getByTestId('cv-confirm').click();
+    await p.getByRole('alert').filter({ hasText: 'ההצבעה לא נשמרה' }).waitFor();
+    // The server now says locked.
+    V.state = lockedState(
+      V,
+      { status: 'pending', source: null, winnerPlayerId: null, tiedPlayerIds: [], totalVotes: 7, top: [] },
+      { myPick: 9001 },
+    );
+    V.putFail = null;
+    await p.getByTestId('cv-refresh').click();
+    await p.locator('[data-testid=captain-vote][data-mode=locked]').waitFor({ timeout: 15_000 });
+    assert((await p.getByTestId('cv-search').count()) === 0, 'no editing once locked');
+  });
+
+  await step(
+    'locked (the normal state until the GW ends): pending → decided / tied / no votes, next-vote line',
+    async () => {
+      const open = lockedState(
+        V,
+        { status: 'pending', source: null, winnerPlayerId: null, tiedPlayerIds: [], totalVotes: 7, top: [] },
+        { myPick: 9001 },
+      );
+      await go(open);
+      assert((await p.getByTestId('cv-result').getAttribute('data-result')) === 'pending', 'pending');
+      assert((await p.getByText('מחשבים את התוצאות').count()) === 1, 'counting text');
+      assert(
+        (await p.getByTestId('cv-next-opens').textContent()).includes(`תיפתח בסוף מחזור ${EV}`),
+        'next vote line',
+      );
+      assert(
+        (await p.getByTestId('cv-pick').getAttribute('data-player')) === '9001',
+        'my pick stays visible',
+      );
+      await shot(p, 'he-light-locked-pending');
+      // The result lands: the refresh button re-reads the state.
+      V.state = lockedState(
+        V,
+        {
+          status: 'decided',
+          source: 'votes',
+          winnerPlayerId: 9001,
+          tiedPlayerIds: [],
+          totalVotes: 7,
+          top: topRows([
+            [9001, 4],
+            [9003, 2],
+            [9002, 1],
+          ]),
+        },
+        { myPick: 9001 },
+      );
+      await p.getByTestId('cv-refresh').click();
+      await p.locator('[data-testid=cv-result][data-result=decided]').waitFor();
+      assert((await p.getByTestId('cv-winner').textContent()) === 'Højlund', 'winner');
+      assert((await p.getByTestId('cv-source').getAttribute('data-source')) === 'votes', 'by votes');
+      assert((await p.getByTestId('cv-top').locator('li').count()) === 3, 'top rows');
+      assert((await p.getByTestId('cv-top').textContent()).includes('4 קולות'), 'vote counts');
+      await noHorizontalScroll(p, 'vote locked decided');
+      await shot(p, 'he-light-locked-decided');
+      // By the admins.
+      V.state = { ...V.state, result: { ...V.state.result, source: 'admin' } };
+      await p.goto(`${WEB}/community/?view=captain`);
+      await p.getByText('נבחר על ידי האדמינים').waitFor();
+      // Tied.
+      V.state = lockedState(V, {
+        status: 'tied',
+        source: null,
+        winnerPlayerId: null,
+        tiedPlayerIds: [9001, 9003],
+        totalVotes: 6,
+        top: topRows([
+          [9001, 3],
+          [9003, 3],
+        ]),
+      });
+      await p.goto(`${WEB}/community/?view=captain`);
+      await p.getByText('ממתין להכרעת האדמינים').waitFor();
+      assert((await p.getByTestId('cv-no-pick').count()) === 1, 'no pick of mine');
+      await shot(p, 'he-light-locked-tied');
+      // Nobody voted.
+      V.state = lockedState(
+        V,
+        { status: 'no_votes', source: null, winnerPlayerId: null, tiedPlayerIds: [], totalVotes: 0, top: [] },
+        { voters: 0 },
+      );
+      await p.goto(`${WEB}/community/?view=captain`);
+      await p.getByText('אף אחד לא הצביע').first().waitFor();
+    },
+  );
+
+  await step(
+    'guest sees the state and the sign-up prompt, not the picker; a suspended account is blocked',
+    async () => {
+      const g = await voteContext(browser, { token: null, guest: true, bootstrap, EV });
+      const gp = await g.ctx.newPage();
+      watch(gp, 'vote-guest');
+      g.V.state = openState(g.V);
+      await gp.goto(`${WEB}/community/?view=captain`);
+      await gp.locator('[data-testid=captain-vote][data-mode=guest]').waitFor();
+      await gp.getByTestId('signup-prompt').waitFor();
+      assert((await gp.getByRole('combobox').count()) === 0, 'guest has no picker');
+      assert((await gp.getByTestId('cv-voters').count()) === 1, 'guest sees the voters count');
+      await g.ctx.close();
+      V.me = { canPost: false };
+      await go(openState(V));
+      await p.locator('[data-testid=captain-vote][data-mode=banned]').waitFor();
+      await p.getByTestId('banned-notice').waitFor();
+      assert((await p.getByRole('combobox').count()) === 0, 'suspended account has no picker');
+      V.me = null;
+    },
+  );
+
+  // ----- screenshots: the four combinations -----
+  if (VOTE_SHOTS) {
+    for (const [locale, theme] of [
+      ['he', 'light'],
+      ['he', 'dark'],
+      ['en', 'light'],
+      ['en', 'dark'],
+    ]) {
+      await step(`screenshots ${locale}/${theme}`, async () => {
+        const c = await voteContext(browser, { token, locale, theme, bootstrap, EV });
+        const sp = await c.ctx.newPage();
+        watch(sp, `vote-shots-${locale}-${theme}`);
+        const tag = `${locale}-${theme}`;
+        c.V.state = openState(c.V);
+        await sp.goto(`${WEB}/community/?view=captain`);
+        await sp.getByTestId('captain-vote').waitFor();
+        const input = sp.getByRole('combobox');
+        await input.fill('mu');
+        await sp.getByRole('listbox').waitFor();
+        await sp.waitForTimeout(700);
+        await shot(sp, `${tag}-1-picker`);
+        await input.fill('hojl');
+        await sp.locator('[role=option][data-player="9001"]').click();
+        await sp.getByTestId('cv-pick').waitFor();
+        await shot(sp, `${tag}-2-draft`);
+        await sp.getByTestId('cv-confirm').click();
+        await sp.getByTestId('cv-confirmed').waitFor();
+        await shot(sp, `${tag}-3-confirmed`);
+        c.V.state = lockedState(
+          c.V,
+          {
+            status: 'decided',
+            source: 'votes',
+            winnerPlayerId: 9001,
+            tiedPlayerIds: [],
+            totalVotes: 7,
+            top: topRows([
+              [9001, 4],
+              [9003, 2],
+              [9002, 1],
+            ]),
+          },
+          { myPick: 9003 },
+        );
+        await sp.goto(`${WEB}/community/?view=captain`);
+        await sp.locator('[data-testid=cv-result][data-result=decided]').waitFor();
+        await shot(sp, `${tag}-4-locked-decided`);
+        c.V.state = lockedState(
+          c.V,
+          {
+            status: 'tied',
+            source: null,
+            winnerPlayerId: null,
+            tiedPlayerIds: [9001, 9003],
+            totalVotes: 6,
+            top: topRows([
+              [9001, 3],
+              [9003, 3],
+            ]),
+          },
+          { myPick: 9003 },
+        );
+        await sp.goto(`${WEB}/community/?view=captain`);
+        await sp.locator('[data-testid=cv-result][data-result=tied]').waitFor();
+        await shot(sp, `${tag}-5-locked-tied`);
+        await noHorizontalScroll(sp, `vote shots ${tag}`);
+        await c.ctx.close();
+      });
+    }
+  }
+
+  // ----- admin -----
+  const login = await (
+    await globalThis.fetch(`${API}/v1/auth/admin-login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ADMIN),
+    })
+  ).json();
+  const adminToken = login.token;
+  const adminCard = (a) => a.locator('[data-testid=admin-card][data-card="settings.vote"]');
+
+  const tiedAdmin = (extra = {}) => ({
+    event: EV,
+    status: 'locked',
+    deadline: inHours(-2),
+    totalVotes: 6,
+    tally: topRows([
+      [9001, 3],
+      [9003, 3],
+      [9002, 0 + 1],
+    ]),
+    result: {
+      status: 'tied',
+      source: null,
+      winnerPlayerId: null,
+      tiedPlayerIds: [9001, 9003],
+      totalVotes: 6,
+      top: topRows([
+        [9001, 3],
+        [9003, 3],
+      ]),
+    },
+    battlePlayerId: null,
+    ...extra,
+  });
+
+  await step('admin: a tie opens the vote card by itself; one tap on a tied player resolves it', async () => {
+    const a = await voteContext(browser, { token: adminToken, bootstrap, EV });
+    a.V.admin = tiedAdmin();
+    const ap = await a.ctx.newPage();
+    watch(ap, 'vote-admin');
+    await ap.goto(`${WEB}/admin/`);
+    const card = adminCard(ap);
+    await card.waitFor();
+    await ap.locator('[data-testid=admin-card][data-card="settings.vote"][data-open=true]').waitFor();
+    await ap.getByTestId('vote-banner').waitFor();
+    assert((await ap.getByTestId('vote-tally').locator('li').count()) === 3, 'tally rows');
+    assert((await ap.getByTestId('vote-tally').locator('[data-tied=true]').count()) === 2, 'two tied rows');
+    assert((await ap.getByTestId('vote-pick').count()) === 2, 'a Pick button on each tied row');
+    assert((await ap.getByTestId('vote-total').textContent()).includes('6'), 'total votes');
+    assert(
+      (await ap.getByTestId('vote-battle').textContent()).includes('עוד לא נבחר'),
+      'battle has no community player yet',
+    );
+    await noHorizontalScroll(ap, 'admin vote card');
+    if (VOTE_SHOTS) await card.screenshot({ path: path.join(VOTE_SHOTS, 'he-light-admin-tie.png') });
+    // A failing save shows an error and keeps the tie.
+    a.V.resolveFail = true;
+    await ap.locator('[data-testid=vote-tally] li[data-player="9003"] [data-testid=vote-pick]').click();
+    await ap.getByRole('alert').filter({ hasText: /./ }).first().waitFor();
+    a.V.resolveFail = null;
+    await ap.locator('[data-testid=vote-tally] li[data-player="9003"] [data-testid=vote-pick]').click();
+    await ap.getByTestId('vote-done').waitFor();
+    assert(
+      JSON.stringify(a.V.resolves.at(-1)) === JSON.stringify({ event: EV, playerId: 9003 }),
+      `resolve body ${JSON.stringify(a.V.resolves)}`,
+    );
+    await ap.waitForFunction(() =>
+      document.querySelector('[data-testid=vote-battle]')?.textContent?.includes('Muharemović'),
+    );
+    // Manual override: search any player in the picker sheet.
+    await ap.getByTestId('vote-pick-hand').click();
+    await ap.getByLabel('חיפוש לפי שם שחקן').fill('groß');
+    await ap.getByRole('button', { name: /Groß/ }).first().click();
+    await waitUntil(() => a.V.resolves.length === 3, 'the override POST');
+    assert(a.V.resolves.at(-1).playerId === 9002, 'override body');
+    // The deep link.
+    await ap.goto(`${WEB}/admin/?card=vote`);
+    await ap.locator('[data-testid=admin-card][data-card="settings.vote"][data-open=true]').waitFor();
+    // An open vote: live tally, no banner.
+    a.V.admin = tiedAdmin({ status: 'open', deadline: inHours(20), result: null, battlePlayerId: null });
+    await ap.goto(`${WEB}/admin/?card=vote`);
+    await ap.getByTestId('vote-summary').waitFor();
+    assert((await ap.getByTestId('vote-banner').count()) === 0, 'no banner while open');
+    assert((await ap.getByTestId('vote-pick').count()) === 0, 'no one-tap pick while open');
+    await a.ctx.close();
+  });
+
+  await step(
+    'admin: share the captain battle as a 1080×1350 PNG (preview sheet, share/download/copy)',
+    async () => {
+      const a = await voteContext(browser, { token: adminToken, bootstrap, EV });
+      const star = bootstrap.players.slice(0, 3);
+      a.V.battleConfig = {
+        event: EV,
+        entries: [
+          { source: 'player', label: 'קפטן הקהילה', kind: 'community', tag: null, playerId: 9001 },
+          { source: 'player', label: 'FPL Lad', kind: 'fpl_lad', tag: null, playerId: star[0].id },
+          { source: 'entry', label: 'הקפטן של דור', kind: 'custom', tag: null, entryId: 1000001 },
+          { source: 'entry', label: 'הקפטן של איתי', kind: 'custom', tag: null, entryId: 1000002 },
+          { source: 'player', label: 'הבחירה של דנה', kind: 'custom', tag: 'מיוחד', playerId: star[1].id },
+        ],
+      };
+      const row = (key, label, kind, source, playerId, entryId = null) => ({
+        key,
+        label,
+        kind,
+        tag: null,
+        source,
+        entryId,
+        playerId,
+        captainPoints: 0,
+        multiplier: 2,
+        live: null,
+      });
+      a.V.battle = {
+        event: EV,
+        updatedAt: new Date().toISOString(),
+        rows: [
+          row('community', 'קפטן הקהילה', 'community', 'player', 9001),
+          row('fpl_lad', 'FPL Lad', 'fpl_lad', 'player', star[0].id),
+          row('dana', 'הבחירה של דנה', 'custom', 'player', star[1].id),
+          row('dor', 'הקפטן של דור', 'custom', 'entry', null, 1000001),
+          row('itay', 'הקפטן של איתי', 'custom', 'entry', null, 1000002),
+        ],
+      };
+      await a.ctx.addInitScript(() => {
+        navigator.canShare = (d) => Boolean(d && d.files && d.files.length);
+        navigator.share = async (d) => {
+          globalThis.__shared = {
+            title: d.title,
+            text: d.text,
+            url: d.url,
+            files: (d.files || []).map((f) => ({ name: f.name, type: f.type, size: f.size })),
+          };
+        };
+      });
+      a.V.admin = tiedAdmin();
+      const ap = await a.ctx.newPage();
+      watch(ap, 'share');
+      await ap.goto(`${WEB}/admin/?card=battle`);
+      await openCard(ap, 'settings.battle');
+      await ap.getByTestId('battle-share').click();
+      const img = ap.getByTestId('share-image');
+      await img.waitFor({ timeout: 30_000 });
+      assert((await ap.getByTestId('share-preview').getAttribute('data-state')) === 'ready', 'preview ready');
+      const info = await ap.evaluate(async () => {
+        const el = document.querySelector('[data-testid=share-image]');
+        const bytes = new Uint8Array(await (await fetch(el.src)).arrayBuffer());
+        let bin = '';
+        for (const b of bytes) bin += String.fromCharCode(b);
+        return { w: el.naturalWidth, h: el.naturalHeight, b64: btoa(bin) };
+      });
+      assert(info.w === 1080 && info.h === 1350, `image ${info.w}x${info.h}`);
+      const bytes = Buffer.from(info.b64, 'base64');
+      const size = pngSize(bytes);
+      assert(size.w === 1080 && size.h === 1350, `PNG header ${size.w}x${size.h}`);
+      assert(bytes.length > 20_000, `PNG has content (${bytes.length} bytes)`);
+      const honest = await ap.getByTestId('share-honest').textContent();
+      assert(honest.includes('QR') && honest.includes('לחיצה'), 'honest copy about links');
+      if (VOTE_SHOTS) {
+        writeFileSync(path.join(VOTE_SHOTS, 'share-image-he.png'), bytes);
+        await ap.screenshot({ path: path.join(VOTE_SHOTS, 'he-light-share-sheet.png') });
+      }
+      // The system share sheet gets the PNG, a caption and the deep link.
+      await ap.getByTestId('share-native').click();
+      await ap.waitForFunction(() => globalThis.__shared !== undefined);
+      const shared = await ap.evaluate(() => globalThis.__shared);
+      assert(
+        shared.files.length === 1 &&
+          shared.files[0].type === 'image/png' &&
+          shared.files[0].name.endsWith('.png'),
+        'shared the PNG',
+      );
+      assert(shared.url.endsWith('/community/?view=captain'), `shared url ${shared.url}`);
+      assert(shared.text.includes('בחרו את קפטן הקהילה באפליקציה'), 'caption');
+      // Download and copy-link fallbacks.
+      const [download] = await Promise.all([
+        ap.waitForEvent('download'),
+        ap.getByTestId('share-download').click(),
+      ]);
+      assert(
+        download.suggestedFilename() === `captain-battle-gw${EV}.png`,
+        `download name ${download.suggestedFilename()}`,
+      );
+      await ap.getByTestId('share-copy').click();
+      await ap.getByText('הקישור הועתק').waitFor();
+      await noHorizontalScroll(ap, 'share sheet');
+      await a.ctx.close();
+
+      // English: the same picture in LTR, plus the English admin card.
+      const en = await voteContext(browser, {
+        token: adminToken,
+        locale: 'en',
+        theme: 'dark',
+        bootstrap,
+        EV,
+      });
+      en.V.battleConfig = a.V.battleConfig;
+      en.V.battle = a.V.battle;
+      en.V.admin = tiedAdmin();
+      const ep = await en.ctx.newPage();
+      watch(ep, 'share-en');
+      await ep.goto(`${WEB}/admin/?card=battle`);
+      await openCard(ep, 'settings.battle');
+      await ep.getByTestId('battle-share').click();
+      await ep.getByTestId('share-image').waitFor({ timeout: 30_000 });
+      if (VOTE_SHOTS) {
+        const b64 = await ep.evaluate(async () => {
+          const bytes = new Uint8Array(
+            await (await fetch(document.querySelector('[data-testid=share-image]').src)).arrayBuffer(),
+          );
+          let bin = '';
+          for (const b of bytes) bin += String.fromCharCode(b);
+          return btoa(bin);
+        });
+        writeFileSync(path.join(VOTE_SHOTS, 'share-image-en.png'), Buffer.from(b64, 'base64'));
+        await ep.screenshot({ path: path.join(VOTE_SHOTS, 'en-dark-share-sheet.png') });
+        await ep.keyboard.press('Escape');
+        await ep.goto(`${WEB}/admin/?card=vote`);
+        await adminCard(ep).waitFor();
+        await ep.locator('[data-testid=admin-card][data-card="settings.vote"][data-open=true]').waitFor();
+        await adminCard(ep).screenshot({ path: path.join(VOTE_SHOTS, 'en-dark-admin-tie.png') });
+      }
+      await en.ctx.close();
+    },
+  );
+
+  await ctx.close();
 }
 
 // ---------- main ----------

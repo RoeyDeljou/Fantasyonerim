@@ -67,7 +67,11 @@ export function PickCard({
           fallbackClassName="size-16 text-lg"
         />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <p dir="auto" className="name-start truncate text-xl leading-tight font-extrabold text-ink" data-testid="cv-pick-name">
+          <p
+            dir="auto"
+            className="name-start truncate text-xl leading-tight font-extrabold text-ink"
+            data-testid="cv-pick-name"
+          >
             {player.webName}
           </p>
           <p className="truncate text-sm text-muted">

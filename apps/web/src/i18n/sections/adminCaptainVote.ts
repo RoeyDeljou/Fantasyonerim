@@ -7,11 +7,11 @@ import { defineSection } from '../section';
 export const adminCaptainVote = defineSection(
   {
     // ----- the vote card -----
-    title: 'הצבעת קפטן הקהילה',
+    title: 'קפטן הקהילה',
     summaryNotOpen: 'לא נפתחה',
     summaryOpen: 'פתוחה',
     summaryLocked: 'ננעלה',
-    summaryTied: 'תיקו, צריך הכרעה',
+    summaryTied: 'תיקו',
     summaryNoVotes: 'אין הצבעות',
     summaryDecided: 'הוכרע',
     gw: 'מחזור {gw}',
@@ -77,11 +77,11 @@ export const adminCaptainVote = defineSection(
     imgNoCaptainYet: 'עוד לא נבחר',
   },
   {
-    title: 'Community captain vote',
+    title: 'Community captain',
     summaryNotOpen: 'Not open',
     summaryOpen: 'Open',
     summaryLocked: 'Locked',
-    summaryTied: 'Tie, needs you',
+    summaryTied: 'Tie',
     summaryNoVotes: 'No votes',
     summaryDecided: 'Decided',
     gw: 'GW {gw}',

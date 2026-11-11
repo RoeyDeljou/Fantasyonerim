@@ -90,7 +90,6 @@ export function PlayerCombobox({
   useEffect(() => {
     if (!showList) return;
     document.getElementById(optionId(active))?.scrollIntoView({ block: 'nearest' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, showList]);
 
   function choose(p: Player) {
@@ -190,7 +189,10 @@ export function PlayerCombobox({
           onFocus={() => {
             setOpen(true);
             // Bring the field to the top of the content area: the keyboard is about to take half the screen.
-            window.setTimeout(() => input.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 120);
+            window.setTimeout(
+              () => input.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
+              120,
+            );
           }}
           onKeyDown={onKeyDown}
           className="min-h-12 w-full rounded-xl border border-line bg-surface-2 ps-10 pe-3 text-start text-base text-ink placeholder:text-muted focus:border-primary focus:outline-none"
@@ -239,7 +241,10 @@ export function PlayerCombobox({
                   fallbackClassName="size-9 text-xs"
                 />
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span dir="auto" className="name-start truncate text-base leading-tight font-semibold text-ink">
+                  <span
+                    dir="auto"
+                    className="name-start truncate text-base leading-tight font-semibold text-ink"
+                  >
                     {p.webName}
                   </span>
                   <span className="truncate text-xs text-muted">
@@ -255,7 +260,10 @@ export function PlayerCombobox({
         </ul>
       )}
       {showEmpty && (
-        <p role="status" className="rounded-2xl border border-dashed border-line px-3 py-6 text-center text-sm text-muted">
+        <p
+          role="status"
+          className="rounded-2xl border border-dashed border-line px-3 py-6 text-center text-sm text-muted"
+        >
           {s.noResults}
         </p>
       )}

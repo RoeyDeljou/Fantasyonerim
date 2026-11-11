@@ -134,7 +134,8 @@ function fit(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): str
 }
 
 async function loadFonts(family: string): Promise<void> {
-  const sample = 'אבגדהוזחטיכלמנסעפצקרשת ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 ·()';
+  const sample =
+    'אבגדהוזחטיכלמנסעפצקרשת ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 ·()';
   try {
     await Promise.all([400, 600, 800].map((w) => document.fonts.load(`${w} 40px ${family}`, sample)));
     await document.fonts.ready;
@@ -262,7 +263,17 @@ export async function renderShareImage(data: ShareImageData): Promise<Blob> {
       ctx.clip();
       // A square cut from the top (the 110×140 portraits keep the face, the 250×250 ones are already square).
       const side = Math.min(photo.naturalWidth, photo.naturalHeight);
-      ctx.drawImage(photo, (photo.naturalWidth - side) / 2, 0, side, side, cx - photoD / 2, cy - photoD / 2, photoD, photoD);
+      ctx.drawImage(
+        photo,
+        (photo.naturalWidth - side) / 2,
+        0,
+        side,
+        side,
+        cx - photoD / 2,
+        cy - photoD / 2,
+        photoD,
+        photoD,
+      );
       ctx.restore();
     } else {
       ctx.restore();
@@ -292,7 +303,8 @@ export async function renderShareImage(data: ShareImageData): Promise<Blob> {
     if (tagText !== null || row.fplLad) {
       ctx.font = font(700, 24);
       const logoH = 28;
-      const logoW = row.fplLad && fplLad ? Math.round((fplLad.naturalWidth / fplLad.naturalHeight) * logoH) : 0;
+      const logoW =
+        row.fplLad && fplLad ? Math.round((fplLad.naturalWidth / fplLad.naturalHeight) * logoH) : 0;
       const textW = tagText ? Math.min(ctx.measureText(tagText).width, 190) : 0;
       tagW = 28 + logoW + (logoW && textW ? 10 : 0) + textW;
       // The chip hangs on the end side of the row (mirrored in Hebrew: on the left).

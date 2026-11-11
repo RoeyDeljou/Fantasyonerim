@@ -51,10 +51,12 @@ export function CommunityCaptainCard() {
   const eventNow = data?.event ?? null;
 
   // Right after the deadline the "default" GW moves on, so the previous one is checked too: a tie there must not hide.
-  const prevEvent = viewEvent === null && eventNow !== null && eventNow > 1 ? ((eventNow - 1) as Gameweek) : null;
+  const prevEvent =
+    viewEvent === null && eventNow !== null && eventNow > 1 ? ((eventNow - 1) as Gameweek) : null;
   const prev = useAdminCaptainVote(prevEvent === null ? 'skip' : prevEvent);
   useEffect(() => {
-    if (viewEvent === null && prevEvent !== null && needsAdmin(prev.data) && !needsAdmin(data)) setViewEvent(prevEvent);
+    if (viewEvent === null && prevEvent !== null && needsAdmin(prev.data) && !needsAdmin(data))
+      setViewEvent(prevEvent);
   }, [viewEvent, prevEvent, prev.data, data]);
 
   // `/admin/?card=vote`: open this card and bring it into view (same pattern as ?card=battle).
@@ -128,23 +130,44 @@ export function CommunityCaptainCard() {
         {query.isPending || fpl.isPending ? (
           <Skeleton className="h-40" />
         ) : data && index ? (
-          <div className="flex flex-col gap-3" data-testid="vote-card" data-status={data.status} data-result={data.result?.status ?? ''}>
+          <div
+            className="flex flex-col gap-3"
+            data-testid="vote-card"
+            data-status={data.status}
+            data-result={data.result?.status ?? ''}
+          >
             <div className="flex items-center gap-1">
-              <IconButton label={s.prevGw} disabled={eventNow === null || eventNow <= 1} onClick={() => step(-1)} data-testid="vote-prev">
+              <IconButton
+                label={s.prevGw}
+                disabled={eventNow === null || eventNow <= 1}
+                onClick={() => step(-1)}
+                data-testid="vote-prev"
+              >
                 <ChevronStartIcon size={18} />
               </IconButton>
               <p className="min-w-0 flex-1 text-center text-base font-bold text-ink" data-testid="vote-gw">
                 {eventNow === null ? '—' : fmt(s.gw, { gw: f.num(eventNow) })}
               </p>
-              <IconButton label={s.nextGw} disabled={eventNow === null || eventNow >= 38} onClick={() => step(1)} data-testid="vote-next">
+              <IconButton
+                label={s.nextGw}
+                disabled={eventNow === null || eventNow >= 38}
+                onClick={() => step(1)}
+                data-testid="vote-next"
+              >
                 <ChevronEndIcon size={18} />
               </IconButton>
             </div>
             <VoteSummary data={data} index={index} />
             <Tally data={data} index={index} onPick={pick} pending={resolve.isPending} />
-            {resolve.isError && <InlineError>{errorMessage(t, resolve.error, { bad_request: s.resolveFailed })}</InlineError>}
+            {resolve.isError && (
+              <InlineError>{errorMessage(t, resolve.error, { bad_request: s.resolveFailed })}</InlineError>
+            )}
             {done && (
-              <p role="status" className="rounded-xl bg-success-soft px-3 py-2 text-sm font-semibold text-success" data-testid="vote-done">
+              <p
+                role="status"
+                className="rounded-xl bg-success-soft px-3 py-2 text-sm font-semibold text-success"
+                data-testid="vote-done"
+              >
                 {done}
               </p>
             )}
@@ -155,7 +178,9 @@ export function CommunityCaptainCard() {
               data-testid="vote-pick-hand"
             >
               {resolve.isPending ? <Spinner /> : <SearchIcon size={18} />}
-              {data.result?.status === 'decided' || data.battlePlayerId !== null ? s.pickByHandOverride : s.pickByHand}
+              {data.result?.status === 'decided' || data.battlePlayerId !== null
+                ? s.pickByHandOverride
+                : s.pickByHand}
             </Button>
           </div>
         ) : null}
@@ -180,13 +205,17 @@ function VoteSummary({ data, index }: { data: AdminCommunityCaptain; index: FplI
   const { f } = useI18n();
   const name = (id: FplPlayerId | null) => (id === null ? '' : (index.players.get(id)?.webName ?? '?'));
   const r = data.result;
-  const status = data.status === 'open' ? s.statusOpen : data.status === 'locked' ? s.statusLocked : s.statusNotOpen;
+  const status =
+    data.status === 'open' ? s.statusOpen : data.status === 'locked' ? s.statusLocked : s.statusNotOpen;
   let result: string;
   if (data.status !== 'locked' || r === null) result = s.resultNone;
   else if (r.status === 'pending') result = s.resultPending;
   else if (r.status === 'tied') result = s.resultTied;
   else if (r.status === 'no_votes') result = s.resultNoVotes;
-  else result = fmt(r.source === 'admin' ? s.resultDecidedAdmin : s.resultDecidedVotes, { name: name(r.winnerPlayerId) });
+  else
+    result = fmt(r.source === 'admin' ? s.resultDecidedAdmin : s.resultDecidedVotes, {
+      name: name(r.winnerPlayerId),
+    });
   return (
     <dl className="grid gap-1.5 rounded-xl bg-surface-2 p-3 text-sm" data-testid="vote-summary">
       <div className="flex items-center gap-2">
@@ -242,7 +271,10 @@ function Tally({
               key={row.playerId}
               data-player={row.playerId}
               data-tied={isTied ? 'true' : undefined}
-              className={cx('flex flex-col gap-1 rounded-xl border p-2', isTied ? 'border-live/40 bg-live-soft/40' : 'border-line')}
+              className={cx(
+                'flex flex-col gap-1 rounded-xl border p-2',
+                isTied ? 'border-live/40 bg-live-soft/40' : 'border-line',
+              )}
             >
               <span className="flex items-center gap-2">
                 <ImageWithFallback
@@ -261,13 +293,21 @@ function Tally({
                   </span>
                 </span>
                 {isTied && (
-                  <Button className="min-h-11 shrink-0 px-3 text-sm" disabled={pending} onClick={() => onPick(row.playerId)} data-testid="vote-pick">
+                  <Button
+                    className="min-h-11 shrink-0 px-3 text-sm"
+                    disabled={pending}
+                    onClick={() => onPick(row.playerId)}
+                    data-testid="vote-pick"
+                  >
                     {s.pickThis}
                   </Button>
                 )}
               </span>
               <span aria-hidden="true" className="h-1.5 overflow-hidden rounded-full bg-surface-2">
-                <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.max(4, (row.votes / max) * 100)}%` }} />
+                <span
+                  className="block h-full rounded-full bg-primary"
+                  style={{ width: `${Math.max(4, (row.votes / max) * 100)}%` }}
+                />
               </span>
             </li>
           );
@@ -276,4 +316,3 @@ function Tally({
     </div>
   );
 }
-

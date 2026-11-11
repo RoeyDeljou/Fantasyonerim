@@ -272,14 +272,16 @@ the captain battle. Contract: `packages/shared/src/communityCaptain.ts`.
 | ------ | ------------------------------------- | --------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------- |
 | GET    | `/v1/community-captain`               | 🌐 (👤 adds `myPick`) | –                                  | `CommunityCaptainState`                                                                           |
 | PUT    | `/v1/community-captain`               | 👤                    | `CommunityCaptainVoteBody`         | `CommunityCaptainState` · 400 wrong GW / unknown player · 403 banned · 409 closed or not open yet |
-| GET    | `/v1/admin/community-captain?event=`  | 🛡                     | –                                  | `AdminCommunityCaptain` (default GW = the target GW) · 404 unknown GW                             |
+| GET    | `/v1/admin/community-captain?event=`  | 🛡                     | –                                  | `AdminCommunityCaptain` (default GW = the one the fan GET shows) · 404 unknown GW                 |
 | POST   | `/v1/admin/community-captain/resolve` | 🛡                     | `AdminCommunityCaptainResolveBody` | `AdminCommunityCaptain` · 400 unknown player / GW not resolvable                                  |
 
-- **Target GW N** = the first GW in the FPL bootstrap whose deadline is still ahead. The window is `open` when GW N-1 is
-  `finished` (always for GW 1), else `not_open`; a GW whose deadline passed is `locked`. Consequently, between GW N-1's
-  deadline and its end the state is `not_open` for N (the target has already moved on), and `locked` + `result` is only
-  seen for `event: null` (season over) or via the admin view of a past GW.
-- **PUT**: one vote per fan per GW (upsert, no delete). `event` must be the target GW, the window `open` and the
+- **Which GW the GET shows.** The GW in progress (deadline passed, not `finished`) is shown as `locked`, with its
+  `result` (`pending` until the job has tallied, then `decided` / `tied` / `no_votes`), `voters` and the viewer's
+  `myPick`. Otherwise it is the next GW whose deadline is ahead: `open` when GW N-1 is `finished` (always for GW 1),
+  else `not_open`. Per GW N: open (N-1 finished … deadline N) → locked (deadline N … N finished) → the view moves on to
+  N+1. The web shows "voting for N+1 opens when N ends" itself. Season over (nothing in progress, no deadline ahead)
+  → `event: null`, `locked`.
+- **PUT**: one vote per fan per GW (upsert, no delete). `event` must be the next GW whose deadline is ahead (the open target), the window `open` and the
   player in the bootstrap. A vote at or after the deadline (server clock vs the bootstrap deadline) is 409 "closed";
   another future GW is 400. Signed in and not banned (same 403 as other community writes); write rate limit.
 - **GET** caching: guests get a shared body recomputed every ~15 s (hot cache) with

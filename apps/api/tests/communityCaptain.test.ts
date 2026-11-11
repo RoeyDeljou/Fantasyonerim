@@ -116,19 +116,48 @@ describe('window and target GW', () => {
     });
   });
 
-  it('is not_open while the previous GW is still running, and rejects votes', async () => {
+  it('shows the GW in progress as locked, with its pending result, voters and myPick; PUT to it is rejected', async () => {
+    const [fan] = await fans(1);
+    await vote(fan!.token, { event: 12, playerId: 2 });
+    pastDeadline();
+    const guest = (await getState()).state;
+    expect(guest).toMatchObject({ event: 12, status: 'locked', voters: 1, myPick: null });
+    expect(guest?.result).toMatchObject({ status: 'pending', winnerPlayerId: null });
+    expect((await getState(fan!.token)).state).toMatchObject({ event: 12, status: 'locked', myPick: 2 });
+    const closed = await vote(fan!.token, { event: 12, playerId: 3 });
+    expect(closed.statusCode).toBe(409);
+    // The next GW is not open while this one runs.
+    const next = await vote(fan!.token, { event: 13, playerId: 3 });
+    expect(next.statusCode).toBe(409);
+    expect(next.json().error.message).toMatch(/opens when gameweek 12 ends/);
+    await runJob();
+    expect((await getState(fan!.token)).state?.result).toMatchObject({
+      status: 'decided',
+      source: 'votes',
+      winnerPlayerId: 2,
+      top: [{ playerId: 2, votes: 1 }],
+    });
+  });
+
+  it('hands over to the next GW when the locked one finishes', async () => {
+    pastDeadline();
+    expect((await getState()).state).toMatchObject({ event: 12, status: 'locked' });
+    setSeason(GW12_DEADLINE + 2 * 24 * 60 * MIN, 12);
+    expect((await getState()).state).toMatchObject({
+      event: 13,
+      status: 'open',
+      opensAfterEvent: 12,
+      result: null,
+    });
+  });
+
+  it('the previous GW in progress is shown locked before the next one opens', async () => {
     setSeason(Date.parse('2026-10-28T12:00:00.000Z'), 10);
-    const { state } = await getState();
-    expect(state).toMatchObject({ event: 12, status: 'not_open', opensAfterEvent: 11 });
+    expect((await getState()).state).toMatchObject({ event: 11, status: 'locked' });
     const [fan] = await fans(1);
     const res = await vote(fan!.token, { event: 12, playerId: 1 });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.message).toMatch(/opens when gameweek 11 ends/);
-  });
-
-  it('after a deadline the target moves to the next GW (not_open until the finished one ends)', async () => {
-    pastDeadline();
-    expect((await getState()).state).toMatchObject({ event: 13, status: 'not_open' });
   });
 
   it('GW1 is open from the start of the season', async () => {
