@@ -5548,6 +5548,28 @@ async function voteJourneys(browser, userPage) {
         body.entries.find((e) => e.label === 'הבחירה של דנה').playerId === star[1].id,
         'custom player kept',
       );
+      // After the save the form shows what the server stored: both permanent rows empty, no stale names.
+      for (const kind of ['community', 'fpl_lad']) {
+        await ap
+          .waitForFunction(
+            (k) => {
+              const t = document.querySelector(`[data-battle-kind=${k}]`)?.textContent ?? '';
+              return !t.includes('Højlund') && !t.includes('Raya');
+            },
+            kind,
+            { timeout: 8_000 },
+          )
+          .catch(() => {
+            throw new Error(`${kind} row emptied after the save`);
+          });
+      }
+      // A second save without a reload keeps them cleared (the new GW is not given last week's picks).
+      await rowOf('community').getByTestId('battle-tag').fill('קהילה!');
+      body = await saveBattle();
+      assert(
+        picks(body).community === null && picks(body).fpl_lad === null,
+        'second save keeps them cleared',
+      );
       // Another GW, then a community pick, then more GW edits: the touched pick survives, FPL Lad (untouched) is cleared.
       await reopen();
       await gwField.fill(String(EV + 1));

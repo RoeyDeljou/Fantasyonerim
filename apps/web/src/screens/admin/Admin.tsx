@@ -751,7 +751,14 @@ function BattleForm({
       return;
     }
     setError(null);
-    save.mutate(parsed.data, { onSuccess: triggerFlash });
+    save.mutate(parsed.data, {
+      onSuccess: (saved) => {
+        // Start over from what the server stored (cleared permanent picks stay cleared), nothing "touched" yet.
+        setRows(withPermanentRows(saved.entries.map(toDraft), t));
+        setTouched(new Set());
+        triggerFlash();
+      },
+    });
   }
 
   return (
