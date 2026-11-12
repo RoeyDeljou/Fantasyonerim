@@ -126,7 +126,14 @@ function ComposerEntry({ me, disabled, onOpen }: { me: Me; disabled: boolean; on
   return (
     <section className="flex items-center gap-2.5 rounded-3xl border border-line bg-surface p-3 shadow-card">
       <AuthorAvatar
-        author={{ id: me.id, name: me.name, entryId: me.entryId, teamName: me.teamName, role: me.role, avatarUrl: me.avatarUrl }}
+        author={{
+          id: me.id,
+          name: me.name,
+          entryId: me.entryId,
+          teamName: me.teamName,
+          role: me.role,
+          avatarUrl: me.avatarUrl,
+        }}
       />
       <button
         type="button"

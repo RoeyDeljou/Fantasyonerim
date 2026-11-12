@@ -122,7 +122,14 @@ function ComposerForm({ me, onDone }: { me: Me; onDone(): void }) {
       {banned && <BannedNotice />}
       <div className="flex items-start gap-2.5">
         <AuthorAvatar
-          author={{ id: me.id, name: me.name, entryId: me.entryId, teamName: me.teamName, role: me.role, avatarUrl: me.avatarUrl }}
+          author={{
+            id: me.id,
+            name: me.name,
+            entryId: me.entryId,
+            teamName: me.teamName,
+            role: me.role,
+            avatarUrl: me.avatarUrl,
+          }}
         />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <label htmlFor={textId} className="sr-only">
