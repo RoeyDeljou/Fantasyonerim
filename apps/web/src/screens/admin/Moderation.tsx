@@ -299,7 +299,7 @@ function UsersSection({ onDone }: { onDone(msg: string): void }) {
           {users.data.map((u) => (
             <li key={u.id} className="flex flex-col gap-1 px-3 py-2.5" data-testid="user-row">
               <div className="flex items-center gap-3">
-                <AuthorAvatar author={u} size={32} official={false} />
+                <AuthorAvatar author={u} size={32} />
                 <div className="flex min-w-0 flex-1 flex-col leading-tight">
                   <span className="flex min-w-0 items-center gap-1.5">
                     <bdi dir="auto" className="truncate font-bold text-ink">

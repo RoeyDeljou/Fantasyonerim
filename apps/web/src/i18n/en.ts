@@ -804,7 +804,7 @@ export const en: Messages = {
     banned: 'Your account is currently suspended from posting',
     bannedBody:
       'You can keep reading, but you can’t post, comment, like or report. Questions? Contact the Fantasyonerim team.',
-    adminBadge: 'Fantasyonerim',
+    adminBadge: 'Admin',
     like: 'Like',
     unlike: 'Unlike',
     likeCount: '{n} likes',

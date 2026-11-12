@@ -12,7 +12,7 @@ export const CommunityAuthorSchema = z.object({
   name: z.string(),
   entryId: z.nullable(FplEntryIdSchema),
   teamName: z.nullable(z.string()),
-  /** Admin posts get a "Fantasyonerim" badge. */
+  /** Admin posts get an "Admin" tag with the logo (their photo, or the logo when they have none). */
   role: RoleSchema,
   /** Profile photo; null = initials circle. */
   avatarUrl: AvatarUrlSchema,

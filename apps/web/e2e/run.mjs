@@ -3484,6 +3484,80 @@ async function avatarJourneys(browser, userPage) {
     await shot(p, 'he-light-community-post-photo');
   });
 
+  await step(
+    'Community: admin posts show the admin’s own photo + the admin tag with a small logo',
+    async () => {
+      // Two admin posts injected on top of the real feed: one with a profile photo, one without.
+      const PHOTO = 'פוסט מנהל עם תמונה e2e';
+      const NOPHOTO = 'פוסט מנהל בלי תמונה e2e';
+      // A face-like test photo, visibly different from the logo (served from the web origin, so CSP allows it).
+      const adminSrc = `${WEB}/e2e-admin-face.svg`;
+      const face =
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect width="80" height="80" fill="#e8b48f"/>' +
+        '<path d="M0 22Q40-14 80 22V0H0z" fill="#3b2a20"/><circle cx="28" cy="36" r="5"/><circle cx="52" cy="36" r="5"/>' +
+        '<path d="M26 54q14 12 28 0" stroke="#000" stroke-width="4" fill="none"/></svg>';
+      await ctx.route(adminSrc, (r) => r.fulfill({ contentType: 'image/svg+xml', body: face }));
+      const feed = (u) => u.origin === API && u.pathname === '/v1/community/posts';
+      await ctx.route(feed, async (r) => {
+        if (r.request().method() !== 'GET') return r.continue();
+        const res = await r.fetch();
+        const body = await res.json();
+        const base = body.items.find((i) => i.text === POST) ?? body.items[0];
+        const admin = (id, text, avatarUrl) => ({
+          ...base,
+          id: `e2e-admin-${id}`,
+          text,
+          image: null,
+          team: null,
+          mine: false,
+          author: {
+            id: `e2e-admin-user-${id}`,
+            name: 'דור דבוש',
+            entryId: null,
+            teamName: null,
+            role: 'admin',
+            avatarUrl,
+          },
+        });
+        const items = r.request().url().includes('cursor=')
+          ? body.items
+          : [admin('photo', PHOTO, adminSrc), admin('nophoto', NOPHOTO, null), ...body.items];
+        await r.fulfill({ response: res, json: { ...body, items } });
+      });
+      await p.goto(`${WEB}/community/`);
+      const withPhoto = p.locator('[data-testid=post-card]', { hasText: PHOTO });
+      const avatar = withPhoto.locator('img[data-avatar=photo]');
+      await avatar.waitFor();
+      assert((await avatar.getAttribute('src')) === adminSrc, 'admin post shows the admin’s photo');
+      const badge = withPhoto.getByTestId('admin-badge');
+      assert((await badge.innerText()).trim() === 'מנהל', `admin tag text: ${await badge.innerText()}`);
+      const logo = badge.locator('img[src="/brand/logo-320.png"]');
+      await logo.waitFor();
+      const box = await logo.boundingBox();
+      assert(box && Math.round(box.width) === 14, `tag logo is 14 px: ${box?.width}`);
+      assert(
+        (await withPhoto.locator('img[src="/brand/logo-320.png"]').count()) === 1,
+        'the logo is only in the tag (not the avatar)',
+      );
+      const noPhoto = p.locator('[data-testid=post-card]', { hasText: NOPHOTO });
+      await noPhoto.getByTestId('admin-badge').locator('img[src="/brand/logo-320.png"]').waitFor();
+      assert(
+        (await noPhoto.locator('img[src="/brand/logo-320.png"]').count()) === 2,
+        'an admin without a photo keeps the logo circle (+ the tag logo)',
+      );
+      assert(
+        (await noPhoto.locator('[data-avatar]').count()) === 0,
+        'no initials circle for a photo-less admin',
+      );
+      const fan = p.locator('[data-testid=post-card]', { hasText: POST });
+      assert((await fan.getByTestId('admin-badge').count()) === 0, 'a fan post has no admin tag');
+      await noHorizontalScroll(p, 'community with admin posts');
+      await shot(p, 'he-light-community-admin-posts');
+      await ctx.unroute(feed);
+      await ctx.unroute(adminSrc);
+    },
+  );
+
   await step('Profile photo: errors (too big / not an image / 413 / 415 / 429 / 403)', async () => {
     await p.goto(`${WEB}/profile/`);
     await card(p).waitFor();

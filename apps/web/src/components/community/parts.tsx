@@ -11,22 +11,14 @@ import { RelativeTime } from '@/components/news/parts';
 import { Toast, cx } from '@/components/ui';
 
 /**
- * The author's photo, or the initials circle (grapheme-safe: emoji / Hebrew never split). Fantasyonerim admins get
- * the logo (official posts); `official={false}` (admin users list) shows an admin's own photo when they have one.
+ * The author's photo, or the initials circle (grapheme-safe: emoji / Hebrew never split). Admins show their own photo
+ * like everyone else (the admin tag next to the name marks them); an admin without a photo gets the logo circle.
  * The signed-in fan's own circle follows their `Me`, so a new photo shows at once on posts already loaded.
  */
-export function AuthorAvatar({
-  author,
-  size = 40,
-  official = true,
-}: {
-  author: CommunityAuthor;
-  size?: 32 | 40;
-  official?: boolean;
-}) {
+export function AuthorAvatar({ author, size = 40 }: { author: CommunityAuthor; size?: 32 | 40 }) {
   const me = useMe().data;
   const url = me?.id === author.id ? me.avatarUrl : author.avatarUrl;
-  if (author.role === 'admin' && (official || !url)) {
+  if (author.role === 'admin' && !url) {
     return (
       <span className="shrink-0 self-start">
         <Logo size={size} />
@@ -49,9 +41,10 @@ export function AdminBadge() {
   const { t } = useI18n();
   return (
     <span
-      className="inline-flex shrink-0 items-center rounded-full bg-primary px-1.5 py-px text-[10px] leading-4 font-bold text-on-primary"
+      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary py-px ps-px pe-1.5 text-[10px] leading-4 font-bold text-on-primary"
       data-testid="admin-badge"
     >
+      <Logo size={14} />
       {t.community.adminBadge}
     </span>
   );
