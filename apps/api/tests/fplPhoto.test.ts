@@ -25,7 +25,8 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
-const png = () => new Response(new Uint8Array(PNG), { status: 200, headers: { 'content-type': 'image/png' } });
+const png = () =>
+  new Response(new Uint8Array(PNG), { status: 200, headers: { 'content-type': 'image/png' } });
 
 describe('GET /v1/fpl/photo/:code', () => {
   it('proxies the photo bytes with public, immutable, CORS-open headers', async () => {
@@ -86,7 +87,8 @@ describe('GET /v1/fpl/photo/:code', () => {
     ['upstream 500', () => Promise.resolve(new Response('boom', { status: 500 }))],
     [
       'non-image content-type',
-      () => Promise.resolve(new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } })),
+      () =>
+        Promise.resolve(new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } })),
     ],
     [
       'body over 1 MB',

@@ -15,7 +15,8 @@ export interface PlayerPhoto {
   contentType: string;
 }
 
-export type PhotoResult = { kind: 'ok'; photo: PlayerPhoto } | { kind: 'not_found' } | { kind: 'failed'; reason: string };
+export type PhotoResult =
+  { kind: 'ok'; photo: PlayerPhoto } | { kind: 'not_found' } | { kind: 'failed'; reason: string };
 
 export interface PlayerPhotoFetcher {
   get(code: string): Promise<PhotoResult>;
