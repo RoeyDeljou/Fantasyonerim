@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { UploadResponseSchema } from '@fant/shared';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Auth } from '../auth/session.js';
 import { requireWriter } from '../community/guard.js';
 import { MAX_UPLOAD_BYTES, processUpload } from '../community/images.js';
@@ -29,6 +29,29 @@ function isFileTooLarge(err: unknown): boolean {
 }
 
 /**
+ * Reads the multipart field "file" (≤ MAX_UPLOAD_BYTES) into memory: 400 when it is missing or empty, 413 when
+ * too large. The bytes are not trusted in any way yet (processUpload / processAvatar sniff and re-encode them).
+ */
+export async function readImageFile(request: FastifyRequest): Promise<Buffer> {
+  if (!request.isMultipart()) throw badRequest('Send the image as multipart/form-data field "file"');
+  let bytes: Buffer;
+  try {
+    const file = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 5 } });
+    if (file === undefined || file.fieldname !== 'file') {
+      throw badRequest('Send the image as multipart/form-data field "file"');
+    }
+    bytes = await file.toBuffer();
+  } catch (err) {
+    if (isFileTooLarge(err)) {
+      throw new ApiHttpError(413, 'payload_too_large', 'The image is larger than 10 MB');
+    }
+    throw err;
+  }
+  if (bytes.length === 0) throw badRequest('file: empty upload');
+  return bytes;
+}
+
+/**
  * POST /v1/uploads — multipart field "file". The bytes are sniffed (never the header/filename), decoded and
  * re-encoded to webp with every metadata block dropped, then stored as `uploads/<userId>/<uploadId>.webp`.
  */
@@ -37,23 +60,7 @@ export function uploadRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, 
 
   app.post('/v1/uploads', { config: { rateLimit: limit } }, async (request, reply) => {
     const { user } = await requireWriter(auth, request);
-    if (!request.isMultipart()) throw badRequest('Send the image as multipart/form-data field "file"');
-
-    let bytes: Buffer;
-    try {
-      const file = await request.file({ limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 5 } });
-      if (file === undefined || file.fieldname !== 'file') {
-        throw badRequest('Send the image as multipart/form-data field "file"');
-      }
-      bytes = await file.toBuffer();
-    } catch (err) {
-      if (isFileTooLarge(err)) {
-        throw new ApiHttpError(413, 'payload_too_large', 'The image is larger than 10 MB');
-      }
-      throw err;
-    }
-    if (bytes.length === 0) throw badRequest('file: empty upload');
-
+    const bytes = await readImageFile(request);
     const image = await processUpload(bytes);
     const uploadId = randomUUID();
     const storageKey = `uploads/${user.id}/${uploadId}.webp`;

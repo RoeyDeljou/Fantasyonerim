@@ -38,7 +38,7 @@ export const UPLOAD_CACHE_TTL_SEC = 300;
 /**
  * Stored on each object at upload (the bucket returns it on every read). Instagram/X copies and Spotify thumbnails
  * never change → a year in browsers, `s-maxage` 30 days in the CDN in front of the bucket (vercel.json /media/*).
- * Community uploads can be taken down (deleted post, moderation) → 5 minutes everywhere, so a removed photo
+ * Community uploads and profile photos (`uploads/avatars/…`) can be taken down (deleted post, moderation) → 5 minutes everywhere, so a removed photo
  * disappears from browsers and the CDN within minutes. vercel.json sets the same TTLs for objects stored before
  * `s-maxage` was added; keep the two in sync.
  */

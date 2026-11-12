@@ -14,7 +14,8 @@
 // E2E_ONLY_UPDATES=1 (register, then only the app-update journeys), E2E_ONLY_ROUNDUP=1 (register, then only the
 // Gameweek Roundup + Season Captain Battle + captain-tag journeys; E2E_SEASON_SHOTS=<dir> saves the season / tag screenshots; E2E_ROUNDUP_SHOTS=<dir> saves their phone screenshots), E2E_DEBUG_DIR=<dir> (screenshot + text of every
 // open page when a journey fails), E2E_ONLY_TABBAR=1 (register, set the league via the API, then only the tab-bar
-// journeys; E2E_TABBAR_SHOTS=<dir> saves the dark Hebrew Table screenshots). The tab-bar check also runs in Playwright
+// journeys; E2E_TABBAR_SHOTS=<dir> saves the dark Hebrew Table screenshots), E2E_ONLY_AVATAR=1 (register, set the
+// league via the API, then only the profile-photo journeys; E2E_AVATAR_SHOTS=<dir> saves their phone screenshots). The tab-bar check also runs in Playwright
 // WebKit when its browser is installed (skipped with a log line otherwise).
 import { spawn, spawnSync } from 'node:child_process';
 import { createECDH, randomBytes } from 'node:crypto';
@@ -730,6 +731,13 @@ async function journeys(browser) {
 
   if (process.env.E2E_ONLY_VOTE) {
     await voteJourneys(browser, page);
+    await user.close();
+    return;
+  }
+
+  if (process.env.E2E_ONLY_AVATAR) {
+    await setLeagueViaApi(); // the full run sets it in the admin journey first
+    await avatarJourneys(browser, page);
     await user.close();
     return;
   }
@@ -3346,10 +3354,387 @@ async function journeys(browser) {
     },
   );
 
+  await avatarJourneys(browser, page);
+
   await updateJourneys(user);
 
   await adminCtx.close();
   await user.close();
+}
+
+// ---------- profile photos (components/ProfilePhoto.tsx, UserAvatar in AppShell.tsx, lib/avatarApi.ts) ----------
+
+async function avatarJourneys(browser, userPage) {
+  const token = await userPage.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+  const auth = { authorization: `Bearer ${token}` };
+  const shots = process.env.E2E_AVATAR_SHOTS;
+  const shot = async (pg, name) => {
+    if (shots) await pg.screenshot({ path: path.join(shots, `${name}.png`) });
+  };
+  const me = async () => (await globalThis.fetch(`${API}/v1/me`, { headers: auth })).json();
+  // Start from "no photo" (an earlier run of this journey may have left one).
+  await globalThis.fetch(`${API}/v1/me/avatar`, { method: 'DELETE', headers: auth });
+  // A post of the fan's own, so the feed has a card of theirs whatever ran before.
+  const POST = 'פוסט עם תמונת פרופיל e2e';
+  const created = await globalThis.fetch(`${API}/v1/community/posts`, {
+    method: 'POST',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ text: POST }),
+  });
+  assert(created.ok, `seed post: ${created.status}`);
+
+  const context = async ({ locale = 'he', theme = 'light' } = {}) => {
+    const ctx = await newContext(browser, { colorScheme: theme });
+    await ctx.addInitScript(
+      ([tok, loc, th]) => {
+        globalThis.localStorage.setItem('fant.token', tok);
+        globalThis.localStorage.setItem('fant.locale', loc);
+        globalThis.localStorage.setItem('fant.theme', th);
+      },
+      [token, locale, theme],
+    );
+    return ctx;
+  };
+  const card = (pg) => pg.getByTestId('profile-photo');
+  const headerAvatar = (pg) => pg.locator('header a[href="/profile/"] [data-avatar]');
+  const pick = (pg, file) => pg.getByTestId('photo-file').setInputFiles(file);
+  const png = (w, h) => ({ name: 'me.png', mimeType: 'image/png', buffer: makePng(w, h) });
+
+  const ctx = await context();
+  const p = await ctx.newPage();
+  watch(p, 'avatar');
+
+  await step('Profile photo: empty state → preview (cancel / save) → photo in Profile + header', async () => {
+    await p.goto(`${WEB}/profile/`);
+    await card(p).waitFor();
+    await card(p).getByText('תמונת פרופיל').waitFor();
+    assert(
+      (await card(p).locator('[data-testid=profile-photo-avatar] [data-avatar=initials]').count()) === 1,
+      'no photo yet: the initials circle',
+    );
+    assert((await headerAvatar(p).getAttribute('data-avatar')) === 'initials', 'header: initials');
+    assert((await p.getByTestId('photo-remove').count()) === 0, 'nothing to remove yet');
+    await p.getByTestId('photo-upload').getByText('העלאת תמונה').waitFor();
+    const accept = await p.getByTestId('photo-file').getAttribute('accept');
+    assert(accept.startsWith('image/*'), `file input accepts images: ${accept}`);
+    const tap = await p.getByTestId('photo-upload').boundingBox();
+    assert(tap.height >= 44, `upload button is a 44 px target (${tap.height})`);
+    await noHorizontalScroll(p, 'profile photo (empty)');
+    await shot(p, 'he-light-profile-photo-empty');
+
+    // A wide picture: the preview is a centre-cropped circle, nothing is sent until Save.
+    let posts = 0;
+    p.on('request', (r) => {
+      if (r.method() === 'POST' && r.url() === `${API}/v1/me/avatar`) posts++;
+    });
+    await pick(p, png(480, 240));
+    const preview = p.locator('[data-testid=photo-preview] img');
+    await preview.waitFor();
+    const fit = await preview.evaluate((el) => ({
+      fit: getComputedStyle(el).objectFit,
+      w: el.getBoundingClientRect().width,
+      h: el.getBoundingClientRect().height,
+      round: getComputedStyle(el.parentElement).borderRadius,
+    }));
+    assert(fit.fit === 'cover' && Math.abs(fit.w - fit.h) < 1, `round centre crop: ${JSON.stringify(fit)}`);
+    await shot(p, 'he-light-profile-photo-preview');
+    await p.getByTestId('photo-cancel').click();
+    await preview.waitFor({ state: 'detached' });
+    assert(posts === 0, 'cancel uploads nothing');
+
+    await pick(p, png(480, 240));
+    await p.getByTestId('photo-save').click();
+    await p.getByTestId('photo-done').getByText('תמונת הפרופיל עודכנה').waitFor();
+    assert(posts === 1, `one upload (${posts})`);
+    const img = card(p).locator('[data-testid=profile-photo-avatar] img[data-avatar=photo]');
+    await img.waitFor();
+    const src = await img.getAttribute('src');
+    assert(src.startsWith(`${API}/`) && src.endsWith('.jpg'), `photo URL from the API: ${src}`);
+    // The server's 256×256 centre crop.
+    await p.waitForFunction(
+      () => document.querySelector('[data-testid=profile-photo-avatar] img')?.naturalWidth > 0,
+    );
+    const nat = await img.evaluate((el) => [el.naturalWidth, el.naturalHeight]);
+    assert(nat[0] === 256 && nat[1] === 256, `256×256: ${nat}`);
+    await headerAvatar(p).and(p.locator('img')).waitFor();
+    assert((await headerAvatar(p).getAttribute('src')) === src, 'header shows the new photo at once');
+    assert((await me()).avatarUrl === src, 'saved on the account');
+    await p.getByTestId('photo-upload').getByText('החלפת תמונה').waitFor();
+    await p.getByTestId('photo-remove').waitFor();
+    await noHorizontalScroll(p, 'profile photo (set)');
+    await shot(p, 'he-light-profile-photo-set');
+  });
+
+  await step('Profile photo: Community composer, my posts and the feed show it', async () => {
+    const src = (await me()).avatarUrl;
+    await p.goto(`${WEB}/community/`);
+    const entry = p.locator('section', { has: p.getByTestId('composer-open') });
+    await entry.locator('img[data-avatar=photo]').waitFor();
+    assert((await entry.locator('img[data-avatar=photo]').getAttribute('src')) === src, 'composer circle');
+    const mine = p.locator('[data-testid=post-card]', { hasText: POST });
+    await mine.locator('img[data-avatar=photo]').waitFor();
+    assert((await mine.locator('img[data-avatar=photo]').getAttribute('src')) === src, 'post circle');
+    await p.getByTestId('composer-open').click();
+    const composer = p.getByTestId('composer');
+    await composer.locator('img[data-avatar=photo]').waitFor();
+    await p.keyboard.press('Escape');
+    await p.locator('dialog[open]').waitFor({ state: 'detached' });
+    await noHorizontalScroll(p, 'community with a photo');
+    await mine.scrollIntoViewIfNeeded();
+    await shot(p, 'he-light-community-post-photo');
+  });
+
+  await step('Profile photo: errors (too big / not an image / 413 / 415 / 429 / 403)', async () => {
+    await p.goto(`${WEB}/profile/`);
+    await card(p).waitFor();
+    const error = p.getByTestId('photo-error');
+    // Client-side checks: nothing is sent.
+    await pick(p, { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
+    await error.getByText('זה לא קובץ תמונה').waitFor();
+    await pick(p, { name: 'huge.png', mimeType: 'image/png', buffer: Buffer.alloc(10 * 1024 * 1024 + 1) });
+    await error.getByText('התמונה גדולה מדי').waitFor();
+    // Server answers.
+    const answers = [
+      [413, 'payload_too_large', 'התמונה גדולה מדי'],
+      [415, 'unsupported_media_type', 'זה לא קובץ תמונה'],
+      [429, 'rate_limited', 'יותר מדי ניסיונות'],
+      [403, 'forbidden', 'החשבון שלכם מושעה'],
+    ];
+    for (const [status, code, text] of answers) {
+      await p.route(`${API}/v1/me/avatar`, (r) => {
+        if (r.request().method() !== 'POST') return r.continue();
+        return r.fulfill(json({ error: { code, message: code } }, status));
+      });
+      await pick(p, png(64, 64));
+      await p.getByTestId('photo-save').click();
+      await error.getByText(text).waitFor();
+      // The preview stays, so the fan can try again or cancel.
+      await p.getByTestId('photo-preview').waitFor();
+      await p.getByTestId('photo-cancel').click();
+      await p.unroute(`${API}/v1/me/avatar`);
+    }
+    assert(Boolean((await me()).avatarUrl), 'a failed upload keeps the current photo');
+  });
+
+  await step('Profile photo: a photo that fails to load falls back to the initials circle', async () => {
+    const src = (await me()).avatarUrl;
+    const f = await context();
+    await f.route(
+      (u) => u.href === src,
+      (r) => r.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' }, body: '' }),
+    );
+    const fp = await f.newPage();
+    watch(fp, 'avatar-fallback');
+    await fp.goto(`${WEB}/community/`);
+    const mine = fp.locator('[data-testid=post-card]', { hasText: POST });
+    await mine.locator('[data-avatar=initials]').waitFor();
+    await headerAvatar(fp).and(fp.locator('span')).waitFor();
+    assert((await headerAvatar(fp).innerText()).trim() === 'ET', 'header initials');
+    assert((await mine.locator('[data-avatar=initials]').innerText()).trim() === 'ET', 'post initials');
+    await f.close();
+  });
+
+  await step('League: the manager sheet shows the photo next to the name (league avatars)', async () => {
+    const mineSrc = (await me()).avatarUrl;
+    const other = { entry: null, url: `${WEB}/icons/icon-512.png` };
+    let avatarCalls = 0;
+    await ctx.route(
+      (u) => u.origin === API && u.pathname === '/v1/league/avatars',
+      async (r) => {
+        if (r.request().method() === 'OPTIONS') return r.continue();
+        avatarCalls++;
+        const res = await r.fetch();
+        const body = await res.json();
+        const extra = other.entry ? [{ entryId: other.entry, url: other.url }] : [];
+        await r.fulfill({ response: res, json: { avatars: [...body.avatars, ...extra] } });
+      },
+    );
+    await p.goto(`${WEB}/table/`);
+    const rows = p.locator('main li[data-entry]');
+    await rows.first().waitFor();
+    assert(avatarCalls === 0, 'the table itself never fetches the photos (lazy)');
+    assert((await rows.locator('[data-avatar]').count()) === 0, 'no circles added to the table rows');
+    const entries = await rows.evaluateAll((els) => els.map((e) => Number(e.getAttribute('data-entry'))));
+    const myEntry = Number(DEMO.tripleCaptain);
+    other.entry = entries.find((e) => e !== myEntry);
+    const noPhoto = entries.find((e) => e !== myEntry && e !== other.entry);
+    const sheetAvatar = p.locator('dialog[open] [data-testid=manager-avatar] [data-avatar]');
+
+    await p.locator(`main li[data-entry="${other.entry}"] button`).click();
+    await sheetAvatar.and(p.locator('img')).waitFor();
+    assert((await sheetAvatar.getAttribute('src')) === other.url, 'another manager: their photo');
+    await p.waitForFunction(() => {
+      const h = document.querySelector('dialog[open] h1')?.textContent;
+      return Boolean(h) && h !== '—';
+    });
+    await noHorizontalScroll(p, 'manager sheet with a photo');
+    await shot(p, 'he-light-manager-sheet-photo');
+    await p.keyboard.press('Escape');
+    await p.locator('dialog[open]').waitFor({ state: 'detached' });
+
+    await p.locator(`main li[data-entry="${noPhoto}"] button`).click();
+    await sheetAvatar.and(p.locator('span')).waitFor();
+    await p.keyboard.press('Escape');
+    await p.locator('dialog[open]').waitFor({ state: 'detached' });
+
+    if (entries.includes(myEntry)) {
+      await p.locator(`main li[data-entry="${myEntry}"] button`).click();
+      await sheetAvatar.and(p.locator('img')).waitFor();
+      assert((await sheetAvatar.getAttribute('src')) === mineSrc, 'my own row: my photo');
+      await p.keyboard.press('Escape');
+      await p.locator('dialog[open]').waitFor({ state: 'detached' });
+    }
+    await ctx.unroute((u) => u.origin === API && u.pathname === '/v1/league/avatars');
+
+    // The production-like build reads them through the same-origin CDN path, without the Authorization header.
+    const cp = await ctx.newPage();
+    watch(cp, 'avatar-cdn');
+    await cp.addInitScript((tok) => globalThis.localStorage.setItem('fant.token', tok), token);
+    const before = cdnHits.length;
+    await cp.goto(`${WEB_CDN}/table/`);
+    await cp.locator(`main li[data-entry="${other.entry}"] button`).click();
+    await cp.locator('dialog[open] [data-testid=manager-avatar] [data-avatar]').waitFor();
+    await waitUntil(
+      () => cdnHits.slice(before).some((h) => h.path.startsWith('/cdn/v1/league/avatars/')),
+      'GET /cdn/v1/league/avatars/',
+    );
+    assert(
+      cdnHits
+        .slice(before)
+        .filter((h) => h.path.startsWith('/cdn/v1/league/avatars'))
+        .every((h) => h.authorization === null),
+      'league avatars through the CDN are never authenticated',
+    );
+    await cp.close();
+  });
+
+  await step('Season Captain Battle: my rank circle and a host star show profile photos', async () => {
+    const mineSrc = (await me()).avatarUrl;
+    const bootstrap = await (await globalThis.fetch(`${API}/v1/fpl/bootstrap`)).json();
+    const myEntry = Number(DEMO.tripleCaptain);
+    const { ctx: sctx, season } = await roundupContext(
+      browser,
+      token,
+      roundupMocks(
+        bootstrap.players.map((x) => x.id),
+        myEntry,
+      ),
+    );
+    season.body = seasonMock('ready', myEntry);
+    const dor = season.body.rows.find((r) => r.host === 'dor');
+    const hostUrl = `${WEB}/icons/icon-512.png`;
+    await sctx.route(
+      (u) => u.origin === API && u.pathname === '/v1/league/avatars',
+      (r) =>
+        r.request().method() === 'OPTIONS'
+          ? r.continue()
+          : r.fulfill(json({ avatars: [{ entryId: dor.entryId, url: hostUrl }] })),
+    );
+    const sp = await sctx.newPage();
+    watch(sp, 'avatar-season');
+    await sp.goto(`${WEB}/table/?view=season`);
+    const meRow = sp.getByTestId('season-me');
+    await meRow.locator('img[data-avatar=photo]').waitFor();
+    assert((await meRow.locator('img').getAttribute('src')) === mineSrc, 'my rank circle: my photo');
+    const dorStar = sp.locator(`[data-testid=season-star][data-key="${dor.key}"] img`);
+    await dorStar.waitFor();
+    assert((await dorStar.getAttribute('src')) === hostUrl, "Dor's star: his profile photo");
+    // The special captains keep their own pictures.
+    await sp.locator('[data-testid=season-star][data-key=community] img[src*="logo-320"]').waitFor();
+    await sp.locator('[data-testid=season-star][data-key=fpl_lad] [role=img]').waitFor();
+    assert(
+      (await sp.locator('[data-testid=season-list] [data-avatar]').count()) === 0,
+      'no circles added to the leaderboard rows',
+    );
+    await noHorizontalScroll(sp, 'season leaderboard with photos');
+    await shot(sp, 'he-light-season-photo');
+    await sctx.close();
+  });
+
+  await step('Profile photo screens in English / dark (LTR, theme tokens)', async () => {
+    const e = await context({ locale: 'en', theme: 'dark' });
+    const ep = await e.newPage();
+    watch(ep, 'avatar-en');
+    await ep.goto(`${WEB}/profile/`);
+    await card(ep).getByText('Profile photo').waitFor();
+    await card(ep).locator('img[data-avatar=photo]').waitFor();
+    await ep.getByTestId('photo-upload').getByText('Change photo').waitFor();
+    assert((await ep.evaluate(() => document.documentElement.dir)) === 'ltr', 'English is LTR');
+    await noHorizontalScroll(ep, 'profile photo (en)');
+    await shot(ep, 'en-dark-profile-photo-set');
+    await pick(ep, png(300, 500));
+    await ep.locator('[data-testid=photo-preview] img').waitFor();
+    await ep.getByText('This is how it will look').waitFor();
+    await shot(ep, 'en-dark-profile-photo-preview');
+    await ep.getByTestId('photo-cancel').click();
+    await ep.goto(`${WEB}/community/`);
+    await ep
+      .locator('[data-testid=post-card]', { hasText: POST })
+      .locator('img[data-avatar=photo]')
+      .waitFor();
+    await shot(ep, 'en-dark-community-post-photo');
+    await e.close();
+  });
+
+  await step('Profile photo: remove (confirm) → initials everywhere', async () => {
+    await p.goto(`${WEB}/profile/`);
+    await p.getByTestId('photo-remove').click();
+    await p.getByTestId('photo-remove-confirm').getByText('להסיר את תמונת הפרופיל?').waitFor();
+    await p.getByTestId('photo-remove-yes').click();
+    await p.getByTestId('photo-done').getByText('תמונת הפרופיל הוסרה').waitFor();
+    await card(p).locator('[data-testid=profile-photo-avatar] [data-avatar=initials]').waitFor();
+    await headerAvatar(p).and(p.locator('span')).waitFor();
+    assert((await p.getByTestId('photo-remove').count()) === 0, 'no remove button without a photo');
+    assert((await me()).avatarUrl === null, 'removed on the account');
+    await p.goto(`${WEB}/community/`);
+    const mine = p.locator('[data-testid=post-card]', { hasText: POST });
+    await mine.locator('[data-avatar=initials]').waitFor();
+  });
+
+  await step('Profile photo: guests see a sign-up prompt instead of the upload', async () => {
+    const g = await newContext(browser);
+    await g.addInitScript(() => globalThis.localStorage.setItem('fant.guest', '1'));
+    const gp = await g.newPage();
+    watch(gp, 'avatar-guest');
+    await gp.goto(`${WEB}/profile/`);
+    await gp.getByTestId('profile-photo-guest').getByRole('link', { name: 'הרשמה' }).waitFor();
+    assert((await gp.getByTestId('photo-file').count()) === 0, 'no file input for a guest');
+    await g.close();
+  });
+
+  await step('admin removes a user’s photo from Users (confirm → row shows initials)', async () => {
+    // The fan has a photo again (straight through the API).
+    const form = new globalThis.FormData();
+    form.append('file', new globalThis.Blob([makePng(200, 200)], { type: 'image/png' }), 'a.png');
+    const up = await globalThis.fetch(`${API}/v1/me/avatar`, { method: 'POST', headers: auth, body: form });
+    assert(up.ok, `upload via API: ${up.status}`);
+    const a = await newContext(browser);
+    const ap = await a.newPage();
+    watch(ap, 'avatar-admin');
+    await ap.goto(`${WEB}/admin/login/`);
+    await ap.getByLabel('שם משתמש').fill(ADMIN.username);
+    await ap.getByLabel('סיסמה').fill(ADMIN.password);
+    await ap.getByRole('button', { name: 'כניסה' }).click();
+    await ap.waitForURL('**/admin/');
+    await ap.goto(`${WEB}/admin/?view=community`);
+    await openCard(ap, 'community.users');
+    await ap.getByTestId('users-search').fill('E2E Tester');
+    const row = ap.locator('[data-testid=user-row]', { hasText: 'E2E Tester' }).first();
+    await row.locator('img[data-avatar=photo]').waitFor();
+    await row.getByTestId('remove-photo').click();
+    const sheet = ap.locator('dialog[open]');
+    await sheet.getByText('להסיר את התמונה של E2E Tester?').waitFor();
+    await shot(ap, 'he-light-admin-remove-photo');
+    await sheet.getByTestId('remove-photo-confirm').click();
+    await ap.getByText('התמונה של E2E Tester הוסרה').waitFor();
+    await row.locator('[data-avatar=initials]').waitFor();
+    assert((await row.getByTestId('remove-photo').count()) === 0, 'no remove button any more');
+    assert((await me()).avatarUrl === null, 'removed on the account');
+    await noHorizontalScroll(ap, 'admin users with photos');
+    await a.close();
+  });
+
+  await ctx.close();
 }
 
 // ---------- updates reaching installed apps (src/lib/updates.ts) ----------

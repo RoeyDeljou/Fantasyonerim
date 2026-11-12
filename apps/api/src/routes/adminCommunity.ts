@@ -21,10 +21,12 @@ import {
   softDeletePost,
   purgeDeletedPostImages,
 } from '../community/moderation.js';
+import { clearAvatar } from '../account/avatar.js';
 import { COMMENT_INCLUDE, POST_INCLUDE, toComment, toPosts } from '../community/serialize.js';
 import { cleanPlainText } from '../community/text.js';
 import type { AppContext } from '../context.js';
 import { badRequest, conflict, notFound } from '../errors.js';
+import { mapMediaUrl, type MediaUrlMapper } from '../media/publicUrl.js';
 import { parseInput, serialize } from '../validate.js';
 import { EMAIL_TAKEN, isUniqueViolationOn } from './email.js';
 import { cleanQuery } from './query.js';
@@ -38,7 +40,7 @@ const UserParamsSchema = z.object({ id: UserIdSchema });
 export const ADMIN_USERS_PAGE = 50;
 export const MAX_REPORT_GROUPS = 200;
 
-function toAdminUser(u: User, postCount: number) {
+function toAdminUser(u: User, postCount: number, mediaUrl: MediaUrlMapper) {
   return {
     id: u.id,
     name: u.name,
@@ -49,6 +51,8 @@ function toAdminUser(u: User, postCount: number) {
     bannedAt: u.bannedAt === null ? null : u.bannedAt.toISOString(),
     banReason: u.banReason,
     postCount,
+    // Banned users keep their photo in this admin view (so an admin can see and remove it).
+    avatarUrl: mapMediaUrl(mediaUrl, u.avatarUrl),
     createdAt: u.createdAt.toISOString(),
   };
 }
@@ -90,7 +94,7 @@ export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth
         where: { id: { in: idsOf('comment') }, deletedAt: null, post: { deletedAt: null } },
         include: COMMENT_INCLUDE,
       });
-      const comments = new Map(commentRows.map((c) => [c.id, toComment(c, user.id)]));
+      const comments = new Map(commentRows.map((c) => [c.id, toComment(c, user.id, ctx.mediaUrl)]));
 
       const items = [...groups.entries()].flatMap(([targetId, g]) => {
         const target =
@@ -183,7 +187,7 @@ export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth
         include: { _count: { select: { posts: { where: { deletedAt: null } } } } },
       });
       return serialize(AdminUserListSchema, {
-        items: users.map((u) => toAdminUser(u, u._count.posts)),
+        items: users.map((u) => toAdminUser(u, u._count.posts, ctx.mediaUrl)),
       });
     });
 
@@ -199,6 +203,8 @@ export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth
         data: { bannedAt: target.bannedAt ?? ctx.clock.now(), banReason: reason },
       });
       ctx.forgetUser(id);
+      // Banned users are left out of the public league avatars.
+      ctx.hot.invalidateAvatars();
       return reply.code(204).send();
     });
 
@@ -231,7 +237,19 @@ export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth
       }
       ctx.forgetUser(id);
       request.log.info({ userId: id, by: by.id }, 'admin changed a user email');
-      return serialize(AdminUserSchema, toAdminUser(updated, updated._count.posts));
+      return serialize(AdminUserSchema, toAdminUser(updated, updated._count.posts, ctx.mediaUrl));
+    });
+
+    // Moderation: removes a user's profile photo (the stored object is deleted best-effort). Returns the updated
+    // AdminUser (200), like PUT /v1/admin/users/:id/email. Idempotent: a user without a photo is a no-op.
+    admin.delete('/v1/admin/users/:id/avatar', async (request) => {
+      const { user: by } = await auth.requireAdmin(request);
+      const { id } = parseInput(UserParamsSchema, request.params);
+      const updated = await clearAvatar(ctx, id);
+      if (updated === null) throw notFound('This user does not exist');
+      const postCount = await prisma.communityPost.count({ where: { authorId: id, deletedAt: null } });
+      request.log.info({ userId: id, by: by.id }, 'admin removed a profile photo');
+      return serialize(AdminUserSchema, toAdminUser(updated, postCount, ctx.mediaUrl));
     });
 
     admin.delete('/v1/admin/users/:id/ban', async (request, reply) => {
@@ -241,6 +259,7 @@ export function adminCommunityRoutes(app: FastifyInstance, ctx: AppContext, auth
         data: { bannedAt: null, banReason: null },
       });
       ctx.forgetUser(id);
+      ctx.hot.invalidateAvatars();
       if (updated.count === 0) throw notFound('This user does not exist');
       return reply.code(204).send();
     });

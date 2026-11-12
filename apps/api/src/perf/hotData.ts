@@ -53,7 +53,12 @@ export const HOT_POLICY = {
   fixtures: { freshMs: 10 * SECOND, staleMs: MINUTE, staleIfErrorMs: 30 * MINUTE },
   config: { freshMs: 30 * SECOND, staleMs: MINUTE },
   news: { freshMs: 15 * SECOND, staleMs: 45 * SECOND },
+  /** League avatars: every avatar change / ban / account deletion drops the key, so this only bounds drift. */
+  avatars: { freshMs: MINUTE, staleMs: 4 * MINUTE },
 } as const satisfies Record<string, HotPolicy>;
+
+/** Hot key of GET /v1/league/avatars (routes/avatar.ts builds it). */
+export const LEAGUE_AVATARS_HOT_KEY = 'avatars:league';
 
 /** A league's entry → standings page/rank index is rebuilt after this (FplService's standings TTL). */
 export const LEAGUE_POSITION_TTL_MS = FPL_CACHE_TTL.standings;
@@ -187,6 +192,11 @@ export class HotData {
     this.cache.invalidate('config');
     this.cache.invalidate('battle');
     this.cache.invalidate('league:');
+  }
+
+  /** After a profile photo change, a ban / unban or an account deletion (GET /v1/league/avatars). */
+  invalidateAvatars(): void {
+    this.cache.invalidate(LEAGUE_AVATARS_HOT_KEY);
   }
 
   invalidateNews(): void {

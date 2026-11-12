@@ -15,6 +15,8 @@ import { CaptainTag, useCaptainBadge } from '@/components/team/CaptainCard';
 import { FindMyTeam } from '@/components/team/FindMyTeam';
 import { STAR_PHOTOS } from '@/lib/clientConfig';
 import { initials } from '@/lib/text';
+import { useLeagueAvatars } from '@/lib/avatarApi';
+import { UserAvatar } from '@/components/UserAvatar';
 import { Button, EmptyState, ErrorState, Num, Skeleton, Spinner, cx } from '@/components/ui';
 import { NoLeague } from './Table';
 
@@ -279,10 +281,24 @@ function SeasonSkeleton() {
   );
 }
 
-/** Round avatar for a star: a photo (hosts, once configured), the app logo, the FPL Lad chip, or initials. */
-function StarAvatar({ row, name }: { row: SeasonCaptainRow; name: string }) {
+/**
+ * Round avatar for a star: a photo (hosts: the configured star photo, else their own profile photo), the app logo,
+ * the FPL Lad chip, or initials.
+ */
+function StarAvatar({
+  row,
+  name,
+  photo,
+}: {
+  row: SeasonCaptainRow;
+  name: string;
+  /** The manager's own profile photo (league avatars), used when no star photo is configured. */
+  photo: string | undefined;
+}) {
   const { t } = useI18n();
-  const [failed, setFailed] = useState<string | null>(null);
+  // Every URL that failed to load: the next one in line is tried (star photo → profile photo → initials).
+  const [failed, setFailed] = useState<readonly string[]>([]);
+  const ok = (url: string | null | undefined) => starPhoto(url, url && failed.includes(url) ? url : null);
   const base =
     'relative flex size-12 items-center justify-center overflow-hidden rounded-full font-extrabold';
   if (row.kind === 'fpl_lad') {
@@ -302,8 +318,8 @@ function StarAvatar({ row, name }: { row: SeasonCaptainRow; name: string }) {
     row.kind === 'community'
       ? '/brand/logo-320.png'
       : row.host !== null
-        ? starPhoto(STAR_PHOTOS[row.host], failed)
-        : null;
+        ? (ok(STAR_PHOTOS[row.host]) ?? ok(photo))
+        : ok(photo);
   if (src !== null)
     return (
       <span className={cx(base, 'bg-primary-soft')}>
@@ -315,7 +331,7 @@ function StarAvatar({ row, name }: { row: SeasonCaptainRow; name: string }) {
           loading="lazy"
           decoding="async"
           draggable={false}
-          onError={() => setFailed(src)}
+          onError={() => setFailed((f) => [...f, src])}
           className="size-full object-cover"
         />
       </span>
@@ -368,6 +384,7 @@ function SeasonSummary({
 }) {
   const { t } = useI18n();
   const meQuery = useMe().data;
+  const avatars = useLeagueAvatars();
   if (stars.length === 0 && me === null) return null;
   return (
     <section
@@ -382,12 +399,11 @@ function SeasonSummary({
           data-testid="season-me"
           className="flex min-h-16 w-full items-center gap-3 bg-primary-soft px-4 py-3 text-start text-on-primary-soft"
         >
-          <span
-            aria-hidden="true"
+          <UserAvatar
+            name={meQuery?.name ?? ''}
+            avatarUrl={meQuery?.avatarUrl}
             className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary text-base font-extrabold text-on-primary"
-          >
-            <bdi dir="auto">{initials(meQuery?.name ?? '') || '·'}</bdi>
-          </span>
+          />
           <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
             <span className="text-xs font-semibold opacity-80">{t.season.yourRank}</span>
             <span
@@ -423,7 +439,11 @@ function SeasonSummary({
                 >
                   <span className="relative pb-2.5">
                     <span className="block rounded-full border-2 border-primary p-0.5">
-                      <StarAvatar row={row} name={name} />
+                      <StarAvatar
+                        row={row}
+                        name={name}
+                        photo={row.entryId !== null ? avatars.get(row.entryId) : undefined}
+                      />
                     </span>
                     <span className="absolute inset-x-0 bottom-0 flex justify-center">
                       <span

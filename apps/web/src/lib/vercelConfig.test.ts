@@ -36,3 +36,26 @@ describe('vercel.json: /fplimg proxy for the share image', () => {
     expect(header('CDN-Cache-Control')).toMatch(/max-age=\d{6,}/);
   });
 });
+
+/** League profile photos (entryId → URL) are public JSON: read through the same-origin CDN like /v1/config. */
+describe('vercel.json: /cdn/v1/league/avatars through the edge cache', () => {
+  const API = 'https://fantasyonerim-api.onrender.com/v1/league/avatars';
+  it('rewrites both the slash-less and the trailing-slash form to the API', () => {
+    expect(vercel.rewrites).toContainEqual({ source: '/cdn/v1/league/avatars', destination: API });
+    expect(vercel.rewrites).toContainEqual({ source: '/cdn/v1/league/avatars/', destination: API });
+  });
+  it('uses the same plain header sources as the proven /cdn/v1/config pair (no regex)', () => {
+    const forms = (prefix: string) =>
+      vercel.headers.filter((h) => h.source.startsWith(prefix)).map((h) => h.source.slice(prefix.length));
+    expect(forms('/cdn/v1/league/avatars')).toEqual(forms('/cdn/v1/config'));
+    expect(forms('/cdn/v1/league/avatars')).toEqual(['', '/']);
+  });
+  it('caches 60 s at the edge with rewrite caching on', () => {
+    for (const source of ['/cdn/v1/league/avatars', '/cdn/v1/league/avatars/']) {
+      const rule = vercel.headers.find((h) => h.source === source);
+      const header = (k: string) => rule?.headers.find((h) => h.key === k)?.value;
+      expect(header('CDN-Cache-Control')).toBe('public, max-age=60, stale-while-revalidate=120');
+      expect(header('x-vercel-enable-rewrite-caching')).toBe('1');
+    }
+  });
+});

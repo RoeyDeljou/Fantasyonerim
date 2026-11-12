@@ -27,6 +27,11 @@ export const CACHE_CONTROL = {
   roundup: 'public, max-age=60, stale-while-revalidate=120',
   /** Community-captain vote for guests: the voter count moves, the shared part is recomputed every ~15 s. */
   vote: 'public, max-age=15, stale-while-revalidate=30',
+  /**
+   * League avatars (entryId → photo URL): public, read through the Vercel CDN (`/cdn/v1/league/avatars/`). A new
+   * photo shows in other people's league table within ~1-2 minutes; the uploader sees it at once (Me.avatarUrl).
+   */
+  avatars: 'public, max-age=60, s-maxage=60, stale-while-revalidate=120',
   /** Per-viewer responses: the browser may keep them, never a shared cache; always revalidated (ETag). */
   private: 'private, no-cache',
 } as const;

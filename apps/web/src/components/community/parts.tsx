@@ -4,15 +4,29 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 import type { ReactNode } from 'react';
 import type { CommunityAuthor, UserId } from '@fant/shared';
 import { useI18n } from '@/i18n';
-import { initials } from '@/lib/text';
-import { Logo } from '@/components/AppShell';
+import { useMe } from '@/lib/queries';
+import { Logo, UserAvatar } from '@/components/AppShell';
 import { BanIcon } from '@/components/icons';
 import { RelativeTime } from '@/components/news/parts';
 import { Toast, cx } from '@/components/ui';
 
-/** Initials avatar (grapheme-safe: emoji / Hebrew never split). Fantasyonerim admins get the logo. */
-export function AuthorAvatar({ author, size = 40 }: { author: CommunityAuthor; size?: 32 | 40 }) {
-  if (author.role === 'admin') {
+/**
+ * The author's photo, or the initials circle (grapheme-safe: emoji / Hebrew never split). Fantasyonerim admins get
+ * the logo (official posts); `official={false}` (admin users list) shows an admin's own photo when they have one.
+ * The signed-in fan's own circle follows their `Me`, so a new photo shows at once on posts already loaded.
+ */
+export function AuthorAvatar({
+  author,
+  size = 40,
+  official = true,
+}: {
+  author: CommunityAuthor;
+  size?: 32 | 40;
+  official?: boolean;
+}) {
+  const me = useMe().data;
+  const url = me?.id === author.id ? me.avatarUrl : author.avatarUrl;
+  if (author.role === 'admin' && (official || !url)) {
     return (
       <span className="shrink-0 self-start">
         <Logo size={size} />
@@ -20,15 +34,14 @@ export function AuthorAvatar({ author, size = 40 }: { author: CommunityAuthor; s
     );
   }
   return (
-    <span
-      aria-hidden="true"
+    <UserAvatar
+      name={author.name}
+      avatarUrl={url}
       className={cx(
         'flex shrink-0 items-center self-start justify-center rounded-full bg-accent font-bold text-on-accent',
         size === 40 ? 'size-10 text-sm' : 'size-8 text-xs',
       )}
-    >
-      <bdi dir="auto">{initials(author.name) || '·'}</bdi>
-    </span>
+    />
   );
 }
 

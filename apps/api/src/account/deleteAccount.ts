@@ -11,7 +11,7 @@ export const LAST_ADMIN_MESSAGE = "You're the only admin — add another admin f
  * other people's post counters are corrected first, reports about the user's content (and the ones they filed)
  * go, then the User row — which cascades to sessions, push subscriptions, native devices, prefs, notification
  * log, admin credential, posts (with their comments + likes), comments, likes, reports filed, uploads and blocks.
- * Stored photos are recorded as pending deletes in the same transaction and removed after commit (the hourly
+ * Stored photos (uploads and the profile photo) are recorded as pending deletes in the same transaction and removed after commit (the hourly
  * cleanup retries any that fail). Broadcast history keeps `sentByName` (no FK); an upload used as a broadcast's
  * image is official News content, so its file stays online.
  */
@@ -57,6 +57,8 @@ export async function deleteAccount(ctx: Pick<AppContext, 'prisma' | 'media' | '
     const fileKeys = uploads
       .filter((u) => u.broadcasts.length === 0)
       .flatMap((u) => mediaKeysWithVariants(u.storageKey));
+    // The profile photo (a single object, no variants).
+    if (user.avatarKey !== null) fileKeys.push(user.avatarKey);
     await recordPendingMediaDeletes(tx, fileKeys, now);
 
     await tx.user.delete({ where: { id: userId } });

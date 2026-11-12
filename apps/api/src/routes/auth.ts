@@ -76,7 +76,7 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, st
     }
 
     const token = await auth.issueSession(user.id, request);
-    return reply.code(201).send(serialize(AuthResponseSchema, { token, user: toMe(user) }));
+    return reply.code(201).send(serialize(AuthResponseSchema, { token, user: toMe(user, ctx.mediaUrl) }));
   });
 
   // Sign back in (new device, after signing out): the account's email AND its Team ID must both match. Banned users
@@ -88,7 +88,7 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, st
       throw unauthorized(EMAIL_LOGIN_FAILED);
     }
     const token = await auth.issueSession(user.id, request);
-    return serialize(AuthResponseSchema, { token, user: toMe(user) });
+    return serialize(AuthResponseSchema, { token, user: toMe(user, ctx.mediaUrl) });
   });
 
   app.post('/v1/auth/admin-login', { config: { rateLimit: strictLimit } }, async (request) => {
@@ -104,7 +104,7 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, st
       throw unauthorized('Invalid username or password');
     }
     const token = await auth.issueSession(credential.userId, request);
-    return serialize(AuthResponseSchema, { token, user: toMe(credential.user) });
+    return serialize(AuthResponseSchema, { token, user: toMe(credential.user, ctx.mediaUrl) });
   });
 
   app.post('/v1/auth/logout', async (request, reply) => {

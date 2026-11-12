@@ -1,0 +1,63 @@
+import { defineSection } from '../section';
+
+/**
+ * Profile photos: the Profile screen's photo card and the admin's "remove photo". Lazy: only the Profile and admin
+ * chunks import this, so the copy costs nothing on the tabs' first load.
+ */
+export const profilePhoto = defineSection(
+  {
+    title: 'תמונת פרופיל',
+    body: 'התמונה תופיע בעיגול שליד השם שלכם: בקהילה, בפוסטים ובטבלת הליגה.',
+    upload: 'העלאת תמונה',
+    change: 'החלפת תמונה',
+    remove: 'הסרת תמונה',
+    removeConfirm: 'להסיר את תמונת הפרופיל? במקומה יופיעו ראשי התיבות שלכם.',
+    previewTitle: 'ככה התמונה תיראה',
+    previewHint: 'התמונה נחתכת לעיגול מהמרכז.',
+    previewUnavailable: 'אין תצוגה מקדימה לקובץ הזה, אבל אפשר לשמור אותו.',
+    save: 'שמירה',
+    uploading: 'מעלים… {pct}%',
+    saved: 'תמונת הפרופיל עודכנה',
+    removed: 'תמונת הפרופיל הוסרה',
+    errType: 'זה לא קובץ תמונה. בחרו תמונה בפורמט JPEG,‏ PNG,‏ WebP או HEIC.',
+    errSize: 'התמונה גדולה מדי (עד 10MB). נסו תמונה אחרת.',
+    errRateLimited: 'יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.',
+    errBanned: 'החשבון שלכם מושעה כרגע, ולכן אי אפשר להעלות תמונה. אפשר להסיר את התמונה הקיימת.',
+    errNetwork: 'אין חיבור לאינטרנט. בדקו את החיבור ונסו שוב.',
+    errGeneric: 'משהו השתבש. נסו שוב.',
+    bannedNote: 'החשבון מושעה, ולכן אי אפשר להעלות תמונה חדשה.',
+    guestBody: 'הירשמו כדי להוסיף תמונת פרופיל שתופיע ליד השם שלכם.',
+    adminRemove: 'הסרת התמונה',
+    adminRemoveFor: 'להסיר את התמונה של {name}?',
+    adminRemoveBody: 'התמונה תימחק, ובמקומה יופיעו ראשי התיבות. המשתמש יוכל להעלות תמונה חדשה.',
+    adminRemoved: 'התמונה של {name} הוסרה',
+  },
+  {
+    title: 'Profile photo',
+    body: 'Your photo shows in the circle next to your name: in the community, on posts and in the league table.',
+    upload: 'Upload photo',
+    change: 'Change photo',
+    remove: 'Remove photo',
+    removeConfirm: 'Remove your profile photo? Your initials will show instead.',
+    previewTitle: 'This is how it will look',
+    previewHint: 'The photo is cropped to a circle from the centre.',
+    previewUnavailable: "There's no preview for this file, but you can still save it.",
+    save: 'Save',
+    uploading: 'Uploading… {pct}%',
+    saved: 'Profile photo updated',
+    removed: 'Profile photo removed',
+    errType: "That's not an image. Choose a JPEG, PNG, WebP or HEIC photo.",
+    errSize: 'That photo is too big (10 MB max). Try another one.',
+    errRateLimited: 'Too many tries. Please try again in a few minutes.',
+    errBanned:
+      "Your account is suspended, so you can't upload a photo. You can still remove your current one.",
+    errNetwork: 'No internet connection. Check it and try again.',
+    errGeneric: 'Something went wrong. Please try again.',
+    bannedNote: "Your account is suspended, so you can't upload a new photo.",
+    guestBody: 'Sign up to add a profile photo that shows next to your name.',
+    adminRemove: 'Remove photo',
+    adminRemoveFor: "Remove {name}'s photo?",
+    adminRemoveBody: 'The photo is deleted and their initials show instead. They can upload a new one.',
+    adminRemoved: "{name}'s photo was removed",
+  },
+);

@@ -500,57 +500,65 @@ export const api = {
       request('POST', `/v1/community/comments/${encodeURIComponent(id)}/report`, noContent, { body }),
   },
 
-  /**
-   * POST /v1/uploads (multipart "file"). XMLHttpRequest rather than fetch because only XHR reports upload
-   * progress. Same error model as `request()`: rejects with ApiRequestError (413 / 415 keep their status).
-   */
+  /** POST /v1/uploads (multipart "file"), with upload progress (uploadFile). */
   upload: (
     file: Blob,
     opts: { onProgress?: (fraction: number) => void; signal?: AbortSignal } = {},
-  ): Promise<UploadResponse> =>
-    tokenStore.get().then(
-      (token) =>
-        new Promise<UploadResponse>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('POST', `${API_BASE_URL}/v1/uploads`);
-          xhr.setRequestHeader('accept', 'application/json');
-          if (token) xhr.setRequestHeader('authorization', `Bearer ${token}`);
-          xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) opts.onProgress?.(e.loaded / e.total);
-          };
-          xhr.onerror = () => reject(new ApiRequestError('network', 0, 'network error'));
-          xhr.onabort = () => reject(new DOMException('aborted', 'AbortError'));
-          xhr.onload = () => {
-            let json: unknown = undefined;
-            try {
-              json = xhr.responseText ? JSON.parse(xhr.responseText) : undefined;
-            } catch {
-              json = undefined;
-            }
-            if (xhr.status < 200 || xhr.status >= 300) {
-              const parsed = ApiErrorSchema.safeParse(json);
-              if (xhr.status === 401 && token) {
-                void tokenStore.clear().then(() => unauthorizedHandler?.());
-              }
-              reject(
-                parsed.success
-                  ? new ApiRequestError(parsed.data.error.code, xhr.status, parsed.data.error.message)
-                  : new ApiRequestError(statusToCode(xhr.status), xhr.status, xhr.statusText),
-              );
-              return;
-            }
-            const parsed = UploadResponseSchema.safeParse(json);
-            if (!parsed.success) {
-              console.error('API response failed contract validation', '/v1/uploads', parsed.error);
-              reject(new ApiRequestError('invalid_response', xhr.status, 'invalid response'));
-              return;
-            }
-            resolve(parsed.data);
-          };
-          opts.signal?.addEventListener('abort', () => xhr.abort(), { once: true });
-          const form = new FormData();
-          form.append('file', file, file instanceof File ? file.name : 'image');
-          xhr.send(form);
-        }),
-    ),
+  ): Promise<UploadResponse> => uploadFile('/v1/uploads', file, UploadResponseSchema, opts),
 };
+
+/**
+ * A multipart POST (field "file"). XMLHttpRequest rather than fetch because only XHR reports upload progress. Same
+ * error model as `request()`: rejects with ApiRequestError (413 / 415 keep their status).
+ */
+export function uploadFile<T>(
+  path: string,
+  file: Blob,
+  parser: Parser<T>,
+  opts: { onProgress?: (fraction: number) => void; signal?: AbortSignal | undefined } = {},
+): Promise<T> {
+  return tokenStore.get().then(
+    (token) =>
+      new Promise<T>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', API_BASE_URL + path);
+        xhr.setRequestHeader('accept', 'application/json');
+        if (token) xhr.setRequestHeader('authorization', `Bearer ${token}`);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) opts.onProgress?.(e.loaded / e.total);
+        };
+        xhr.onerror = () => reject(new ApiRequestError('network', 0, 'network error'));
+        xhr.onabort = () => reject(new DOMException('aborted', 'AbortError'));
+        xhr.onload = () => {
+          let json: unknown = undefined;
+          try {
+            json = xhr.responseText ? JSON.parse(xhr.responseText) : undefined;
+          } catch {
+            json = undefined;
+          }
+          if (xhr.status < 200 || xhr.status >= 300) {
+            const parsed = ApiErrorSchema.safeParse(json);
+            if (xhr.status === 401 && token) {
+              void tokenStore.clear().then(() => unauthorizedHandler?.());
+            }
+            reject(
+              parsed.success
+                ? new ApiRequestError(parsed.data.error.code, xhr.status, parsed.data.error.message)
+                : new ApiRequestError(statusToCode(xhr.status), xhr.status, xhr.statusText),
+            );
+            return;
+          }
+          try {
+            resolve(parser.parse(json));
+          } catch (e) {
+            console.error('API response failed contract validation', path, e);
+            reject(new ApiRequestError('invalid_response', xhr.status, 'invalid response'));
+          }
+        };
+        opts.signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+        const form = new FormData();
+        form.append('file', file, file instanceof File ? file.name : 'image');
+        xhr.send(form);
+      }),
+  );
+}

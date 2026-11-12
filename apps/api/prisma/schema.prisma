@@ -50,6 +50,11 @@ model User {
   bannedAt         DateTime?
   /// Shown to admins only. Set together with bannedAt.
   banReason        String?
+  /// Profile photo (POST /v1/me/avatar): the MediaStore URL as stored (mapped to the client URL at serialization).
+  /// Null = no photo (initials circle).
+  avatarUrl        String?
+  /// MediaStore key of avatarUrl (`uploads/avatars/<userId>/<random>.jpg`), so the old object can be deleted.
+  avatarKey        String?
 
   sessions              Session[]
   adminCredential       AdminCredential?

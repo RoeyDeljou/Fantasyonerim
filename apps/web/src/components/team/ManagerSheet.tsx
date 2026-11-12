@@ -5,6 +5,8 @@ import type { FplEntryId, FplPlayerId, Gameweek, LivePick } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import { isApiError } from '@/lib/api';
 import { useEntry, useEntryLive, useFixtures, usePicks } from '@/lib/queries';
+import { useLeagueAvatars } from '@/lib/avatarApi';
+import { UserAvatar } from '../UserAvatar';
 import type { FplIndex } from '@/lib/queries';
 import { BottomSheet } from '../BottomSheet';
 import { EmptyState, ErrorState, Skeleton } from '../ui';
@@ -31,7 +33,7 @@ export function ManagerSheet({
   return (
     <BottomSheet open={entryId !== null} onClose={onClose} title={fmt(t.table.managerTeam, { name: title })}>
       {entryId !== null && index && event !== null ? (
-        <ManagerTeam entryId={entryId} event={event} index={index} liveInterval={liveInterval} />
+        <ManagerTeam entryId={entryId} name={title} event={event} index={index} liveInterval={liveInterval} />
       ) : (
         <EmptyState title={t.myTeam.seasonNotStarted} />
       )}
@@ -41,11 +43,13 @@ export function ManagerSheet({
 
 function ManagerTeam({
   entryId,
+  name,
   event,
   index,
   liveInterval,
 }: {
   entryId: FplEntryId;
+  name: string;
   event: Gameweek;
   index: FplIndex;
   liveInterval: number | false;
@@ -55,6 +59,7 @@ function ManagerTeam({
   const picks = usePicks(entryId, event);
   const live = useEntryLive(entryId, event, liveInterval);
   const fixtures = useFixtures(event);
+  const avatars = useLeagueAvatars();
   const liveByPlayer = useMemo(
     () =>
       live.data ? new Map<FplPlayerId, LivePick>(live.data.picks.map((p) => [p.playerId, p])) : undefined,
@@ -83,6 +88,15 @@ function ManagerTeam({
         picks={picks.data}
         pointsOverride={live.data?.livePoints}
         total={live.data?.liveTotal ?? null}
+        lead={
+          <span data-testid="manager-avatar" className="shrink-0">
+            <UserAvatar
+              name={entry.data?.managerName ?? name}
+              avatarUrl={avatars.get(entryId)}
+              className="flex size-12 items-center justify-center rounded-full bg-accent text-base font-bold text-on-accent"
+            />
+          </span>
+        }
       />
       <Pitch
         picks={picks.data.picks}

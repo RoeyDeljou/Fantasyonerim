@@ -23,7 +23,7 @@ export function meRoutes(
 ): void {
   app.get('/v1/me', async (request) => {
     const { user } = await auth.requireUser(request);
-    return toMe(user);
+    return toMe(user, ctx.mediaUrl);
   });
 
   app.patch('/v1/me', async (request) => {
@@ -53,7 +53,7 @@ export function meRoutes(
       throw err;
     }
     ctx.forgetUser(user.id);
-    return serialize(MeSchema, toMe(updated));
+    return serialize(MeSchema, toMe(updated, ctx.mediaUrl));
   });
 
   // Permanent account deletion (App Store 5.1.1(v)). Allowed while banned: it only removes the user's own data.
@@ -62,6 +62,7 @@ export function meRoutes(
     parseInput(DeleteAccountBodySchema, request.body);
     await deleteAccount(ctx, user.id);
     ctx.forgetUser(user.id);
+    if (user.avatarUrl !== null) ctx.hot.invalidateAvatars();
     return reply.code(204).send();
   });
 
@@ -76,6 +77,6 @@ export function meRoutes(
       return tx.user.update({ where: { id: user.id }, data: { role: 'ADMIN' } });
     });
     ctx.forgetUser(user.id);
-    return serialize(MeSchema, toMe(updated));
+    return serialize(MeSchema, toMe(updated, ctx.mediaUrl));
   });
 }

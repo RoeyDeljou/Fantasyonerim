@@ -29,8 +29,43 @@ const TABS: ReadonlyArray<{ key: TabKey; href: string; Icon: ComponentType<SVGPr
   { key: 'live', href: '/live/', Icon: LiveIcon },
 ];
 
-function initialsOf(name: string | undefined): string {
-  return name ? initials(name) : '';
+/**
+ * A person's round avatar: their profile photo, or — no photo, or it fails to load — the initials circle each call
+ * site always had. `className` is that circle (size, colours, font), so the fallback looks exactly as before and the
+ * photo fills the same circle.
+ */
+export function UserAvatar({
+  name,
+  avatarUrl,
+  className,
+  fallback,
+}: {
+  name: string;
+  avatarUrl: string | null | undefined;
+  className: string;
+  /** The fallback's content when it isn't the initials (e.g. the Profile screen's single letter). */
+  fallback?: ReactNode;
+}) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (avatarUrl && avatarUrl !== failed) {
+    return (
+      <img
+        src={avatarUrl}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        draggable={false}
+        onError={() => setFailed(avatarUrl)}
+        className={cx(className, 'object-cover')}
+        data-avatar="photo"
+      />
+    );
+  }
+  return (
+    <span aria-hidden="true" className={className} data-avatar="initials">
+      {fallback ?? <bdi dir="auto">{initials(name) || '·'}</bdi>}
+    </span>
+  );
 }
 
 export function Logo({ size = 36 }: { size?: number }) {
@@ -85,14 +120,16 @@ function ProfileButton() {
       aria-current={active ? 'page' : undefined}
       className="flex size-11 items-center justify-center rounded-full"
     >
-      <span
+      <UserAvatar
+        name={me.data?.name ?? ''}
+        avatarUrl={me.data?.avatarUrl}
         className={cx(
           'flex size-9 items-center justify-center rounded-full text-sm font-bold',
-          active ? 'bg-primary text-on-primary' : 'bg-accent text-on-accent',
+          active
+            ? 'bg-primary text-on-primary data-[avatar=photo]:ring-2 data-[avatar=photo]:ring-primary'
+            : 'bg-accent text-on-accent',
         )}
-      >
-        <bdi dir="auto">{initialsOf(me.data?.name) || '·'}</bdi>
-      </span>
+      />
     </Link>
   );
 }

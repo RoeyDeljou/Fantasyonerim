@@ -13,6 +13,8 @@ import { EmailField, parseEmail } from '@/components/EmailField';
 import { useSession } from '@/lib/session';
 import { useIsGuest } from '@/lib/guest';
 import { SignUpPrompt } from '@/components/SignUpPrompt';
+import { ProfilePhotoCard, ProfilePhotoGuest } from '@/components/ProfilePhoto';
+import { UserAvatar } from '@/components/UserAvatar';
 import { useTheme } from '@/lib/theme';
 import type { ThemePref } from '@/lib/prefs';
 import { promptInstall, useInstallState } from '@/lib/pwa';
@@ -83,6 +85,7 @@ function ProfileInner() {
     return (
       <div className="flex flex-col gap-3">
         <SignUpPrompt title={t.guest.profileTitle} body={t.guest.profileBody} />
+        <ProfilePhotoGuest />
         <PreferencesCard onLocale={setLocale} />
         <InstallCard />
         <Link
@@ -121,7 +124,7 @@ function ProfileInner() {
   return (
     <div className="flex flex-col gap-3">
       <Card className="flex flex-col gap-1">
-        <NameEditor current={user.name} locked={!user.canPost} />
+        <NameEditor current={user.name} avatarUrl={user.avatarUrl} locked={!user.canPost} />
         <div className="mt-2 border-t border-line pt-2">
           <Row label={t.profile.team}>
             <bdi dir="auto">{user.teamName ?? '—'}</bdi>
@@ -135,6 +138,8 @@ function ProfileInner() {
         {/* The sign-in email (with the Team ID). Admin-only accounts sign in with a password instead. */}
         {user.entryId !== null && <EmailEditor current={user.email} />}
       </Card>
+
+      <ProfilePhotoCard me={user} />
 
       {user.role === 'admin' && (
         <div className="flex flex-col gap-2">
@@ -260,7 +265,15 @@ function PreferencesCard({ onLocale }: { onLocale(l: Locale): void }) {
   );
 }
 
-function NameEditor({ current, locked }: { current: string; locked: boolean }) {
+function NameEditor({
+  current,
+  avatarUrl,
+  locked,
+}: {
+  current: string;
+  avatarUrl: string | null;
+  locked: boolean;
+}) {
   const { t } = useI18n();
   const update = useUpdateMe();
   const [editing, setEditing] = useState(false);
@@ -290,9 +303,12 @@ function NameEditor({ current, locked }: { current: string; locked: boolean }) {
   if (!editing) {
     return (
       <div className="flex items-center gap-3">
-        <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-accent text-lg font-extrabold text-on-accent">
-          {firstGrapheme(current).toLocaleUpperCase()}
-        </span>
+        <UserAvatar
+          name={current}
+          avatarUrl={avatarUrl}
+          className="flex size-12 shrink-0 items-center justify-center rounded-full bg-accent text-lg font-extrabold text-on-accent"
+          fallback={firstGrapheme(current).toLocaleUpperCase()}
+        />
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="text-xs text-muted">{t.profile.name}</span>
           <span dir="auto" className="name-start truncate text-lg font-bold text-ink">

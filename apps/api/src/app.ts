@@ -40,6 +40,7 @@ import { blockRoutes } from './routes/blocks.js';
 import { communityRoutes } from './routes/community.js';
 import { communityCaptainRoutes } from './routes/communityCaptain.js';
 import { uploadRoutes } from './routes/uploads.js';
+import { avatarRoutes } from './routes/avatar.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { internalRoutes } from './routes/internal.js';
 import { newsRoutes } from './routes/news.js';
@@ -235,7 +236,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       new ApiHttpError(429, 'rate_limited', `Too many requests — try again in ${context.after}`),
   });
 
-  // Only POST /v1/uploads reads multipart; the per-request limits there are the real ones.
+  // Only POST /v1/uploads and POST /v1/me/avatar read multipart; the per-request limits there are the real ones.
   await app.register(multipart, {
     limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 5, parts: 6 },
   });
@@ -275,6 +276,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   communityCaptainRoutes(app, ctx, auth, communityLimits.writes);
   blockRoutes(app, ctx, auth, communityLimits.writes);
   uploadRoutes(app, ctx, auth, uploadLimit);
+  avatarRoutes(app, ctx, auth, uploadLimit);
   adminCommunityRoutes(app, ctx, auth);
   adminBroadcastRoutes(app, ctx, auth, broadcastLimit);
   adminInviteRoutes(app, ctx, auth, {

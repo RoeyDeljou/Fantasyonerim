@@ -249,7 +249,7 @@ export function communityRoutes(
     const page = rows.slice(0, query.limit);
     const last = page[page.length - 1];
     return serialize(CommentPageSchema, {
-      items: page.map((row) => toComment(row, viewer)),
+      items: page.map((row) => toComment(row, viewer, ctx.mediaUrl)),
       nextCursor:
         rows.length > query.limit && last !== undefined ? encodeCursor(last.createdAt, last.id) : null,
     });
@@ -297,7 +297,7 @@ export function communityRoutes(
           request.log.error({ err }, 'comment push failed');
         }
       }
-      return reply.code(201).send(serialize(CommentSchema, toComment(comment, user.id)));
+      return reply.code(201).send(serialize(CommentSchema, toComment(comment, user.id, ctx.mediaUrl)));
     },
   );
 

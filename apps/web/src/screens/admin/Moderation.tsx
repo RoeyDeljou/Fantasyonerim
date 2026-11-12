@@ -16,6 +16,9 @@ import {
   useSetUserEmail,
 } from '@/lib/queries';
 import { isEmailTaken } from '@/lib/api';
+import { useAdminRemoveAvatar } from '@/lib/avatarApi';
+import { useSection } from '@/i18n/section';
+import { profilePhoto } from '@/i18n/sections/profilePhoto';
 import { EmailField, parseEmail } from '@/components/EmailField';
 import { BottomSheet } from '@/components/BottomSheet';
 import {
@@ -263,6 +266,8 @@ function UsersSection({ onDone }: { onDone(msg: string): void }) {
   const users = useAdminUsers(q, true);
   const [target, setTarget] = useState<AdminUser | null>(null);
   const [emailFor, setEmailFor] = useState<AdminUser | null>(null);
+  const [photoFor, setPhotoFor] = useState<AdminUser | null>(null);
+  const photo = useSection(profilePhoto);
 
   return (
     <Collapsible
@@ -294,7 +299,7 @@ function UsersSection({ onDone }: { onDone(msg: string): void }) {
           {users.data.map((u) => (
             <li key={u.id} className="flex flex-col gap-1 px-3 py-2.5" data-testid="user-row">
               <div className="flex items-center gap-3">
-                <AuthorAvatar author={u} size={32} />
+                <AuthorAvatar author={u} size={32} official={false} />
                 <div className="flex min-w-0 flex-1 flex-col leading-tight">
                   <span className="flex min-w-0 items-center gap-1.5">
                     <bdi dir="auto" className="truncate font-bold text-ink">
@@ -352,12 +357,26 @@ function UsersSection({ onDone }: { onDone(msg: string): void }) {
                   {u.email ? <bdi dir="ltr">{u.email}</bdi> : <span className="italic">{m.noEmail}</span>}
                 </p>
               )}
+              {u.avatarUrl && (
+                <div className="ps-9">
+                  <Button
+                    variant="ghost"
+                    className="px-2 text-sm text-live"
+                    onClick={() => setPhotoFor(u)}
+                    data-testid="remove-photo"
+                  >
+                    <TrashIcon size={16} />
+                    {photo.adminRemove}
+                  </Button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
       )}
       <BanSheet user={target} onClose={() => setTarget(null)} onDone={onDone} />
       <EmailSheet user={emailFor} onClose={() => setEmailFor(null)} onDone={onDone} />
+      <RemovePhotoSheet user={photoFor} onClose={() => setPhotoFor(null)} onDone={onDone} />
     </Collapsible>
   );
 }
@@ -476,6 +495,65 @@ function BanSheet({
           </Button>
         </div>
       </form>
+    </BottomSheet>
+  );
+}
+
+/** Remove a user's profile photo (an inappropriate picture): confirm, then DELETE → the row shows initials. */
+function RemovePhotoSheet({
+  user,
+  onClose,
+  onDone,
+}: {
+  user: AdminUser | null;
+  onClose(): void;
+  onDone(msg: string): void;
+}) {
+  const { t } = useI18n();
+  const s = useSection(profilePhoto);
+  const remove = useAdminRemoveAvatar();
+  useEffect(() => {
+    remove.reset();
+  }, [user?.id]);
+  const name = user?.name ?? '';
+  return (
+    <BottomSheet open={user !== null} onClose={onClose} title={fmt(s.adminRemoveFor, { name })}>
+      <div className="flex flex-col gap-3" data-testid="remove-photo-sheet">
+        <div className="flex items-center gap-3">
+          {user?.avatarUrl && (
+            <img
+              src={user.avatarUrl}
+              alt=""
+              className="size-16 shrink-0 rounded-full border border-line bg-surface-2 object-cover"
+            />
+          )}
+          <p className="text-sm text-muted">{s.adminRemoveBody}</p>
+        </div>
+        {remove.isError && <InlineError>{errorMessage(t, remove.error)}</InlineError>}
+        <div className="flex gap-2">
+          <Button
+            variant="danger"
+            className="flex-1"
+            disabled={remove.isPending || !user}
+            onClick={() =>
+              user &&
+              remove.mutate(user.id, {
+                onSuccess: () => {
+                  onClose();
+                  onDone(fmt(s.adminRemoved, { name: user.name }));
+                },
+              })
+            }
+            data-testid="remove-photo-confirm"
+          >
+            {remove.isPending ? <Spinner /> : <TrashIcon size={18} />}
+            {s.adminRemove}
+          </Button>
+          <Button variant="ghost" className="flex-1" onClick={onClose}>
+            {t.common.cancel}
+          </Button>
+        </div>
+      </div>
     </BottomSheet>
   );
 }

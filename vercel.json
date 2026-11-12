@@ -29,6 +29,14 @@
     {
       "source": "/cdn/v1/fpl/bootstrap/",
       "destination": "https://fantasyonerim-api.onrender.com/v1/fpl/bootstrap"
+    },
+    {
+      "source": "/cdn/v1/league/avatars",
+      "destination": "https://fantasyonerim-api.onrender.com/v1/league/avatars"
+    },
+    {
+      "source": "/cdn/v1/league/avatars/",
+      "destination": "https://fantasyonerim-api.onrender.com/v1/league/avatars"
     }
   ],
   "headers": [
@@ -177,6 +185,32 @@
         {
           "key": "CDN-Cache-Control",
           "value": "public, max-age=60, stale-while-revalidate=300"
+        },
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "source": "/cdn/v1/league/avatars",
+      "headers": [
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, max-age=60, stale-while-revalidate=120"
+        },
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "source": "/cdn/v1/league/avatars/",
+      "headers": [
+        {
+          "key": "CDN-Cache-Control",
+          "value": "public, max-age=60, stale-while-revalidate=120"
         },
         {
           "key": "x-vercel-enable-rewrite-caching",

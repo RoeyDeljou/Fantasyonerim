@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 import { ApiHttpError } from '../errors.js';
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -48,16 +48,52 @@ export interface ProcessedImage {
  * Animated inputs keep only their first frame.
  */
 export async function processUpload(input: Uint8Array): Promise<ProcessedImage> {
+  return decodeAndEncode(input, async (img) => {
+    const { data, info } = await img
+      .resize({ width: MAX_IMAGE_SIDE, height: MAX_IMAGE_SIDE, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: WEBP_QUALITY })
+      .toBuffer({ resolveWithObject: true });
+    return {
+      bytes: new Uint8Array(data),
+      width: info.width,
+      height: info.height,
+      contentType: 'image/webp' as const,
+    };
+  });
+}
+
+/** Profile photos: one square JPEG of this side (2× a 128 px circle on a retina screen). */
+export const AVATAR_SIDE = 256;
+export const AVATAR_JPEG_QUALITY = 82;
+
+export interface ProcessedAvatar {
+  bytes: Uint8Array;
+  contentType: 'image/jpeg';
+}
+
+/**
+ * Re-encodes a profile photo with the same sniffing / decoding rules as processUpload: auto-rotates by EXIF
+ * orientation, centre-crops to a square, resizes to 256×256 (small images are upscaled so every avatar has the
+ * same size) and writes a JPEG with ALL metadata dropped (sharp keeps none unless asked).
+ */
+export async function processAvatar(input: Uint8Array): Promise<ProcessedAvatar> {
+  return decodeAndEncode(input, async (img) => {
+    const data = await img
+      .resize(AVATAR_SIDE, AVATAR_SIDE, { fit: 'cover', position: 'centre' })
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality: AVATAR_JPEG_QUALITY, mozjpeg: true })
+      .toBuffer();
+    return { bytes: new Uint8Array(data), contentType: 'image/jpeg' as const };
+  });
+}
+
+/** Sniffs the bytes (415 for anything but JPEG / PNG / WebP / HEIC), decodes + auto-rotates, then `encode`s. */
+async function decodeAndEncode<T>(input: Uint8Array, encode: (img: Sharp) => Promise<T>): Promise<T> {
   const kind = sniffImage(input);
   if (kind === null)
     throw unsupportedMedia('Unsupported image type — upload a JPEG, PNG, WebP or HEIC photo');
   try {
-    const { data, info } = await sharp(input, { failOn: 'error', limitInputPixels: MAX_INPUT_PIXELS })
-      .rotate()
-      .resize({ width: MAX_IMAGE_SIDE, height: MAX_IMAGE_SIDE, fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: WEBP_QUALITY })
-      .toBuffer({ resolveWithObject: true });
-    return { bytes: new Uint8Array(data), width: info.width, height: info.height, contentType: 'image/webp' };
+    return await encode(sharp(input, { failOn: 'error', limitInputPixels: MAX_INPUT_PIXELS }).rotate());
   } catch {
     throw unsupportedMedia(
       kind === 'heic'

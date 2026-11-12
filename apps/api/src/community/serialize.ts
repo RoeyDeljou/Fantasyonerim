@@ -13,7 +13,7 @@ import type {
   Upload,
   User,
 } from '@prisma/client';
-import type { MediaUrlMapper } from '../media/publicUrl.js';
+import { mapMediaUrl, type MediaUrlMapper } from '../media/publicUrl.js';
 import { withVariants } from '../news/serialize.js';
 import { serialize } from '../validate.js';
 
@@ -24,6 +24,7 @@ const AUTHOR_SELECT = {
   entryId: true,
   teamName: true,
   role: true,
+  avatarUrl: true,
 } as const satisfies Prisma.UserSelect;
 const IMAGE_SELECT = {
   url: true,
@@ -47,13 +48,14 @@ export type PostWithRelations = PostRow & {
 export type CommentWithAuthor = CommentRow & { author: AuthorFields };
 
 /** Raw author fields; branded by the CommunityPost / Comment schema in serialize(). */
-export function toAuthor(user: AuthorFields) {
+export function toAuthor(user: AuthorFields, mediaUrl: MediaUrlMapper) {
   return {
     id: user.id,
     name: user.name,
     entryId: user.entryId,
     teamName: user.teamName,
     role: user.role === 'ADMIN' ? 'admin' : 'user',
+    avatarUrl: mapMediaUrl(mediaUrl, user.avatarUrl),
   };
 }
 
@@ -69,7 +71,7 @@ export function toPost(
     CommunityPostSchema,
     {
       id: row.id,
-      author: toAuthor(row.author),
+      author: toAuthor(row.author, mediaUrl),
       text: row.text,
       image:
         row.image === null
@@ -109,13 +111,18 @@ export async function toPosts(
   return rows.map((row) => toPost(row, viewerId, liked.has(row.id), mediaUrl));
 }
 
-export function toComment(row: CommentWithAuthor, viewerId: string | null): Comment {
+/** `mediaUrl` maps the author's stored avatar URL to the client URL (ctx.mediaUrl). */
+export function toComment(
+  row: CommentWithAuthor,
+  viewerId: string | null,
+  mediaUrl: MediaUrlMapper,
+): Comment {
   return serialize(
     CommentSchema,
     {
       id: row.id,
       postId: row.postId,
-      author: toAuthor(row.author),
+      author: toAuthor(row.author, mediaUrl),
       text: row.text,
       mine: viewerId !== null && viewerId === row.authorId,
       createdAt: row.createdAt.toISOString(),

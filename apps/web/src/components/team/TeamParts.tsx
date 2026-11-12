@@ -60,9 +60,12 @@ export function TeamHeader({
   picks,
   pointsOverride,
   total,
+  lead,
 }: {
   entry: EntrySummary | undefined;
   picks: EntryPicks;
+  /** Before the names (the manager sheet: the manager's photo circle). */
+  lead?: ReactNode;
   /** Live GW points (current GW) — otherwise the official `picks.points`. */
   pointsOverride?: number | undefined;
   /** Season total as of the GW shown (EntryLive.liveTotal for that GW), so all numbers describe one GW. */
@@ -72,7 +75,8 @@ export function TeamHeader({
   return (
     <Card className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        {lead}
+        <div className="min-w-0 flex-1">
           <h1 dir="auto" className="name-start truncate text-xl font-extrabold text-ink">
             {entry?.teamName ?? '—'}
           </h1>
