@@ -1,10 +1,13 @@
 /**
  * The shareable "Captain Battle · GW N" picture (admin → Captain Battle → Share): a 1080×1350 PNG drawn on a canvas.
  * Brand colours come from the theme tokens (CSS variables), the font is the app's self-hosted Rubik, Hebrew is drawn
- * right-to-left. Player photos come through the same-origin `/fplimg/` proxy (vercel.json) so they don't taint the
- * canvas; a photo that fails to load is replaced by the player's initials. The QR code library is imported lazily
+ * right-to-left. Player photos come from the API's CORS-enabled photo route (`/v1/fpl/photo/{code}.png`, loaded with
+ * `crossOrigin = 'anonymous'`) with the same-origin `/fplimg/` proxy (vercel.json) as a second try, so they don't
+ * taint the canvas; a photo that fails to load is replaced by the player's initials. The QR code library is imported lazily
  * here and nowhere else. No React: the sheet (screens/admin/ShareCaptains.tsx) only calls `renderShareImage`.
  */
+
+import { API_BASE_URL } from './api';
 
 export const SHARE_WIDTH = 1080;
 export const SHARE_HEIGHT = 1350;
@@ -17,7 +20,7 @@ export interface ShareImageRow {
   /** Null = not known yet (the hosts' picks stay hidden by FPL until the deadline). */
   name: string | null;
   initials: string;
-  /** Same-origin photo URLs, best first. */
+  /** Canvas-safe photo URLs (CORS-enabled or same-origin), best first. */
   photos: readonly string[];
   club: string | null;
   opponent: string | null;
@@ -52,14 +55,16 @@ export interface ShareVoteInvite {
   deadline: string | null;
 }
 
-/** The photo of a player through the same-origin proxy (`/fplimg/:path*` → resources.premierleague.com). */
-export function proxiedPhotoUrls(photoCode: string): string[] {
+/**
+ * The photo of a player, canvas-safe URLs best first: (a) the API's public photo route (absolute, on the API origin,
+ * `Access-Control-Allow-Origin: *`), (b) the same-origin `/fplimg/:path*` proxy → resources.premierleague.com.
+ */
+export function proxiedPhotoUrls(photoCode: string, apiBase: string = API_BASE_URL): string[] {
   const code = photoCode.replace(/\.(png|jpg)$/i, '');
-  return [250, '110x140'].map((size) =>
-    size === 250
-      ? `/fplimg/premierleague/photos/players/250x250/p${code}.png`
-      : `/fplimg/premierleague/photos/players/${size}/p${code}.png`,
-  );
+  return [
+    `${apiBase.replace(/\/+$/, '')}/v1/fpl/photo/${code}.png`,
+    `/fplimg/premierleague25/photos/players/110x140/${code}.png`,
+  ];
 }
 
 /** The deep link a click on the shared post should land on: the captain vote sub-tab of the Community tab. */
@@ -353,7 +358,7 @@ export async function renderShareImage(data: ShareImageData): Promise<Blob> {
       const photo = photos[i];
       if (known && photo) {
         ctx.clip();
-        // A square cut from the top (the 110×140 portraits keep the face, the 250×250 ones are already square).
+        // A square cut from the top (the 110×140 portraits keep the face; a square photo is used whole).
         const side = Math.min(photo.naturalWidth, photo.naturalHeight);
         ctx.drawImage(
           photo,

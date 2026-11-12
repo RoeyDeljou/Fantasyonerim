@@ -4,14 +4,7 @@ import { useState } from 'react';
 import { initials } from '@/lib/text';
 import { cx } from './ui';
 
-/** FPL / PL image CDNs (public, CORS-free <img> loads). The browser never calls the FPL *API*. */
-export const fplImage = {
-  shirt: (teamCode: number, goalkeeper: boolean) =>
-    `https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${teamCode}${goalkeeper ? '_1' : ''}-66.png`,
-  badge: (teamCode: number) => `https://resources.premierleague.com/premierleague/badges/70/t${teamCode}.png`,
-  photo: (photoCode: string) =>
-    `https://resources.premierleague.com/premierleague/photos/players/110x140/p${photoCode.replace(/\.(png|jpg)$/i, '')}.png`,
-};
+export { fplImage } from '@/lib/fplImage';
 
 /** <img> that degrades to a coloured initials circle when the CDN fails or is blocked. */
 export function ImageWithFallback({

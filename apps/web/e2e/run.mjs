@@ -532,6 +532,11 @@ async function newContext(browser, opts = {}) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'he-IL', ...opts });
   // Image CDNs are irrelevant to behaviour and may be unreachable in CI.
   await ctx.route(/premierleague\.com/, (r) => r.abort());
+  // The API's player-photo route (share poster) proxies that CDN: answer "no photo" so the initials are drawn.
+  await ctx.route(
+    (u) => u.origin === API && u.pathname.startsWith('/v1/fpl/photo/'),
+    (r) => r.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' }, body: '' }),
+  );
   // Listening happens on Spotify / Apple: their pages are never loaded in e2e, only the navigation is checked.
   await ctx.route(
     /open\.spotify\.com|podcasts\.apple\.com|instagram\.com|youtube\.com\/(watch|shorts)/,

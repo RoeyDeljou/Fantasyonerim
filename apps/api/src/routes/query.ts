@@ -11,6 +11,8 @@ export const PageQuerySchema = z.object({
 });
 export const EntryParamsSchema = z.object({ entryId: FplEntryIdSchema });
 export const FixtureParamsSchema = z.object({ fixtureId: FplFixtureIdSchema });
+/** `/v1/fpl/photo/:code`: the FPL photo code, optionally with `.png`. Digits only (fixed upstream URL). */
+export const PhotoParamsSchema = z.object({ code: z.string().regex(/^\d{1,10}(\.png)?$/) });
 
 /** Drops `key=` (empty) query values so optional params behave as absent. */
 export function cleanQuery(query: unknown): Record<string, unknown> {

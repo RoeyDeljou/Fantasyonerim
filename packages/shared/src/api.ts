@@ -68,6 +68,13 @@ export const EmailSchema = z
  */
 export const EMAIL_TAKEN_MESSAGE = 'This email is already used by another account.';
 
+/**
+ * A fan's profile photo (uploaded on the Profile screen, re-encoded server-side to a square JPEG with all metadata
+ * stripped, served from the MediaStore). Null = no photo: the client shows the initials circle instead.
+ * Fields carrying it are defaulted to null so a client and a server from either side of a deploy still parse.
+ */
+export const AvatarUrlSchema = z._default(z.nullable(z.string().check(z.url())), null);
+
 export const MeSchema = z.object({
   id: UserIdSchema,
   /** Output: any stored name (input rules may tighten over time); inputs use DisplayNameSchema. */
@@ -82,6 +89,8 @@ export const MeSchema = z.object({
   locale: LocaleSchema,
   /** False while banned: the user can read but not post, comment, like, report or upload. */
   canPost: z.boolean(),
+  /** Profile photo; null = initials circle. POST /v1/me/avatar sets it, DELETE /v1/me/avatar removes it. */
+  avatarUrl: AvatarUrlSchema,
   createdAt: z.string().check(z.iso.datetime({ offset: true })),
 });
 export type Me = z.infer<typeof MeSchema>;
@@ -328,3 +337,24 @@ export const RedeemAdminInviteBodySchema = z.object({
   token: z.string().check(z.minLength(20), z.maxLength(200)),
 });
 export type RedeemAdminInviteBody = z.infer<typeof RedeemAdminInviteBodySchema>;
+
+// ---------- profile photos ----------
+
+/**
+ * POST /v1/me/avatar — multipart field "file" (JPEG / PNG / WebP / HEIC, ≤ 10 MB, same sniffing rules as
+ * POST /v1/uploads). The server auto-rotates, centre-crops to a square, resizes to 256×256 JPEG and strips all
+ * metadata, replaces any previous photo and returns the updated Me. Banned users get 403.
+ * DELETE /v1/me/avatar — removes it (returns the updated Me). DELETE /v1/admin/users/:id/avatar — moderation.
+ */
+export const AvatarResponseSchema = z.object({ user: MeSchema });
+export type AvatarResponse = z.infer<typeof AvatarResponseSchema>;
+
+/**
+ * GET /v1/league/avatars — public, CDN-cacheable: the profile photos of every registered fan that has one, keyed by
+ * FPL Team ID, so the league table / manager sheet / season leaderboard (all keyed by entryId) can show them.
+ * Banned users are left out.
+ */
+export const LeagueAvatarsSchema = z.object({
+  avatars: z.array(z.object({ entryId: FplEntryIdSchema, url: z.string().check(z.url()) })),
+});
+export type LeagueAvatars = z.infer<typeof LeagueAvatarsSchema>;

@@ -52,7 +52,7 @@ export const PlayerSchema = z.object({
   position: PositionSchema,
   /** Price in tenths of a million (FPL convention): 105 = £10.5m. */
   nowCost: z.number().check(z.int()),
-  /** FPL photo code, e.g. "223094" — image at resources.premierleague.com/premierleague/photos/players/110x140/p{code}.png */
+  /** FPL photo code, e.g. "223094" — image at resources.premierleague.com/premierleague25/photos/players/110x140/{code}.png */
   photoCode: z.string(),
   status: PlayerStatusSchema,
   news: z.string(),

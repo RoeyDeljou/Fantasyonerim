@@ -1,7 +1,7 @@
 import * as z from 'zod/mini';
 import { ChipSchema, PickSchema } from './fpl.js';
 import { CommentIdSchema, FplEntryIdSchema, GameweekSchema, PostIdSchema, UserIdSchema } from './ids.js';
-import { EmailSchema, RoleSchema } from './api.js';
+import { AvatarUrlSchema, EmailSchema, RoleSchema } from './api.js';
 
 /**
  * Phase 3 contract: the Community tab (fan posts, shared teams, comments, likes, reports, moderation).
@@ -14,6 +14,8 @@ export const CommunityAuthorSchema = z.object({
   teamName: z.nullable(z.string()),
   /** Admin posts get a "Fantasyonerim" badge. */
   role: RoleSchema,
+  /** Profile photo; null = initials circle. */
+  avatarUrl: AvatarUrlSchema,
 });
 export type CommunityAuthor = z.infer<typeof CommunityAuthorSchema>;
 
@@ -168,6 +170,8 @@ export const AdminUserSchema = z.object({
   bannedAt: z.nullable(z.string().check(z.iso.datetime({ offset: true }))),
   banReason: z.nullable(z.string()),
   postCount: z.number().check(z.int(), z.nonnegative()),
+  /** Profile photo; null = initials circle. An admin can remove it (DELETE /v1/admin/users/:id/avatar). */
+  avatarUrl: AvatarUrlSchema,
   createdAt: z.string().check(z.iso.datetime({ offset: true })),
 });
 export type AdminUser = z.infer<typeof AdminUserSchema>;

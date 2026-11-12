@@ -7,10 +7,18 @@ import {
 } from '@fant/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.js';
+import { ApiHttpError, notFound } from '../errors.js';
+import { createPlayerPhotoFetcher } from '../fplPhoto.js';
 import { resolveEvent } from '../gameweek.js';
 import { CACHE_CONTROL, sendHot } from '../perf/http.js';
 import { parseInput, serialize } from '../validate.js';
-import { EntryParamsSchema, EventQuerySchema, FixtureParamsSchema, cleanQuery } from './query.js';
+import {
+  EntryParamsSchema,
+  EventQuerySchema,
+  FixtureParamsSchema,
+  PhotoParamsSchema,
+  cleanQuery,
+} from './query.js';
 
 /**
  * Match sheet caching by fixture state: seconds while the ball is rolling (live, or finished but bonus not yet
@@ -22,6 +30,13 @@ export const FIXTURE_DETAIL_CACHE_CONTROL: Record<FixtureStatus, string> = {
   not_started: 'public, max-age=60, stale-while-revalidate=30',
   finished: 'public, max-age=600, stale-while-revalidate=600',
 };
+
+/** Player photo proxy: a photo never changes for a code; a missing one may appear later. */
+export const PHOTO_CACHE_CONTROL = {
+  ok: 'public, max-age=604800, s-maxage=604800, immutable',
+  notFound: 'public, max-age=3600, s-maxage=3600',
+  failed: 'no-store',
+} as const;
 
 /** Fixture list caching: seconds while anything is in play, a minute otherwise. */
 export function fixturesCacheControl(fixtures: readonly Fixture[]): string {
@@ -37,6 +52,29 @@ export function fixturesCacheControl(fixtures: readonly Fixture[]): string {
  */
 export function fplRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { fpl, hot } = ctx;
+  const photos = createPlayerPhotoFetcher(ctx.fetch);
+
+  // Public player photo (canvas-safe for the captains poster): fixed upstream URL, digits only, never per-user.
+  app.get('/v1/fpl/photo/:code', async (request, reply) => {
+    const { code } = parseInput(PhotoParamsSchema, request.params);
+    const digits = code.replace(/\.png$/, '');
+    reply.header('access-control-allow-origin', '*').header('cross-origin-resource-policy', 'cross-origin');
+    const result = await photos.get(digits);
+    if (result.kind === 'not_found') {
+      reply.header('cache-control', PHOTO_CACHE_CONTROL.notFound);
+      throw notFound('No photo for that player');
+    }
+    if (result.kind === 'failed') {
+      request.log.warn({ code: digits, reason: result.reason }, 'player photo upstream failed');
+      reply.header('cache-control', PHOTO_CACHE_CONTROL.failed);
+      throw new ApiHttpError(502, 'upstream_unavailable', 'Player photo is not available right now');
+    }
+    return reply
+      .header('content-type', result.photo.contentType)
+      .header('cache-control', PHOTO_CACHE_CONTROL.ok)
+      .header('x-content-type-options', 'nosniff')
+      .send(result.photo.bytes);
+  });
 
   app.get('/v1/fpl/bootstrap', async (request, reply) => {
     const { body } = await hot.bootstrap();
