@@ -8,7 +8,7 @@ import { defineSection } from '../section';
 export const assistant = defineSection(
   {
     launcher: 'Ask Alfie',
-    launcherLabel: 'שאלו את Alfie – עוזר ה-AI של FPL Lad',
+    launcherLabel: 'Ask Alfie – עוזר ה-AI של FPL Lad',
     opening: 'פותחים את Alfie…',
     panelTitle: 'Alfie',
     by: 'מבית FPL Lad',
