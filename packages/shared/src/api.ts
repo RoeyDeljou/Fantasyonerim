@@ -153,6 +153,55 @@ export const LeagueCodeSchema = z
 export const LeagueJoinSchema = z.object({ code: z.string(), url: HttpsUrlSchema });
 export type LeagueJoin = z.infer<typeof LeagueJoinSchema>;
 
+// ---------- AI assistant widget (FPL Lad "Ask Alfie") ----------
+
+/**
+ * Hosts the partner's embed script may load from (a script runs with full access to the page, so an admin can only
+ * point the widget at the partner's own domains). Add a host here if FPL Lad serves the script from elsewhere.
+ */
+export const ASSISTANT_SCRIPT_HOSTS = ['fpl-lad.com'] as const;
+
+export function isAllowedAssistantScriptUrl(url: string): boolean {
+  let host: string;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') return false;
+    host = parsed.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return ASSISTANT_SCRIPT_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+}
+
+/** Who sees the "Ask Alfie" launcher: nobody, admins only (to test before launch), or every fan and guest. */
+export const AssistantVisibilitySchema = z.enum(['off', 'admins', 'everyone']);
+export type AssistantVisibility = z.infer<typeof AssistantVisibilitySchema>;
+
+/**
+ * The floating AI assistant (FPL Lad's "Alfie") shown on every app screen. The app draws its own launcher and either
+ * drives the partner's embed script (`scriptUrl`, once FPL Lad delivers it) or, without one, opens `fallbackUrl` in an
+ * in-app panel. Changed in Admin → Settings; no deploy needed.
+ */
+export const AssistantConfigSchema = z.object({
+  visibility: AssistantVisibilitySchema,
+  /** The partner's embed script; null until FPL Lad delivers it. https on an `ASSISTANT_SCRIPT_HOSTS` domain only. */
+  scriptUrl: z.nullable(
+    HttpsUrlSchema.check(z.refine(isAllowedAssistantScriptUrl, 'must be on an allowed FPL Lad domain')),
+  ),
+  /** The partner key FPL Lad assigns to Fantasyonerim (passed to their script for whitelisting + usage tracking). */
+  partnerId: z.nullable(z.string().check(z.trim(), z.minLength(1), z.maxLength(80))),
+  /** Opened in the in-app panel when no script is set (and behind the panel's "open in a new tab" link). */
+  fallbackUrl: HttpsUrlSchema,
+});
+export type AssistantConfig = z.infer<typeof AssistantConfigSchema>;
+
+export const DEFAULT_ASSISTANT_CONFIG: AssistantConfig = {
+  visibility: 'admins',
+  scriptUrl: null,
+  partnerId: null,
+  fallbackUrl: 'https://www.fpl-lad.com/',
+};
+
 export const PublicConfigSchema = z.object({
   league: z.nullable(z.object({ id: FplLeagueIdSchema, name: z.nullable(z.string()) })),
   /** null until an admin sets the league code. Optional on input so older responses still parse. */
@@ -165,6 +214,8 @@ export const PublicConfigSchema = z.object({
     xUrl: z.nullable(HttpsUrlSchema),
     whatsappUrl: z.nullable(HttpsUrlSchema),
   }),
+  /** The "Ask Alfie" assistant widget; null from servers that predate it (= hidden). */
+  assistant: z._default(z.nullable(AssistantConfigSchema), null),
 });
 export type PublicConfig = z.infer<typeof PublicConfigSchema>;
 
@@ -263,6 +314,8 @@ export const AdminSettingsSchema = z.object({
   socials: PublicConfigSchema.shape.socials,
   /** The league's invite code (shown in the "Join our league" bar). Optional on PUT: omitted keeps the stored one. */
   leagueCode: z.optional(z.nullable(LeagueCodeSchema)),
+  /** The "Ask Alfie" widget. Optional on PUT: omitted keeps the stored one; GET always returns it (defaults applied). */
+  assistant: z.optional(AssistantConfigSchema),
 });
 export type AdminSettings = z.infer<typeof AdminSettingsSchema>;
 
