@@ -6640,9 +6640,10 @@ async function alfieJourneys(browser, userPage) {
       );
       assert((await panel.getByTestId('alfie-open-tab').getAttribute('target')) === '_blank', 'new tab');
       await p.frameLocator('[data-testid=alfie-frame]').locator('[data-alfie-mock]').waitFor();
+      await p.waitForTimeout(400); // the slide-up
       const box = await panel.boundingBox();
       assert(
-        box && box.width === 390 && box.height === 844,
+        box && Math.round(box.y) === 0 && Math.round(box.width) === 390 && Math.round(box.height) === 844,
         `full screen on a phone: ${JSON.stringify(box)}`,
       );
       assert(!(await launcher(p).isVisible()), 'launcher hidden while Alfie is open');
@@ -6812,7 +6813,7 @@ async function alfieJourneys(browser, userPage) {
       await card.getByTestId('alfie-status').getByText('ממתינים לסקריפט של FPL Lad').waitFor();
       await card.getByTestId('alfie-script-url').fill('https://evil.example.com/embed.js');
       await card.getByTestId('alfie-save').click();
-      await card.getByText('הכתובת חייבת להתחיל ב-https:// ולהיות בדומיין של FPL Lad').waitFor();
+      await card.getByText('ולהיות בדומיין של FPL Lad').waitFor();
       assert(puts.length === 0, 'nothing saved with a disallowed host');
       await card.getByTestId('alfie-script-url').fill(ALFIE_SCRIPT);
       await card.getByRole('tab', { name: 'כולם' }).click();

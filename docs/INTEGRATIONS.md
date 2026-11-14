@@ -164,6 +164,107 @@ Not part of this release (client decision, 2026-10-27). The wanted version is an
 [CLIENT_ACCOUNTS.md → WhatsApp](CLIENT_ACCOUNTS.md#whatsapp-client-decision-2026-10-27). The live-update composer
 is built so WhatsApp can be added later as one more target.
 
+## 7. FPL Lad — Ask Alfie widget
+
+FPL Lad's AI assistant **Alfie** ([fpl-lad.com](https://www.fpl-lad.com/)) is available on every app screen behind a
+floating **"Ask Alfie"** button (FPL Lad logo, "Ask Alfie" underneath). Their embed script does not exist yet: until
+it does, the button opens their site in an in-app panel. When they deliver it, an admin pastes its URL in Admin →
+Settings — **no code change and no new app version**.
+
+### What is built (our side)
+
+- **Launcher** (`apps/web/src/components/assistant/AskAlfie.tsx`): bottom corner on the inline-end side (left in
+  Hebrew, right in English), just above the tab bar and stacked above the tables' floating "Join our league" / "My
+  team" button. On all five tabs, their sub-views and Profile; never on onboarding / welcome / terms and never inside
+  the admin console. Hidden while a sheet or dialog is open, while a reply is being typed, and while Alfie is open.
+  Its code is its own chunk, fetched ~1.5 s after the screen has painted — nothing on first load.
+- **Embed adapter** (`apps/web/src/lib/assistant/fplLad.ts`): the ONLY file that knows FPL Lad's script API. If
+  their real API differs from what is expected below, that one file changes.
+- **In-app panel** (`apps/web/src/components/assistant/AlfiePanel.tsx`): used while no script is set, or when the
+  script fails. Full-screen slide-up on phones, a 420×640 panel in the corner on wide screens; header with the FPL Lad
+  logo, "Alfie · by FPL Lad", an "open in a new tab" link and close (button, Escape, Android back). It frames the
+  fallback URL (no `sandbox`, so their Google popup sign-in works). A site that refuses framing can't be detected,
+  so after a few seconds a "Not loading? Open in fpl-lad.com" line appears.
+- **Returning visitors**: if their script reports an `identity` event with a `visitorToken`, we keep it in our own
+  (first-party) storage on the device and pass it back on `init`. Safari partitions third-party storage, so this is
+  what lets an iPhone visitor be remembered. The token is only ever given back to their script.
+- **Admin → Settings → "Ask Alfie (FPL Lad)"**: who sees the button (Off / Admins only / Everyone), the script URL,
+  the partner ID, the fallback URL, Save and a Preview button that opens Alfie right there.
+- **Headers**: `vercel.json` sets no `Cross-Origin-Opener-Policy: same-origin` (it would break the Google sign-in
+  popup) and no Content-Security-Policy; a unit test (`apps/web/src/lib/vercelConfig.test.ts`) keeps it that way.
+
+### What we expect from FPL Lad's script
+
+One line, which the app injects itself on the first tap (only from `https://*.fpl-lad.com` — any other host is
+rejected by the API and the client):
+
+```html
+<script async src="https://www.fpl-lad.com/embed.js" data-partner="{partnerId}"></script>
+```
+
+It should define a global `window.FPLLad` (`FplLad` / `fplLad` also accepted) with:
+
+| Method                | Required | What we do with it                                                                       |
+| --------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| `init(options)`       | yes      | Called once, on the first tap (may return a promise).                                    |
+| `open()`              | yes      | Called on every tap of our "Ask Alfie" button.                                           |
+| `close()`             | no       | Closes their panel.                                                                      |
+| `update(options)`     | no       | Called when the visitor signs in/out or switches language or theme.                      |
+| `on(event, callback)` | no       | We listen to `close` (show our button again) and `identity` (`{ visitorToken }`, above). |
+
+`options` (all set by us):
+
+| Option         | Example                                                            | Meaning                                                                   |
+| -------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| `partner`      | `"fantasyonerim"`                                                  | Our partner ID (Admin → Settings; `fantasyonerim` until they assign one). |
+| `teamId`       | `1234567`                                                          | The visitor's FPL Team ID (number), omitted when unknown.                 |
+| `locale`       | `"he"` / `"en"`                                                    | The app's language (Hebrew is RTL).                                       |
+| `theme`        | `"light"` / `"dark"`                                               | The app's current theme.                                                  |
+| `launcher`     | `false`                                                            | Don't draw your own button — we draw "Ask Alfie".                         |
+| `colors`       | `{ primary: "#3d185b", onPrimary: "#ffffff", surface: "#ffffff" }` | The current theme's colours, so the widget matches the app.               |
+| `zIndex`       | `60`                                                               | Stack the widget at/above this.                                           |
+| `bottomOffset` | `64`                                                               | Pixels taken by our tab bar at the bottom (keep clear of it).             |
+| `visitorToken` | `"…"`                                                              | The token you gave us in an earlier `identity` event, if any.             |
+
+If the script fails to load, or `window.FPLLad` doesn't appear within 8 seconds, or `init`/`open` throws, the app
+uses the in-app panel and logs one console warning (`[Ask Alfie] …`).
+
+### The fallback URL (in-app panel)
+
+`fallbackUrl` (default `https://www.fpl-lad.com/`) is opened with these query parameters (kept alongside any already
+on the URL):
+
+| Parameter | Value                                                               |
+| --------- | ------------------------------------------------------------------- |
+| `partner` | the partner ID, else `fantasyonerim`                                |
+| `embed`   | `1` inside the app's panel (absent on the "open in a new tab" link) |
+| `locale`  | `he` / `en`                                                         |
+| `theme`   | `light` / `dark`                                                    |
+| `teamId`  | the FPL Team ID, when known                                         |
+
+For the panel to work, their site must allow being framed by our domains (no `X-Frame-Options: DENY/SAMEORIGIN`; a
+`Content-Security-Policy: frame-ancestors` listing the domains below).
+
+### Domains to whitelist (send these to FPL Lad)
+
+| Where                          | Origin                                                          |
+| ------------------------------ | --------------------------------------------------------------- |
+| Production                     | `https://fantasyonerim.vercel.app`                              |
+| Vercel preview deployments     | `https://fantasyonerim-*-roeydeljou1-3768s-projects.vercel.app` |
+| Local development              | `http://localhost:3000`                                         |
+| Future iOS app (Capacitor)     | `capacitor://localhost`                                         |
+| Future Android app (Capacitor) | `https://localhost`                                             |
+
+### Switching it on
+
+Admin console → **Settings** → **Ask Alfie (FPL Lad)**:
+
+1. **Who sees the button** — _Admins only_ (the default) to try it; _Everyone_ to launch; _Off_ to hide it.
+2. When FPL Lad sends their script line, paste the `src` URL into **FPL Lad's script URL** and their partner key into
+   **Partner ID**, press **Preview** to check, then **Save**. Clear the script URL to go back to the in-app panel.
+
+Changes reach the apps within a few minutes (the public config is cached briefly); no deploy needed.
+
 ## Reference: stored settings
 
 | Integration | Settings (shown in the console)          | Secrets (write-only, encrypted)                                     |

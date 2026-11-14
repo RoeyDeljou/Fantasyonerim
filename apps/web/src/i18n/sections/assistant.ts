@@ -18,7 +18,7 @@ export const assistant = defineSection(
     close: 'סגירה',
     loading: 'טוענים את Alfie…',
     notLoading: 'לא נטען?',
-    openSite: 'פתחו ב-fpl-lad.com',
+    openSite: 'פתחו באתר \u2066fpl-lad.com\u2069',
   },
   {
     launcher: 'Ask Alfie',

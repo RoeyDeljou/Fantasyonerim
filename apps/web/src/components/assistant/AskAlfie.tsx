@@ -77,7 +77,7 @@ export default function AskAlfie({ config }: { config: AssistantConfig }) {
                   className="h-[9px] w-[44px]"
                 />
               </span>
-              <span className="rounded-full bg-surface px-1.5 text-[11px] leading-4 font-bold whitespace-nowrap text-ink shadow-card">
+              <span className="rounded-full border border-line bg-surface px-1.5 text-[11px] leading-4 font-bold whitespace-nowrap text-ink shadow-card">
                 {s.launcher}
               </span>
             </button>

@@ -195,12 +195,14 @@ const NO_SCOPE: RefreshScope = [];
  * The "Ask Alfie" launcher (FPL Lad's AI assistant, components/assistant/): its own chunk, fetched only once the
  * shell has painted and only when the already-loaded config shows it to this visitor — nothing on first load.
  */
+let alfieLate = false;
 function AlfieSlot() {
   const { status } = useSession();
   const shown = assistantFor(useConfig().data?.assistant, useMe(status === 'signedIn').data?.role);
-  const [late, setLate] = useState(false);
+  // Each tab renders its own shell: only the app's first screen waits, later tabs show it straight away.
+  const [late, setLate] = useState(alfieLate);
   useEffect(() => {
-    const id = setTimeout(() => setLate(true), 1500);
+    const id = setTimeout(() => setLate((alfieLate = true)), 1500);
     return () => clearTimeout(id);
   }, []);
   return shown && late ? (
