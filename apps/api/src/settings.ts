@@ -1,6 +1,9 @@
 import {
   AdminSettingsSchema,
+  AssistantConfigSchema,
   CaptainBattleConfigSchema,
+  DEFAULT_ASSISTANT_CONFIG,
+  type AssistantConfig,
   PublicConfigSchema,
   type AdminSettings,
   type CaptainBattleConfig,
@@ -88,6 +91,17 @@ function socialsOf(s: AppSettings, defaults: Socials): Socials {
   };
 }
 
+/**
+ * Effective assistant widget config: the stored JSON when it still parses against the contract, else the defaults
+ * (never stored → defaults; a stored value made invalid by a later contract change, e.g. a host removed from
+ * ASSISTANT_SCRIPT_HOSTS, also falls back rather than failing the response).
+ */
+export function assistantOf(s: Pick<AppSettings, 'assistant'>): AssistantConfig {
+  if (s.assistant === null) return { ...DEFAULT_ASSISTANT_CONFIG };
+  const parsed = AssistantConfigSchema.safeParse(s.assistant);
+  return parsed.success ? parsed.data : { ...DEFAULT_ASSISTANT_CONFIG };
+}
+
 export function toAdminSettings(s: AppSettings, defaults: Socials = NO_SOCIALS): AdminSettings {
   return serialize(
     AdminSettingsSchema,
@@ -97,6 +111,7 @@ export function toAdminSettings(s: AppSettings, defaults: Socials = NO_SOCIALS):
       deadlineReminderMinutes: s.deadlineReminderMinutes,
       socials: socialsOf(s, defaults),
       leagueCode: effectiveLeagueCode(s.leagueId, s.leagueCode),
+      assistant: assistantOf(s),
     },
     'settings',
   );
@@ -153,6 +168,8 @@ export function toPublicConfig(
       leagueJoin: leagueJoinOf(s),
       captainBattleEvent: battle?.event ?? null,
       socials: socialsOf(s, defaults),
+      // The same for every caller (public, CDN-cached): visibility is applied by the client.
+      assistant: assistantOf(s),
     },
     'settings',
   );

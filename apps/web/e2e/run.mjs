@@ -15,7 +15,9 @@
 // Gameweek Roundup + Season Captain Battle + captain-tag journeys; E2E_SEASON_SHOTS=<dir> saves the season / tag screenshots; E2E_ROUNDUP_SHOTS=<dir> saves their phone screenshots), E2E_DEBUG_DIR=<dir> (screenshot + text of every
 // open page when a journey fails), E2E_ONLY_TABBAR=1 (register, set the league via the API, then only the tab-bar
 // journeys; E2E_TABBAR_SHOTS=<dir> saves the dark Hebrew Table screenshots), E2E_ONLY_AVATAR=1 (register, set the
-// league via the API, then only the profile-photo journeys; E2E_AVATAR_SHOTS=<dir> saves their phone screenshots). The tab-bar check also runs in Playwright
+// league via the API, then only the profile-photo journeys; E2E_AVATAR_SHOTS=<dir> saves their phone screenshots),
+// E2E_ONLY_ALFIE=1 (register, set the league via the API, then only the "Ask Alfie" assistant journeys;
+// E2E_ALFIE_SHOTS=<dir> saves their screenshots). The tab-bar check also runs in Playwright
 // WebKit when its browser is installed (skipped with a log line otherwise).
 import { spawn, spawnSync } from 'node:child_process';
 import { createECDH, randomBytes } from 'node:crypto';
@@ -731,6 +733,13 @@ async function journeys(browser) {
 
   if (process.env.E2E_ONLY_VOTE) {
     await voteJourneys(browser, page);
+    await user.close();
+    return;
+  }
+
+  if (process.env.E2E_ONLY_ALFIE) {
+    await setLeagueViaApi(); // the full run sets it in the admin journey first
+    await alfieJourneys(browser, page);
     await user.close();
     return;
   }
@@ -3355,6 +3364,8 @@ async function journeys(browser) {
   );
 
   await avatarJourneys(browser, page);
+
+  await alfieJourneys(browser, page);
 
   await updateJourneys(user);
 
@@ -6332,6 +6343,528 @@ async function voteJourneys(browser, userPage) {
   );
 
   await ctx.close();
+}
+
+// ---------- Ask Alfie: FPL Lad's AI assistant (components/assistant/, lib/assistant/) ----------
+// The launcher, the in-app fallback panel, the embed-script adapter and the admin card. /v1/config and the admin
+// settings are mocked (page.route); fpl-lad.com is served by the test: a plain HTML page for the panel's iframe and,
+// per test, a fake embed script that records the calls our adapter makes.
+
+const ALFIE_SCRIPT = 'https://www.fpl-lad.com/embed.js';
+const alfieConfig = (over = {}) => ({
+  visibility: 'everyone',
+  scriptUrl: null,
+  partnerId: null,
+  fallbackUrl: 'https://www.fpl-lad.com/',
+  ...over,
+});
+/** The fake FPL Lad widget, as we expect them to ship it (docs/INTEGRATIONS.md): records every call. */
+const FAKE_FPL_LAD_JS = `
+  window.__fplLad = { calls: [], on: {} };
+  window.FPLLad = {
+    init: function (o) { window.__fplLad.calls.push(['init', o]); },
+    open: function () {
+      window.__fplLad.calls.push(['open']);
+      var d = document.getElementById('fake-fpllad') || document.createElement('div');
+      d.id = 'fake-fpllad';
+      d.textContent = 'FPL Lad widget (fake e2e script): Alfie would open here';
+      d.setAttribute('style', 'position:fixed;inset:auto 12px 90px 12px;height:55vh;z-index:60;border-radius:20px;background:#fff;color:#111;font:600 16px sans-serif;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.35)');
+      document.body.appendChild(d);
+    },
+    close: function () { window.__fplLad.calls.push(['close']); var d = document.getElementById('fake-fpllad'); if (d) d.remove(); },
+    update: function (o) { window.__fplLad.calls.push(['update', o]); },
+    on: function (e, cb) { window.__fplLad.on[e] = cb; },
+  };`;
+const FPL_LAD_PAGE = `<!doctype html><meta name="viewport" content="width=device-width"><title>FPL Lad</title>
+  <body style="margin:0;font:16px system-ui,sans-serif;background:#0f1630;color:#fff;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;height:100vh;text-align:center">
+  <div style="font-size:28px;font-weight:800">FPL <span style="color:#d4ff3a">LAD</span></div>
+  <div data-alfie-mock>Alfie (mock fpl-lad.com page)</div>
+  <div id="q" style="opacity:.7;font-size:13px;padding:0 16px;word-break:break-all"></div>
+  <script>document.getElementById('q').textContent = location.search</script></body>`;
+
+/**
+ * A phone context with `assistant` in /v1/config, fpl-lad.com mocked (`script`: null = a 404, 'fake', 'silent' =
+ * loads but never defines the global), optional session (token / guest), locale and theme.
+ */
+async function alfieContext(
+  browser,
+  { assistant, token, guest, locale = 'he', theme = 'light', script = null, join, viewport } = {},
+) {
+  const ctx = await newContext(browser, { colorScheme: theme, ...(viewport ? { viewport } : {}) });
+  await ctx.addInitScript(
+    ([tok, g, loc, th]) => {
+      if (tok) globalThis.localStorage.setItem('fant.token', tok);
+      if (g) globalThis.localStorage.setItem('fant.guest', '1');
+      globalThis.localStorage.setItem('fant.locale', loc);
+      globalThis.localStorage.setItem('fant.theme', th);
+    },
+    [token ?? null, !!guest, locale, theme],
+  );
+  await ctx.route(
+    (u) => u.origin === API && u.pathname === '/v1/config',
+    async (r) => {
+      const res = await r.fetch();
+      const body = await res.json();
+      await r.fulfill({
+        response: res,
+        json: {
+          ...body,
+          assistant: assistant === undefined ? null : assistant,
+          ...(join ? { leagueJoin: LEAGUE_JOIN } : {}),
+        },
+      });
+    },
+  );
+  if (join)
+    await ctx.route(
+      (u) => u.origin === API && u.pathname === '/v1/league/position',
+      (r) => r.fulfill(json({ entryId: Number(DEMO.tripleCaptain), page: null, rank: null, member: false })),
+    );
+  const scriptHits = [];
+  await ctx.route(/^https:\/\/([a-z0-9-]+\.)?fpl-lad\.com\//, (r) => {
+    const u = new URL(r.request().url());
+    if (u.pathname.endsWith('.js')) {
+      scriptHits.push(u.href);
+      if (script === 'fake')
+        return r.fulfill({ status: 200, contentType: 'text/javascript', body: FAKE_FPL_LAD_JS });
+      if (script === 'silent')
+        return r.fulfill({ status: 200, contentType: 'text/javascript', body: '/* no global */' });
+      return r.fulfill({ status: 404, body: '' });
+    }
+    return r.fulfill({ status: 200, contentType: 'text/html', body: FPL_LAD_PAGE });
+  });
+  return { ctx, scriptHits };
+}
+
+const launcher = (p) => p.getByTestId('alfie-launcher');
+/** The launcher mounts ~1.5 s after the shell paints (lazy chunk): wait long enough before asserting it's absent. */
+async function assertNoLauncher(p, where) {
+  await p.waitForTimeout(3000);
+  assert((await launcher(p).count()) === 0, `${where}: no Ask Alfie launcher`);
+}
+
+async function alfieJourneys(browser, userPage) {
+  const fanToken = await userPage.evaluate(() => globalThis.localStorage.getItem('fant.token'));
+  const login = await (
+    await globalThis.fetch(`${API}/v1/auth/admin-login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(ADMIN),
+    })
+  ).json();
+  const adminToken = login.token;
+  const shots = process.env.E2E_ALFIE_SHOTS;
+  if (shots) spawnSync('mkdir', ['-p', shots]);
+  const shot = async (p, name) => {
+    if (shots) await p.screenshot({ path: path.join(shots, `${name}.png`) });
+  };
+
+  await step(
+    'Ask Alfie: hidden when off and for fans in admins mode; shown for an admin and for everyone',
+    async () => {
+      const cases = [
+        {
+          what: 'off, admin',
+          assistant: alfieConfig({ visibility: 'off' }),
+          token: adminToken,
+          shown: false,
+        },
+        { what: 'no config (older API)', assistant: null, token: fanToken, shown: false },
+        {
+          what: 'admins, fan',
+          assistant: alfieConfig({ visibility: 'admins' }),
+          token: fanToken,
+          shown: false,
+        },
+        {
+          what: 'admins, guest',
+          assistant: alfieConfig({ visibility: 'admins' }),
+          guest: true,
+          shown: false,
+        },
+        {
+          what: 'admins, admin',
+          assistant: alfieConfig({ visibility: 'admins' }),
+          token: adminToken,
+          shown: true,
+        },
+        { what: 'everyone, fan', assistant: alfieConfig(), token: fanToken, shown: true },
+        { what: 'everyone, guest', assistant: alfieConfig(), guest: true, shown: true },
+      ];
+      for (const c of cases) {
+        const { ctx } = await alfieContext(browser, c);
+        const p = await ctx.newPage();
+        watch(p, `alfie-vis-${c.what}`);
+        await p.goto(`${WEB}/news/`);
+        await p.getByRole('navigation').first().waitFor();
+        if (c.shown) {
+          await launcher(p).waitFor();
+          await launcher(p).getByText('Ask Alfie').waitFor();
+          const label = await launcher(p).getAttribute('aria-label');
+          assert(label === 'שאלו את Alfie – עוזר ה-AI של FPL Lad', `${c.what}: aria-label ${label}`);
+        } else await assertNoLauncher(p, c.what);
+        await ctx.close();
+      }
+    },
+  );
+
+  await step(
+    'Ask Alfie: on every tab and Profile; never on onboarding, terms or the admin console',
+    async () => {
+      const { ctx } = await alfieContext(browser, { assistant: alfieConfig(), token: adminToken });
+      const p = await ctx.newPage();
+      watch(p, 'alfie-where');
+      for (const route of ['news', 'community', 'my-team', 'table', 'live', 'profile']) {
+        await p.goto(`${WEB}/${route}/`);
+        await launcher(p).waitFor();
+      }
+      await p.goto(`${WEB}/terms/`);
+      await assertNoLauncher(p, 'terms');
+      await p.goto(`${WEB}/admin/`);
+      await p.locator('[data-admin-console]').waitFor();
+      await assertNoLauncher(p, 'admin console');
+      await ctx.close();
+      // Signed out: onboarding.
+      const { ctx: c2 } = await alfieContext(browser, { assistant: alfieConfig() });
+      const o = await c2.newPage();
+      watch(o, 'alfie-onboarding');
+      await o.goto(`${WEB}/onboarding/`);
+      await o.getByRole('button', { name: 'בואו נתחיל' }).waitFor();
+      await assertNoLauncher(o, 'onboarding');
+      await c2.close();
+    },
+  );
+
+  const geometry = (p) =>
+    p.evaluate(() => {
+      const box = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom };
+      };
+      return {
+        vw: document.documentElement.clientWidth,
+        launcher: box(document.querySelector('[data-testid=alfie-launcher]')),
+        circle: box(document.querySelector('[data-testid=alfie-launcher] > span')),
+        tabBar: box(document.querySelector('[data-tab-bar]')),
+        join: box(document.querySelector('[data-testid=join-league]')),
+      };
+    });
+  const overlaps = (a, b) => a && b && a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom;
+
+  for (const [locale, theme] of [
+    ['he', 'light'],
+    ['en', 'dark'],
+  ]) {
+    await step(
+      `Ask Alfie (${locale}/${theme}): inline-end corner above the tab bar, stacked over the Join pill, no horizontal scroll`,
+      async () => {
+        const { ctx } = await alfieContext(browser, {
+          assistant: alfieConfig(),
+          token: fanToken,
+          locale,
+          theme,
+          join: true,
+        });
+        const p = await ctx.newPage();
+        watch(p, `alfie-geo-${locale}`);
+        await p.goto(`${WEB}/table/`);
+        await p.getByTestId('join-league').waitFor();
+        await launcher(p).waitFor();
+        await p.waitForTimeout(300);
+        const g = await geometry(p);
+        const at = JSON.stringify(g);
+        assert(g.launcher.bottom <= g.tabBar.y + 0.5, `launcher above the tab bar: ${at}`);
+        assert(!overlaps(g.launcher, g.join), `launcher must not overlap the Join pill: ${at}`);
+        assert(g.launcher.bottom <= g.join.y + 0.5, `launcher stacked above the Join pill: ${at}`);
+        assert(g.launcher.w >= 44 && g.launcher.h >= 44, `44px tap target: ${at}`);
+        assert(Math.abs(g.circle.w - 52) < 1, `52px circle: ${at}`);
+        if (locale === 'he') assert(g.launcher.x < g.vw / 2, `RTL: launcher at the left (inline end): ${at}`);
+        else assert(g.launcher.x > g.vw / 2, `LTR: launcher at the right (inline end): ${at}`);
+        await noHorizontalScroll(p, `alfie ${locale} table`);
+        // News (no Join pill): just above the tab bar.
+        await p.goto(`${WEB}/news/`);
+        await launcher(p).waitFor();
+        const n = await geometry(p);
+        assert(
+          n.launcher.bottom <= n.tabBar.y + 0.5 && n.tabBar.y - n.launcher.bottom < 24,
+          `news: ${JSON.stringify(n)}`,
+        );
+        await noHorizontalScroll(p, `alfie ${locale} news`);
+        // A bottom sheet hides it.
+        await p.goto(`${WEB}/my-team/`);
+        await launcher(p).waitFor();
+        if (locale === 'en') await shot(p, 'launcher-my-team-en-dark');
+        await p.getByTestId('pitch-player').first().click();
+        await p.locator('dialog.sheet[open]').waitFor();
+        await launcher(p).waitFor({ state: 'hidden' });
+        await p.keyboard.press('Escape');
+        await launcher(p).waitFor({ state: 'visible' });
+        await ctx.close();
+      },
+    );
+  }
+
+  await step(
+    'Ask Alfie: tap opens the in-app panel (iframe with teamId + locale); Escape / close return focus',
+    async () => {
+      const { ctx } = await alfieContext(browser, { assistant: alfieConfig(), token: fanToken });
+      const p = await ctx.newPage();
+      watch(p, 'alfie-panel');
+      await p.goto(`${WEB}/news/`);
+      await launcher(p).waitFor();
+      await p.waitForTimeout(500);
+      await shot(p, 'launcher-news-he-light');
+      await launcher(p).click();
+      const panel = p.locator('dialog[open][data-testid=alfie-panel]');
+      await panel.waitFor();
+      const src = await panel.getByTestId('alfie-frame').getAttribute('src');
+      const q = new URL(src);
+      assert(q.origin === 'https://www.fpl-lad.com', `frame origin: ${src}`);
+      for (const [k, v] of Object.entries({
+        partner: 'fantasyonerim',
+        embed: '1',
+        locale: 'he',
+        theme: 'light',
+        teamId: DEMO.tripleCaptain,
+      }))
+        assert(q.searchParams.get(k) === v, `frame ${k}: ${src}`);
+      assert(
+        (await panel.getByTestId('alfie-frame').getAttribute('sandbox')) === null,
+        'no sandbox (Google popup sign-in)',
+      );
+      const tab = new URL(await panel.getByTestId('alfie-open-tab').getAttribute('href'));
+      assert(
+        !tab.searchParams.has('embed') && tab.searchParams.get('teamId') === DEMO.tripleCaptain,
+        `new-tab link: ${tab}`,
+      );
+      assert((await panel.getByTestId('alfie-open-tab').getAttribute('target')) === '_blank', 'new tab');
+      await p.frameLocator('[data-testid=alfie-frame]').locator('[data-alfie-mock]').waitFor();
+      const box = await panel.boundingBox();
+      assert(
+        box && box.width === 390 && box.height === 844,
+        `full screen on a phone: ${JSON.stringify(box)}`,
+      );
+      assert(!(await launcher(p).isVisible()), 'launcher hidden while Alfie is open');
+      await panel.getByTestId('alfie-hint').waitFor({ timeout: 8000 });
+      await shot(p, 'panel-mobile-he');
+      await panel.getByTestId('alfie-close').click();
+      await panel.waitFor({ state: 'detached' }).catch(() => undefined);
+      await p.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'alfie-launcher');
+      assert(!(await p.locator('dialog[open]').count()), 'closed');
+      // Keyboard: Enter opens, Escape closes, focus back on the launcher.
+      await p.keyboard.press('Enter');
+      await panel.waitFor();
+      await p.keyboard.press('Escape');
+      await p.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'alfie-launcher');
+      await ctx.close();
+    },
+  );
+
+  await step('Ask Alfie: wide screen = a 420×640 panel in the inline-end corner', async () => {
+    const { ctx } = await alfieContext(browser, {
+      assistant: alfieConfig(),
+      token: fanToken,
+      locale: 'en',
+      viewport: { width: 1280, height: 800 },
+    });
+    const p = await ctx.newPage();
+    watch(p, 'alfie-desktop');
+    await p.goto(`${WEB}/news/`);
+    await launcher(p).click();
+    const panel = p.locator('dialog[open][data-testid=alfie-panel]');
+    await panel.waitFor();
+    await p.frameLocator('[data-testid=alfie-frame]').locator('[data-alfie-mock]').waitFor();
+    await p.waitForTimeout(400);
+    const box = await panel.boundingBox();
+    assert(
+      box && Math.round(box.width) === 420 && Math.round(box.height) === 640,
+      `panel size: ${JSON.stringify(box)}`,
+    );
+    assert(box.x + box.width > 1200, `LTR: right corner: ${JSON.stringify(box)}`);
+    assert(
+      new URL(await panel.getByTestId('alfie-frame').getAttribute('src')).searchParams.get('locale') === 'en',
+      'locale=en',
+    );
+    await shot(p, 'panel-desktop-en');
+    await ctx.close();
+  });
+
+  await step(
+    "Ask Alfie with FPL Lad's script: init({partner, teamId, locale, launcher:false}) + open(), no in-app panel",
+    async () => {
+      const { ctx, scriptHits } = await alfieContext(browser, {
+        assistant: alfieConfig({ scriptUrl: ALFIE_SCRIPT, partnerId: 'fant-e2e' }),
+        token: fanToken,
+        theme: 'dark',
+        script: 'fake',
+      });
+      const p = await ctx.newPage();
+      watch(p, 'alfie-script');
+      await p.goto(`${WEB}/news/`);
+      await launcher(p).click();
+      await p.waitForFunction(() => globalThis.__fplLad?.calls.some((c) => c[0] === 'open'));
+      const calls = await p.evaluate(() => globalThis.__fplLad.calls);
+      const init = calls.find((c) => c[0] === 'init')?.[1];
+      assert(calls.map((c) => c[0]).join(',') === 'init,open', `calls: ${JSON.stringify(calls)}`);
+      assert(
+        init.partner === 'fant-e2e' &&
+          init.teamId === Number(DEMO.tripleCaptain) &&
+          init.locale === 'he' &&
+          init.theme === 'dark' &&
+          init.launcher === false &&
+          typeof init.colors.primary === 'string' &&
+          init.colors.primary.length > 0 &&
+          init.bottomOffset >= 64,
+        `init options: ${JSON.stringify(init)}`,
+      );
+      const tag = await p
+        .locator(`script[src="${ALFIE_SCRIPT}"]`)
+        .evaluate((s) => ({ async: s.async, partner: s.dataset.partner }));
+      assert(tag.async && tag.partner === 'fant-e2e', `script tag: ${JSON.stringify(tag)}`);
+      assert((await p.locator('dialog[open]').count()) === 0, 'our panel stays closed');
+      await p.locator('#fake-fpllad').waitFor();
+      assert(!(await launcher(p).isVisible()), 'launcher hidden while their widget is open');
+      await shot(p, 'widget-script-he-dark');
+      // Their 'close' event brings the launcher back; 'identity' is kept first-party and passed back next time.
+      await p.evaluate(() => {
+        globalThis.FPLLad.close();
+        globalThis.__fplLad.on.close();
+        globalThis.__fplLad.on.identity({ visitorToken: 'vt-e2e-1' });
+      });
+      await launcher(p).waitFor({ state: 'visible' });
+      assert(
+        (await p.evaluate(() => globalThis.localStorage.getItem('fant.alfie.visitor'))) === 'vt-e2e-1',
+        'visitor token stored',
+      );
+      await launcher(p).click();
+      await p.waitForFunction(() => globalThis.__fplLad.calls.filter((c) => c[0] === 'open').length === 2);
+      assert(scriptHits.length === 1, `script loaded once: ${scriptHits.length}`);
+      await p.reload();
+      await launcher(p).click();
+      await p.waitForFunction(() => globalThis.__fplLad?.calls.some((c) => c[0] === 'open'));
+      const init2 = await p.evaluate(() => globalThis.__fplLad.calls.find((c) => c[0] === 'init')[1]);
+      assert(init2.visitorToken === 'vt-e2e-1', `visitor token passed back: ${JSON.stringify(init2)}`);
+      await ctx.close();
+    },
+  );
+
+  await step(
+    'Ask Alfie: a script that never defines window.FPLLad falls back to the in-app panel (one warning)',
+    async () => {
+      const { ctx } = await alfieContext(browser, {
+        assistant: alfieConfig({ scriptUrl: ALFIE_SCRIPT }),
+        guest: true,
+        script: 'silent',
+      });
+      const p = await ctx.newPage();
+      watch(p, 'alfie-silent');
+      const warnings = [];
+      p.on('console', (m) => {
+        if (m.type() === 'warning' && m.text().includes('[Ask Alfie]')) warnings.push(m.text());
+      });
+      await p.goto(`${WEB}/news/`);
+      await launcher(p).click();
+      const panel = p.locator('dialog[open][data-testid=alfie-panel]');
+      await panel.waitFor({ timeout: 15_000 });
+      const src = new URL(await panel.getByTestId('alfie-frame').getAttribute('src'));
+      assert(!src.searchParams.has('teamId'), `guest without a Team ID: no teamId (${src})`);
+      await panel.getByTestId('alfie-close').click();
+      // The second tap goes straight to the panel (no second 8 s wait).
+      const t0 = Date.now();
+      await launcher(p).click();
+      await panel.waitFor();
+      assert(Date.now() - t0 < 3000, 'no second wait');
+      assert(warnings.length === 1, `one console warning: ${warnings.length}`);
+      await ctx.close();
+    },
+  );
+
+  await step(
+    'Admin → Settings → Ask Alfie: saves visibility + script URL, rejects another host, Preview opens Alfie',
+    async () => {
+      const { ctx } = await alfieContext(browser, {
+        assistant: alfieConfig({ visibility: 'admins' }),
+        token: adminToken,
+      });
+      const real = await (
+        await globalThis.fetch(`${API}/v1/admin/settings`, {
+          headers: { authorization: `Bearer ${adminToken}` },
+        })
+      ).json();
+      let stored = { ...real, assistant: alfieConfig({ visibility: 'admins' }) };
+      const puts = [];
+      await ctx.route(
+        (u) => u.origin === API && u.pathname === '/v1/admin/settings',
+        async (r) => {
+          if (r.request().method() === 'PUT') {
+            const body = JSON.parse(r.request().postData() ?? '{}');
+            puts.push(body);
+            stored = { ...body, leagueName: real.leagueName ?? null };
+          }
+          await r.fulfill(json(stored));
+        },
+      );
+      const p = await ctx.newPage();
+      watch(p, 'alfie-admin');
+      await p.goto(`${WEB}/admin/`);
+      const card = await openCard(p, 'settings.assistant');
+      await card.getByTestId('alfie-status').getByText('ממתינים לסקריפט של FPL Lad').waitFor();
+      await card.getByTestId('alfie-script-url').fill('https://evil.example.com/embed.js');
+      await card.getByTestId('alfie-save').click();
+      await card.getByText('הכתובת חייבת להתחיל ב-https:// ולהיות בדומיין של FPL Lad').waitFor();
+      assert(puts.length === 0, 'nothing saved with a disallowed host');
+      await card.getByTestId('alfie-script-url').fill(ALFIE_SCRIPT);
+      await card.getByRole('tab', { name: 'כולם' }).click();
+      await card.getByTestId('alfie-partner-id').fill('fant-e2e');
+      await card.scrollIntoViewIfNeeded();
+      await shot(p, 'admin-card-he');
+      await card.getByTestId('alfie-save').click();
+      await card.getByText('נשמר').waitFor();
+      assert(puts.length === 1, `one PUT: ${puts.length}`);
+      const body = puts[0];
+      assert(
+        JSON.stringify(body.assistant) ===
+          JSON.stringify(alfieConfig({ scriptUrl: ALFIE_SCRIPT, partnerId: 'fant-e2e' })),
+        `saved assistant: ${JSON.stringify(body.assistant)}`,
+      );
+      assert(
+        body.leagueId === real.leagueId &&
+          JSON.stringify(body.socials) === JSON.stringify(real.socials) &&
+          JSON.stringify(body.deadlineReminderMinutes) === JSON.stringify(real.deadlineReminderMinutes),
+        'other settings kept',
+      );
+      await card.getByTestId('alfie-status').getByText('הסקריפט של FPL Lad מוגדר').waitFor();
+      // Preview with no script: the in-app panel, right in the admin console.
+      await card.getByTestId('alfie-script-url').fill('');
+      await card.getByTestId('alfie-preview').click();
+      const panel = p.locator('dialog[open][data-testid=alfie-panel]');
+      await panel.waitFor();
+      await p.keyboard.press('Escape');
+      await panel.waitFor({ state: 'hidden' });
+      await noHorizontalScroll(p, 'admin alfie card');
+      await ctx.close();
+    },
+  );
+
+  if (shots) {
+    await step('Ask Alfie: screenshots (Mini League he/dark)', async () => {
+      const { ctx } = await alfieContext(browser, {
+        assistant: alfieConfig(),
+        token: fanToken,
+        theme: 'dark',
+        join: true,
+      });
+      const p = await ctx.newPage();
+      watch(p, 'alfie-shots');
+      await p.goto(`${WEB}/table/`);
+      await p.getByTestId('join-league').waitFor();
+      await launcher(p).waitFor();
+      await p.waitForTimeout(600);
+      await shot(p, 'launcher-table-he-dark');
+      await ctx.close();
+    });
+  }
 }
 
 // ---------- main ----------

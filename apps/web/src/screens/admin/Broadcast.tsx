@@ -14,6 +14,8 @@ import type {
 } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
 import type { Messages } from '@/i18n';
+import { useSection } from '@/i18n/section';
+import { integrations } from '@/i18n/sections/integrations';
 import { useDraft } from '@/lib/drafts';
 import { openExternal } from '@/lib/external';
 import { readBroadcastTargets, writeBroadcastTargets } from '@/lib/localState';
@@ -402,6 +404,7 @@ function TargetRow({
   onChange(on: boolean): void;
 }) {
   const { t } = useI18n();
+  const ti = useSection(integrations);
   const b = t.broadcast;
   const available = info?.available === true;
   const paid = info?.paidFeature === true && !available;
@@ -438,7 +441,7 @@ function TargetRow({
           data-testid="broadcast-x-paid"
         >
           <InfoIcon size={14} className="shrink-0" />
-          <span>{t.integrations.xPaid}</span>
+          <span>{ti.xPaid}</span>
         </p>
       )}
     </div>

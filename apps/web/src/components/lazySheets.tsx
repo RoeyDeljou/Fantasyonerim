@@ -1,5 +1,6 @@
 'use client';
 
+import { lazy } from 'react';
 import { lazyWhenOpen } from './lazy';
 import { SkeletonList } from './ui';
 
@@ -50,3 +51,6 @@ export const Thread = lazyWhenOpen(
   () => true,
   <SkeletonList rows={4} />,
 );
+
+/** The "Ask Alfie" launcher (FPL Lad's assistant): mounted by the tab shell after first paint (AppShell `AlfieSlot`). */
+export const AskAlfie = lazy(() => import('./assistant/AskAlfie'));

@@ -3,6 +3,7 @@ import {
   AdminSettingsSchema,
   ApiErrorSchema,
   CaptainBattleConfigSchema,
+  DEFAULT_ASSISTANT_CONFIG,
   PublicConfigSchema,
 } from '@fant/shared';
 import type { FastifyInstance } from 'fastify';
@@ -100,6 +101,8 @@ describe('admin settings', () => {
       },
       // No league yet → no invite code (the client league's default applies once it's set).
       leagueCode: null,
+      // Never saved → the "Ask Alfie" defaults (tests/assistant.test.ts covers the rules).
+      assistant: DEFAULT_ASSISTANT_CONFIG,
     });
 
     // Unknown league → 404, nothing saved.

@@ -59,3 +59,27 @@ describe('vercel.json: /cdn/v1/league/avatars through the edge cache', () => {
     }
   });
 });
+
+/**
+ * FPL Lad's "Ask Alfie" widget (components/assistant/, docs/INTEGRATIONS.md) loads their script from fpl-lad.com and
+ * signs visitors in with Google in a POPUP. `Cross-Origin-Opener-Policy: same-origin` would cut the popup off from
+ * its opener (the sign-in never completes), and a Content-Security-Policy without their host in script-src / frame-src
+ * would block the script and the in-app panel's iframe. If a CSP is ever added, it must allow fpl-lad.com.
+ */
+describe('vercel.json: nothing blocks the FPL Lad widget', () => {
+  const all = vercel.headers.flatMap((h) => h.headers.map((x) => ({ source: h.source, ...x })));
+  const named = (k: string) => all.filter((h) => h.key.toLowerCase() === k.toLowerCase());
+  it('no Cross-Origin-Opener-Policy: same-origin (Google sign-in popup)', () => {
+    expect(named('Cross-Origin-Opener-Policy').filter((h) => /^\s*same-origin\s*$/i.test(h.value))).toEqual(
+      [],
+    );
+  });
+  it('no Content-Security-Policy that would block their script or iframe', () => {
+    for (const h of named('Content-Security-Policy')) {
+      expect(h.value).toMatch(/fpl-lad\.com/);
+    }
+  });
+  it('no Cross-Origin-Embedder-Policy: require-corp (would block their cross-origin iframe/script)', () => {
+    expect(named('Cross-Origin-Embedder-Policy').filter((h) => /require-corp/i.test(h.value))).toEqual([]);
+  });
+});

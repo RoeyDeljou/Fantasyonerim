@@ -250,6 +250,7 @@ function CommentBar({ postId, disabled }: { postId: PostId; disabled: boolean })
         className="border-t border-line bg-surface/95 backdrop-blur"
         style={lift < 0 ? { transform: `translateY(${lift}px)` } : undefined}
         data-testid="comment-bar"
+        data-composer=""
       >
         <form
           className="mx-auto flex max-w-xl flex-col gap-1 px-3 py-2"

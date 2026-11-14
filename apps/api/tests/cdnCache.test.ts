@@ -80,7 +80,13 @@ describe('CDN-cacheable public JSON (config, bootstrap)', () => {
       expect(new Set(views.map((v) => v.headers['cache-control'])).size, url).toBe(1);
     }
     const config = (await app.inject({ method: 'GET', url: '/v1/config' })).json() as Record<string, unknown>;
-    expect(Object.keys(config).sort()).toEqual(['captainBattleEvent', 'league', 'leagueJoin', 'socials']);
+    expect(Object.keys(config).sort()).toEqual([
+      'assistant',
+      'captainBattleEvent',
+      'league',
+      'leagueJoin',
+      'socials',
+    ]);
     expect(Object.keys(PublicConfigSchema.shape).sort()).toEqual(Object.keys(config).sort());
   });
 });

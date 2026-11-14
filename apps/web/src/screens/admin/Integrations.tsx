@@ -5,6 +5,9 @@ import type { FormEvent, ReactNode } from 'react';
 import { AdminNewsBodySchema, AdminPushBodySchema } from '@fant/shared';
 import type { IntegrationId, IntegrationStatus } from '@fant/shared';
 import { fmt, useI18n } from '@/i18n';
+import { useSection } from '@/i18n/section';
+import { integrations } from '@/i18n/sections/integrations';
+import type { IntegrationsCopy } from '@/i18n/sections/integrations';
 import type { Messages } from '@/i18n';
 import { navigateExternal } from '@/lib/external';
 import { api, isApiError } from '@/lib/api';
@@ -49,7 +52,7 @@ import {
   errorMessage,
 } from '@/components/ui';
 
-type I = Messages['integrations'];
+type I = IntegrationsCopy;
 
 const ORDER: readonly IntegrationId[] = ['podcast_rss', 'apple', 'spotify', 'youtube', 'instagram', 'x'];
 const EXPECTED_IG = 'fantasyonerimfpl';
@@ -169,11 +172,11 @@ function statusOf(s: IntegrationStatus): Status {
 // ---------- screen ----------
 
 export function IntegrationsView() {
-  const { t } = useI18n();
+  const it = useSection(integrations);
   const list = useIntegrations(true);
   return (
     <div className="flex flex-col gap-3">
-      <SectionHeading title={t.integrations.title} info={t.integrations.intro} />
+      <SectionHeading title={it.title} info={it.intro} />
       {list.isPending ? (
         ORDER.map((id) => <Skeleton key={id} className="h-14" />)
       ) : list.isError ? (
@@ -183,7 +186,7 @@ export function IntegrationsView() {
           .sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id))
           .map((s) => <IntegrationCard key={s.id} status={s} />)
       )}
-      <SectionHeading title={t.integrations.toolsTitle} className="mt-3" />
+      <SectionHeading title={it.toolsTitle} className="mt-3" />
       <AdminPushCard />
       <ManualPostCard />
     </div>
@@ -199,7 +202,7 @@ const STATUS_TONE: Record<Status, SummaryTone> = {
 
 function IntegrationCard({ status: s }: { status: IntegrationStatus }) {
   const { t } = useI18n();
-  const it = t.integrations;
+  const it = useSection(integrations);
   const status = statusOf(s);
   const sync = useSyncIntegration(s.id);
   const update = useUpdateIntegration(s.id);
@@ -359,7 +362,7 @@ function apiText(t: Messages, e: unknown): string {
 
 function SettingsForm({ status: s }: { status: IntegrationStatus }) {
   const { t } = useI18n();
-  const it = t.integrations;
+  const it = useSection(integrations);
   const update = useUpdateIntegration(s.id);
   const fields = SETTINGS[s.id];
   const secrets = SECRETS[s.id];
@@ -521,8 +524,8 @@ function xRate(s: IntegrationStatus): XRate {
 
 /** X is pay-per-use: the admin picks which post types to pull and how often. Each change saves at once. */
 function XOptions({ status: s }: { status: IntegrationStatus }) {
-  const { t, f } = useI18n();
-  const it = t.integrations;
+  const { f } = useI18n();
+  const it = useSection(integrations);
   const update = useUpdateIntegration(s.id);
   const rateId = useId();
   const rate = xRate(s);
@@ -582,7 +585,7 @@ function instagramConnected(s: IntegrationStatus): boolean {
 
 function InstagramConnect({ status: s }: { status: IntegrationStatus }) {
   const { t, f } = useI18n();
-  const it = t.integrations;
+  const it = useSection(integrations);
   const disconnect = useDisconnectInstagram();
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -671,7 +674,7 @@ function InstagramConnect({ status: s }: { status: IntegrationStatus }) {
 
 function AdminPushCard() {
   const { t } = useI18n();
-  const it = t.integrations;
+  const it = useSection(integrations);
   const push = useAdminPush();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -769,8 +772,7 @@ function AdminPushCard() {
 
 /** Counts only (no endpoints, no users): who can receive pushes and how the latest sends went. */
 function PushHealth() {
-  const { t } = useI18n();
-  const it = t.integrations;
+  const it = useSection(integrations);
   const health = useAdminPushHealth(true);
   const kindLabel = (k: string): string =>
     ({
@@ -845,7 +847,7 @@ function PushHealth() {
 
 function ManualPostCard() {
   const { t } = useI18n();
-  const it = t.integrations;
+  const it = useSection(integrations);
   const post = usePostNews();
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');

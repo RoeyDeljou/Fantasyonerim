@@ -114,6 +114,8 @@ model AppSettings {
   instagramUrl            String?
   xUrl                    String?
   whatsappUrl             String?
+  /// The "Ask Alfie" assistant widget (AssistantConfigSchema JSON). null/invalid = DEFAULT_ASSISTANT_CONFIG.
+  assistant               Json?
   updatedAt               DateTime @updatedAt
 }
 

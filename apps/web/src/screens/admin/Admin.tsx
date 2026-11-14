@@ -9,6 +9,7 @@ import { ModerationView } from './Moderation';
 import { BroadcastView, LiveUpdateCard } from './Broadcast';
 import { AccountView } from './Account';
 import { InvitesCard } from './Invites';
+import { AssistantCard } from './AssistantCard';
 import type { FormEvent, ReactNode } from 'react';
 import {
   AdminSettingsSchema,
@@ -89,6 +90,7 @@ import { CommunityCaptainCard } from './CommunityCaptainCard';
 import { ShareCaptainsSheet } from './ShareSheetLazy';
 import { adminCaptainVote } from '@/i18n/sections/adminCaptainVote';
 import { useSection } from '@/i18n/section';
+import { integrations } from '@/i18n/sections/integrations';
 
 export function AdminScreen() {
   const { t } = useI18n();
@@ -119,6 +121,7 @@ function isView(v: string | null): v is AdminView {
  */
 function AdminViews() {
   const { t } = useI18n();
+  const ti = useSection(integrations);
   const [viewParam, setView] = useQueryParam('view');
   const params = useSearchParams();
   const router = useRouter();
@@ -131,10 +134,10 @@ function AdminViews() {
     if (ig !== 'connected' && ig !== 'error') return;
     setNotice(
       ig === 'connected'
-        ? { ok: true, text: t.integrations.igConnected }
+        ? { ok: true, text: ti.igConnected }
         : {
             ok: false,
-            text: reason ? fmt(t.integrations.igErrorReason, { reason }) : t.integrations.igError,
+            text: reason ? fmt(ti.igErrorReason, { reason }) : ti.igError,
           },
     );
     router.replace('/admin/?view=integrations', { scroll: false });
@@ -154,9 +157,9 @@ function AdminViews() {
         value={view}
         onChange={(v) => setView(v === 'settings' ? null : v)}
         options={[
-          { value: 'settings', label: t.integrations.viewSettings },
+          { value: 'settings', label: ti.viewSettings },
           { value: 'broadcast', label: t.broadcast.view },
-          { value: 'integrations', label: t.integrations.viewIntegrations },
+          { value: 'integrations', label: ti.viewIntegrations },
           { value: 'community', label: t.moderation.view },
           { value: 'account', label: t.account.view },
         ]}
@@ -196,9 +199,9 @@ function AdminNav({
   options: ReadonlyArray<{ value: AdminView; label: string }>;
   onChange(v: AdminView): void;
 }) {
-  const { t } = useI18n();
+  const ti = useSection(integrations);
   return (
-    <div role="tablist" aria-label={t.integrations.viewsLabel} className="grid grid-cols-6 gap-1.5">
+    <div role="tablist" aria-label={ti.viewsLabel} className="grid grid-cols-6 gap-1.5">
       {options.map((o, i) => {
         const active = o.value === value;
         return (
@@ -278,6 +281,7 @@ function SettingsSection() {
       <LeagueCard server={settings.data} />
       <SocialsCard server={settings.data} />
       <RemindersCard server={settings.data} />
+      <AssistantCard server={settings.data} />
     </>
   );
 }

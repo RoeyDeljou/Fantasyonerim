@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ComponentType, ReactNode, SVGProps } from 'react';
 import { useT } from '@/i18n';
 import { ROUTES, useSession } from '@/lib/session';
-import { useMe } from '@/lib/queries';
+import { useConfig, useMe } from '@/lib/queries';
+import { assistantFor } from '@/lib/assistant/visibility';
 import { useRefresh } from '@/lib/refresh';
 import { prefetchTab, tabOf } from '@/lib/prefetch';
 import type { RefreshScope } from '@/lib/refresh';
@@ -17,6 +18,7 @@ import { CommunityIcon, LiveIcon, NewsIcon, ShirtIcon, TableIcon } from './icons
 import { initials } from '@/lib/text';
 import { Skeleton, cx } from './ui';
 import { ShellDockProvider } from './ShellDock';
+import { AskAlfie } from './lazySheets';
 import { rememberScroll, watchHistoryScroll } from '@/lib/scroller';
 
 type TabKey = 'news' | 'community' | 'myTeam' | 'table' | 'live';
@@ -189,6 +191,25 @@ export function useRequireSession(): boolean {
 
 const NO_SCOPE: RefreshScope = [];
 
+/**
+ * The "Ask Alfie" launcher (FPL Lad's AI assistant, components/assistant/): its own chunk, fetched only once the
+ * shell has painted and only when the already-loaded config shows it to this visitor — nothing on first load.
+ */
+function AlfieSlot() {
+  const { status } = useSession();
+  const shown = assistantFor(useConfig().data?.assistant, useMe(status === 'signedIn').data?.role);
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setLate(true), 1500);
+    return () => clearTimeout(id);
+  }, []);
+  return shown && late ? (
+    <Suspense>
+      <AskAlfie config={shown} />
+    </Suspense>
+  ) : null;
+}
+
 /** Signed in: start everything this tab shows at once, and warm its neighbours when idle (lib/prefetch.ts). */
 function usePrefetchTab(ready: boolean) {
   const qc = useQueryClient();
@@ -253,12 +274,16 @@ export function AppShell({
           className="app-scroller isolate min-h-0 flex-1"
           onScroll={(e) => rememberScroll(e.currentTarget.scrollTop)}
         >
-          {/* The end clears a floating button over the content (`--fab-space`, ShellDock). */}
-          <main id="main" className="mx-auto w-full max-w-xl px-4 pt-4 pb-[calc(1.5rem+var(--fab-space))]">
+          {/* The end clears floating buttons over the content (`--fab-space`, ShellDock; `--alfie-space`, AskAlfie). */}
+          <main
+            id="main"
+            className="mx-auto w-full max-w-xl px-4 pt-4 pb-[calc(1.5rem+var(--fab-space)+var(--alfie-space))]"
+          >
             {ready ? children : (skeleton ?? <ShellSkeleton />)}
           </main>
         </div>
         <div ref={setDock} data-shell-dock="" className="relative z-20 shrink-0" />
+        {ready && <AlfieSlot />}
       </ShellDockProvider>
       <TabBar />
     </div>

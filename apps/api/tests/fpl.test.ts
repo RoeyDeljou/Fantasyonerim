@@ -1,6 +1,7 @@
 import {
   ApiErrorSchema,
   BootstrapSchema,
+  DEFAULT_ASSISTANT_CONFIG,
   EntryLiveSchema,
   EntryPicksSchema,
   EntrySummarySchema,
@@ -185,6 +186,8 @@ describe('public misc', () => {
         xUrl: null,
         whatsappUrl: null,
       },
+      // Never saved → the "Ask Alfie" defaults (tests/assistant.test.ts covers the rules).
+      assistant: DEFAULT_ASSISTANT_CONFIG,
     });
   });
 

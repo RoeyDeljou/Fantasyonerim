@@ -99,6 +99,8 @@ export function adminRoutes(app: FastifyInstance, ctx: AppContext, auth: Auth, p
           ...(body.leagueCode === undefined
             ? {}
             : { leagueCode: body.leagueCode === null ? null : normalizeLeagueCode(body.leagueCode) }),
+          // Omitted keeps the stored assistant config; the parsed (trimmed) value is stored as-is.
+          ...(body.assistant === undefined ? {} : { assistant: body.assistant }),
         },
       });
       return toAdminSettings(updated, await derivedSocials(prisma));
