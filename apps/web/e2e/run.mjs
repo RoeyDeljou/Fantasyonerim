@@ -6501,7 +6501,7 @@ async function alfieJourneys(browser, userPage) {
           await launcher(p).waitFor();
           await launcher(p).getByText('Ask Alfie').waitFor();
           const label = await launcher(p).getAttribute('aria-label');
-          assert(label === 'שאלו את Alfie – עוזר ה-AI של FPL Lad', `${c.what}: aria-label ${label}`);
+          assert(label === 'Ask Alfie – עוזר ה-AI של FPL Lad', `${c.what}: aria-label ${label}`);
         } else await assertNoLauncher(p, c.what);
         await ctx.close();
       }
