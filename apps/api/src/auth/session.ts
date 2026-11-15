@@ -11,9 +11,10 @@ export const SESSION_TOUCH_INTERVAL_MS = 60 * 60 * 1000;
 /**
  * A resolved session is reused from memory for this long by GET/HEAD requests (every poll carries the bearer
  * token, and the rate limiter keys on it). Logout, ban, account deletion, profile/role changes evict it at once
- * (`auth.forgetUser`); writes and admin routes always re-read the user from the database.
+ * (`auth.forgetUser`); writes and admin routes always re-read the user from the database. 30 minutes: a fan
+ * reopening the app within the evening costs no database read (and doesn't wake Neon).
  */
-export const SESSION_CACHE_TTL_MS = 5 * 60 * 1000;
+export const SESSION_CACHE_TTL_MS = 30 * 60 * 1000;
 export const SESSION_CACHE_MAX = 5000;
 /**
  * First-time read lookups are coalesced: every token asked for within this window (or until the batch is full)

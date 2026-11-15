@@ -108,9 +108,14 @@ const iso = (d: Date | null) => (d === null ? null : d.toISOString());
 
 export function toIntegrationStatus(
   loaded: LoadedIntegration,
-  extras: { nextSyncAt?: Date | null } = {},
+  extras: { nextSyncAt?: Date | null; checked?: { at: Date; ok: boolean } | null } = {},
 ): IntegrationStatus {
   const { row, settings, secrets, configured } = loaded;
+  // DB-free polls that found nothing new are remembered in memory (jobs/runner.ts) and written back at most
+  // hourly: the console shows whichever is newer.
+  const checked = extras.checked ?? null;
+  const newer = (stored: Date | null, ok: boolean) =>
+    checked !== null && ok && (stored === null || checked.at > stored) ? checked.at : stored;
   const def = INTEGRATIONS[row.id];
   const shownKeys = [...Object.keys(def.editable), ...def.readOnly];
   return serialize(
@@ -126,8 +131,8 @@ export function toIntegrationStatus(
       ),
       hasSecret: Object.keys(secrets).length > 0,
       secretKeys: Object.keys(secrets).sort(),
-      lastRunAt: iso(row.lastRunAt),
-      lastSuccessAt: iso(row.lastSuccessAt),
+      lastRunAt: iso(newer(row.lastRunAt, true)),
+      lastSuccessAt: iso(newer(row.lastSuccessAt, checked?.ok === true)),
       lastError: row.lastError,
       itemsImported: row.itemsImported,
       tokenExpiresAt: iso(row.tokenExpiresAt),

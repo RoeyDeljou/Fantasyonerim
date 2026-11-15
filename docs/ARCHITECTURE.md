@@ -20,6 +20,9 @@
   webhooks need enterprise access. Polling every 5–10 minutes with idempotent dedupe keys is reliable and cheap.
 - **Why an external cron?** Render's free tier sleeps after 15 min idle; a GitHub Actions schedule calling
   `/internal/jobs/tick` keeps ingestion and deadline reminders running (and wakes the service).
+- **Why does nothing keep the database awake?** Neon's free compute counts until it suspends (~5 idle minutes).
+  Jobs keep their state in memory and check upstream / FPL caches DB-free, so the database is only touched when
+  there is something to write or a user needs it (docs/PERFORMANCE.md "Keeping Neon asleep").
 - **Why store the Gameweek Roundup?** It is built once per official GW by the `gameweek_roundup` job (a bounded
   batch of FPL requests per run, back-filling older GWs over several runs) and served from Postgres to everybody,
   so a busy Monday never fans out ~500 FPL requests per user. Details in `docs/API.md` ("Gameweek Roundup").

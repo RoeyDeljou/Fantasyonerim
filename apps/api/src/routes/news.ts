@@ -138,7 +138,7 @@ export function newsRoutes(app: FastifyInstance, ctx: AppContext): void {
   });
 
   app.get('/v1/news/stories', async (request, reply) => {
-    const { body } = await ctx.hot.cache.get('news:stories', HOT_POLICY.news, async () => {
+    const { body } = await ctx.hot.cache.get('news:stories', HOT_POLICY.stories, async () => {
       const rows = await prisma.newsItem.findMany({
         where: { source: 'instagram_story', hiddenAt: null, expiresAt: { gt: ctx.clock.now() } },
         orderBy: [{ publishedAt: 'asc' }, { id: 'asc' }],

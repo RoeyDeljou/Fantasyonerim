@@ -28,11 +28,32 @@ const CheckedStateSchema = z.object({ event: z.number().int(), since: z.string()
  * GWs were official long ago and are built right away. FPL unavailable → nothing partial is stored, the run
  * fails (lastError) and the next run retries.
  */
+/** Memo: league + official GWs + build version for which every roundup is stored (nothing to do until it changes). */
+const DONE_KEY = 'doneKey';
+const doneKeyOf = (leagueId: number, official: readonly number[]) =>
+  `${leagueId}:${ROUNDUP_BUILD_VERSION}:${official.join(',')}`;
+
 export const gameweekRoundupJob: Job = {
   name: JOB_NAME,
   everyMs: 5 * MINUTE,
   // 171 members × 3 GWs ≈ 1 minute; a 2,000-member league (LEAGUE_MAX_PAGES) still fits.
   leaseMs: 15 * MINUTE,
+  // DB-free until FPL's (cached) bootstrap shows an official GW this process hasn't seen built.
+  async plan(ctx) {
+    const fpl = ctx.app.fpl;
+    if (!supportsRoundup(fpl)) return { run: false, summary: 'FplService has no roundup data methods' };
+    const league = FplLeagueIdSchema.safeParse((await ctx.settings()).leagueId);
+    if (!league.success) return { run: false, summary: 'no league configured' };
+    const retryAt = fpl.getHealth?.().retryAt ?? null;
+    if (retryAt !== null && Date.parse(retryAt) > ctx.now.getTime()) {
+      return { run: false, summary: `FPL backing off until ${retryAt}` };
+    }
+    const official = officialEvents(await fpl.getBootstrap());
+    if (official.length === 0) return { run: false, summary: 'no official gameweek yet' };
+    return ctx.memo[DONE_KEY] === doneKeyOf(league.data, official)
+      ? { run: false, summary: 'every official gameweek is built' }
+      : { run: true, reason: 'official gameweeks to check' };
+  },
   async run(ctx) {
     const { app } = ctx;
     const fpl = app.fpl;
@@ -71,6 +92,7 @@ export const gameweekRoundupJob: Job = {
     const missing: Gameweek[] = official.filter((gw) => !have.has(gw) && (gw !== newest || newestReady));
     const waiting = !have.has(newest) && !newestReady;
     if (missing.length === 0) {
+      if (!waiting) ctx.memo[DONE_KEY] = doneKeyOf(leagueId, official);
       return {
         summary: waiting ? `GW${newest}: waiting for FPL's final data` : 'every official gameweek is built',
         state,

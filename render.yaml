@@ -5,6 +5,8 @@
 #   scheduler stops while asleep. The GitHub Actions workflow .github/workflows/jobs-tick.yml calls
 #   /internal/jobs/tick every 5 min, which wakes it and keeps content ingestion + deadline reminders running,
 #   but the first app open after a quiet period is still slow. `starter` (always on) is recommended for launch.
+#   Neither the tick nor /health keeps Neon awake: an idle tick sends no query (docs/PERFORMANCE.md "Keeping Neon
+#   asleep"), so the database suspends whenever nothing changed.
 # * Database: Neon free tier (persistent, never auto-deleted), region Europe/Frankfurt — NOT Render's free
 #   Postgres, which is deleted after 30 days. Paste Neon's pooled connection string into DATABASE_URL.
 # * Migrations run once per deploy at the end of the build, never on boot.

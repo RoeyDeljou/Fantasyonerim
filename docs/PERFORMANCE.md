@@ -154,15 +154,15 @@ JSON is **serialized once**, hashed once (weak ETag) and **compressed once per e
 libuv's threadpool, never per request). When FplService returns the very same object (its caches now return shared
 objects), the body is kept without re-validating or re-serializing it. Bounded: 1,000 keys / 48 MB, LRU.
 
-| Data                                                         | Fresh | Then served stale while refreshing | Cache-Control                                                                              |
-| ------------------------------------------------------------ | ----: | ---------------------------------: | ------------------------------------------------------------------------------------------ |
-| live league, fixtures, match sheet, battle                   |  10 s |                               60 s | `public, max-age=10, stale-while-revalidate=20` (match sheet: by fixture state, unchanged) |
-| standings                                                    |  30 s |                              120 s | `public, max-age=30, stale-while-revalidate=60`                                            |
-| bootstrap                                                    |  30 s |                             10 min | `public, max-age=60, stale-while-revalidate=300`                                           |
-| config                                                       |  30 s |                               60 s | `public, max-age=30, stale-while-revalidate=60`                                            |
-| news pages / stories / item                                  |  15 s |                               45 s | `public, max-age=15, stale-while-revalidate=45` (filters: `public, max-age=60`, unchanged) |
-| per-user (`/v1/me`, captain battle with your row, community) |     — |                                  — | `private, no-cache` + ETag                                                                 |
-| My Team live, an entry, picks                                |     — |                                  — | `public, max-age=10/30, …` + ETag                                                          |
+| Data                                                                    |  Fresh | Then served stale while refreshing | Cache-Control                                                                              |
+| ----------------------------------------------------------------------- | -----: | ---------------------------------: | ------------------------------------------------------------------------------------------ |
+| live league, fixtures, match sheet, battle                              |   10 s |                               60 s | `public, max-age=10, stale-while-revalidate=20` (match sheet: by fixture state, unchanged) |
+| standings                                                               |   30 s |                              120 s | `public, max-age=30, stale-while-revalidate=60`                                            |
+| bootstrap                                                               |   30 s |                             10 min | `public, max-age=60, stale-while-revalidate=300`                                           |
+| config (dropped on every admin write)                                   |  5 min |                             10 min | `public, max-age=30, stale-while-revalidate=60`                                            |
+| news pages / item (dropped by news jobs + admin); stories 2 min / 5 min | 10 min |                             30 min | `public, max-age=15, stale-while-revalidate=45` (filters: `public, max-age=60`, unchanged) |
+| per-user (`/v1/me`, captain battle with your row, community)            |      — |                                  — | `private, no-cache` + ETag                                                                 |
+| My Team live, an entry, picks                                           |      — |                                  — | `public, max-age=10/30, …` + ETag                                                          |
 
 There is no CDN in front of the API (the Vercel CDN only serves the web app and `/media`), so these headers steer
 browsers: within `max-age` a poll never leaves the phone; after it the browser revalidates with `If-None-Match`
@@ -184,7 +184,7 @@ My Team live is FplService's shared GW context + the entry's cached picks.
 (br/gzip, ≥ 1 KB) for dynamic responses; hot bodies arrive precompressed and pass through. Brotli cost was
 checked at 0.1 CPU: precompressing once makes its CPU irrelevant for shared data; per-request bodies are ~1–5 KB.
 
-**Sessions** (`auth/session.ts`): GET/HEAD requests reuse a resolved session for 5 minutes (bounded LRU, one DB
+**Sessions** (`auth/session.ts`): GET/HEAD requests reuse a resolved session for 30 minutes (bounded LRU, one DB
 lookup per token in flight). Logout, ban/unban, profile and role changes and account deletion evict it at once;
 writes and admin routes always re-read the user from the database. This matters most: on 0.1 CPU the real cost of
 a request is its Prisma round-trips (Prisma's query engine runs on its own threads and counts against the quota —
@@ -200,9 +200,9 @@ rows): all use their indexes or are tiny-table scans the planner is right to cho
 during matches). Fix: additive migration `20261102120000_notification_log_created_at_index`
 (`CREATE INDEX … ("createdAt")`) and the query bounded by the GW's deadline — 1.7 ms instead of 5.0 ms at 60 k
 rows, and flat as the log grows. (A `text_pattern_ops` index on `key` would also work but Prisma can't round-trip
-that operator class: every later `migrate dev` would try to recreate it.) Settings are memoized for 15 s (the old
-`getSettings` was an upsert — a write — on every league request); the job scheduler reads all leases in one query
-and skips jobs that aren't due (one query per idle tick instead of two per job); community and news serializers
+that operator class: every later `migrate dev` would try to recreate it.) Settings (and the latest captain battle) are memoized for 10 min, dropped on every admin write (the old
+`getSettings` was an upsert — a write — on every league request); the job scheduler reads all leases once per
+process and keeps them in memory (an idle tick sends no query, see "Keeping Neon asleep"); community and news serializers
 select only the columns they show (no full `User` row per post). No N+1: likes and blocks are
 one query per page each.
 
@@ -218,38 +218,74 @@ are synchronous inside `packages/fpl`.
 **Memory**: every cache is bounded — hot responses (1,000 keys / 48 MB), sessions (5,000), FplService (≈ 6 MB /
 300 entries, `packages/fpl`), the rate-limit store (5,000 keys).
 
-## Neon: keep-alive and compute hours
+## Keeping Neon asleep (compute hours)
 
-Neon suspends its compute after ~5 idle minutes; the next query then waits ~1 s while it starts. `GET /health`
-(Render's health check, the external 5-minute ping and the web app's warm-up ping on every resume) now also runs
-`SELECT 1` — at most once a minute, never awaited by the health response — so the database stays awake while
-people use the app.
+Neon's free plan gives 100 CU-hours a month per project, and a compute counts every minute until it **suspends**,
+which happens ~5 minutes after the last query. At the minimum 0.25 CU that is ~400 awake hours a month (~13 h a
+day). We used to be awake ~19–20 h a day: `/health` ran a keep-alive `SELECT 1`, the in-process scheduler read every
+lease row on every 30 s tick, and every due job (2–10 min cadences) took and wrote its lease even when nothing had
+changed. Since Nov 2026 the database is touched only when there is real work:
 
-But **the API already kept Neon awake 24/7**: the in-process scheduler runs every 30 s and touched the database on
-every tick (two queries per job), and the external cron tick every 5 minutes did the same. So the maths:
+- **No keep-alive.** `/health` never queries the database. Accepted trade-off: the first query after an idle
+  period waits ~0.5–1 s for Neon's cold start. The hot caches and the CDN serve nearly all public reads without the
+  database, so mostly a signed-in user's first uncached request pays it.
+- **Zero-query idle ticks** (`jobs/runner.ts`). Each job's lastRunAt, state and lastError are loaded once per
+  process and then kept in memory; a tick where nothing is due sends no query. The cron tick endpoint uses the same
+  path. A run that finds the lease taken by another instance adopts that instance's lastRunAt/state.
+- **DB-free checks** (`Job.plan`). A due job first decides from memory whether there is anything to write, and only
+  then takes the lease (the `UPDATE … RETURNING` lease still guards every real run):
+  - content jobs (podcast RSS, YouTube, Instagram posts/stories) poll upstream with the cached cursor and compare
+    with the last saved result — HTTP 304, or the same fingerprint (`fingerprintResult`: what ingest would write;
+    re-hosted media by kind only, since their CDN URLs rotate) and the same admin note. The fetched result is handed
+    to the run, so upstream is never fetched twice. The podcast's 30-minute relink asks Spotify/Apple/YouTube about
+    the recent episodes held in memory, and audio-only episodes' thumbnails are re-checked via oEmbed — the database
+    only when something was found. A repeated identical failure is recorded once;
+  - X: DB-free until a fetch is due (admin interval, twice a day by default);
+  - deadline reminders: only once a reminder's fire time has been crossed (cached bootstrap + cached settings);
+  - GW summary / roundup: only when FPL's cached bootstrap shows a GW official that isn't summarized / built yet
+    (a GW summary with failed users retries with backoff: 30 min, 1 h, 2 h … ≤ 12 h);
+  - community captain: only within 24 h after a deadline and until that GW's result is final (decided or admins
+    pushed) — so it still locks within ~2 minutes after the deadline;
+  - live alerts: only while a fixture is live, plus the final pass;
+  - image back-fill: once a batch finds nothing, it re-checks only while the database is awake anyway.
+- **Bursts, not drips.** "Awake" = a query in the last minute (`perf/dbActivity.ts`). While awake, a job due within a
+  minute runs now, housekeeping (`cleanup`, `idleEveryMs`) catches up (hourly while awake, otherwise once a day),
+  integration rows the runs wrote are re-read, and — at most hourly — the in-memory "last checked" times are written
+  back to the lease and integration rows. The admin console shows the newer of the stored and in-memory last check.
+  Cached settings / integration rows are refreshed after 10 min only while awake, unconditionally after 12 h.
+- **User traffic stays off the database**: sessions are cached 30 min (writes and admin routes still re-read), the
+  config / news / captain-battle hot data is invalidated on every in-process write and so can keep long TTLs, and
+  the settings / latest captain battle are memoized for 10 min.
+- **Retention** (in the cleanup burst, batched 5,000 rows per statement): notification dedupe rows after 90 days,
+  expired sessions.
 
-- Neon free: **191.9 compute-hours/month** at the minimum 0.25 CU (figure from the brief — check the current
-  number on the Neon dashboard → Billing; Neon has changed free-plan allowances before).
-- **Always on**: 744 h × 0.25 CU = **186 CU-h = 97 %** of the allowance. Fits, with 5.9 CU-h to spare — any
-  autoscaling above 0.25 CU, or a 31-day month with extra activity, eats that.
-- **Quiet hours 02:00–07:00 Israel time** (`DB_QUIET_HOURS=02-07`, the default): 19 h × 31 = 589 h awake; at
-  night `/health` doesn't ping and jobs run at most every 30 minutes (scheduler and cron tick alike), so Neon is
-  up ~5–6 min per half hour ≈ 31 h over the 155 night hours. ≈ 620 h × 0.25 = **155 CU-h = 81 %**, ~37 CU-h of
-  headroom.
+**Measured** (`tests/dbIdle.test.ts`, fake clock, the production schedule: scheduler every 30 s, cron tick and
+`/health` every 5 min, quiet hours 02–07):
 
-**Decision: quiet hours 02:00–07:00 Israel time.** Nothing time-critical happens then: Premier League matches end
-by ~00:30 Israel time (the final live-alert pass included), and deadlines (and their 24 h / 2 h reminders) fall in
-the daytime. A podcast/Instagram post published at night shows up within 30 minutes instead of 5, and the first app
-open at night waits ~1 s for Neon. `DB_QUIET_HOURS=off` restores always-on.
+| Scenario                                  | Before                                  | After                                     |
+| ----------------------------------------- | --------------------------------------- | ----------------------------------------- |
+| 24 h idle (no users, no upstream changes) | 15,668 queries, ~1,195 awake min (20 h) | ~110 queries, ~15 awake min               |
+| Busy evening: 100 users, 134 opens, 2 h   | 3,322 queries (24.8 / open)             | ~985 queries (7.4 / open), ~125 min awake |
+
+In the idle day the remaining bursts are the X fetch (twice a day), the daily cleanup / image back-fill check
+riding along, and the hourly write-back when something else woke the database. During a busy evening the database
+is awake as long as people keep arriving (~1.2 awake minutes per active user in the simulation); what matters there
+is the query count (CPU), not the awake time.
+
+The API logs one line per hour, `db activity (last hour)`, with the query count and the estimated awake minutes
+(`DbActivity`, process-local).
+
+**Quiet hours** (`DB_QUIET_HOURS=02-07`, Israel time) still slow every job to at most once per 30 minutes at night
+and skip the image back-fill.
 
 ## Knobs
 
-| Env var           | Default | What                                                                                               |
-| ----------------- | ------- | -------------------------------------------------------------------------------------------------- |
-| `DB_POOL_SIZE`    | `5`     | Prisma `connection_limit` (unless set in `DATABASE_URL`)                                           |
-| `DB_QUIET_HOURS`  | `02-07` | Israel-time hours when Neon may sleep (no keep-alive ping, jobs ≤ every 30 min); `off` = always on |
-| `PREWARM_ENABLED` | `true`  | Recompute live hot data every 30 s while a fixture is live                                         |
-| `LOG_LEVEL`       | `info`  | Request logging costs ~0.1 ms/request — measured, not worth turning off                            |
+| Env var           | Default | What                                                                                                                |
+| ----------------- | ------- | ------------------------------------------------------------------------------------------------------------------- |
+| `DB_POOL_SIZE`    | `5`     | Prisma `connection_limit` (unless set in `DATABASE_URL`)                                                            |
+| `DB_QUIET_HOURS`  | `02-07` | Israel-time hours when jobs run at most every 30 min; `off` = no quiet hours (nothing keeps Neon awake at any hour) |
+| `PREWARM_ENABLED` | `true`  | Recompute live hot data every 30 s while a fixture is live                                                          |
+| `LOG_LEVEL`       | `info`  | Request logging costs ~0.1 ms/request — measured, not worth turning off                                             |
 
 In code: `HOT_POLICY` (TTLs, `perf/hotData.ts`), `CACHE_CONTROL` (`perf/http.ts`), `SESSION_CACHE_TTL_MS`
 (`auth/session.ts`), rate limits (`DEFAULT_RATE_LIMIT`, `app.ts`), `BROTLI_QUALITY` / `COMPRESS_THRESHOLD_BYTES`

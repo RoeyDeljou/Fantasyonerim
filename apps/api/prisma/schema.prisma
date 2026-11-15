@@ -87,6 +87,8 @@ model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  /// The cleanup job's batched sweep of expired sessions.
+  @@index([expiresAt])
 }
 
 model AdminCredential {
@@ -215,6 +217,8 @@ model NewsItem {
 
   @@index([hiddenAt, source, publishedAt(sort: Desc)])
   @@index([publishedAt(sort: Desc), id(sort: Desc)])
+  /// Per-source reads: the podcast job's recent episodes, YouTube matching, story expiry.
+  @@index([source, publishedAt(sort: Desc)])
 }
 
 model NewsMedia {

@@ -27,6 +27,7 @@ import { createMediaUrlMapper } from './media/publicUrl.js';
 import { LocalDiskMediaStore, type MediaStore } from './media/store.js';
 import type { PushProvider } from './push/provider.js';
 import { PushBatchRecorder } from './push/stats.js';
+import { DbActivity, trackPrisma } from './perf/dbActivity.js';
 import { HotData } from './perf/hotData.js';
 import { registerConditionalGet } from './perf/http.js';
 import { COMPRESS_THRESHOLD_BYTES } from './perf/hotCache.js';
@@ -54,6 +55,8 @@ declare module 'fastify' {
     jobs: JobRunner;
     /** Shared hot responses + the live pre-warmer (started by boot.ts). */
     hot: HotData;
+    /** DB activity tracker (query count, Neon awake-time estimate). */
+    db: DbActivity;
   }
 }
 
@@ -119,8 +122,12 @@ function statusOf(err: unknown): number | null {
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const clock = deps.clock ?? systemClock;
   const fetchImpl = deps.fetch ?? globalThis.fetch.bind(globalThis);
+  // Every query the app sends is counted (DB activity / Neon awake-time estimate). Test setup code keeps using
+  // its own untracked client.
+  const db = new DbActivity(() => clock.now().getTime());
+  const prisma = trackPrisma(deps.prisma, db);
   const ctx: AppContext = {
-    prisma: deps.prisma,
+    prisma,
     fpl: deps.fpl,
     clock,
     config: deps.config,
@@ -132,7 +139,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     media:
       deps.media ?? new LocalDiskMediaStore('./.media', deps.config.apiPublicUrl ?? 'http://localhost:4000'),
     mediaUrl: createMediaUrlMapper(deps.config.mediaOriginBaseUrl, deps.config.mediaPublicBaseUrl),
-    hot: new HotData({ prisma: deps.prisma, fpl: deps.fpl, clock }),
+    hot: new HotData({ prisma, fpl: deps.fpl, clock }),
+    db,
     forgetUser: () => undefined,
   };
   const limits: RateLimitConfig = { ...DEFAULT_RATE_LIMIT, ...deps.config.rateLimit };
@@ -195,8 +203,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     maxAge: 86_400,
   });
 
+  const jobsRef: { current: JobRunner | null } = { current: null };
   ctx.hot.setLogger(app.log);
   app.decorate('hot', ctx.hot);
+  app.decorate('db', db);
 
   // Any successful admin write (settings, captain battle, integrations, news moderation) can change the shared
   // hot responses: drop them before the response goes out, so the admin's next read is already fresh.
@@ -208,6 +218,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     ) {
       ctx.hot.invalidateConfig();
       ctx.hot.invalidateNews();
+      // The job runner's cached settings / integration rows (its DB-free checks read them).
+      jobsRef.current?.invalidateCaches();
     }
     return payload;
   });
@@ -253,6 +265,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const uploadLimit = { max: limits.uploadsPerHour, timeWindow: HOUR_MS, keyGenerator: perUser };
   const broadcastLimit = { max: limits.broadcastsPerHour, timeWindow: HOUR_MS, keyGenerator: perUser };
   const jobs = new JobRunner(ctx, deps.jobs ?? JOBS, app.log);
+  jobsRef.current = jobs;
   app.decorate('jobs', jobs);
   ctx.pushStats.setLogger(app.log);
 

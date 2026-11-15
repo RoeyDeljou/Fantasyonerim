@@ -1,6 +1,7 @@
 # Wakes the API (Render free tier sleeps after 15 min) and runs every due job: content ingestion
 # (podcast / Instagram / X), FPL deadline reminders, gameweek summaries, cleanup.
-# Jobs are idempotent and lease-guarded, so an extra or delayed tick is harmless.
+# Jobs are idempotent and lease-guarded, so an extra or delayed tick is harmless. A tick with nothing new to write
+# sends no database query (the API keeps job state in memory), so this does not keep Neon awake.
 #
 # Repo secrets (Settings → Secrets and variables → Actions):
 #   API_URL      e.g. https://fantasyonerim-api.onrender.com

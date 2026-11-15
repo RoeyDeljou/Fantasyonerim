@@ -265,6 +265,9 @@ describe('backfill job', () => {
   /** One scheduled run (not forced: the live-fixture / quiet-hours guards apply). */
   async function runBackfill(): Promise<string> {
     clock.advance(IMAGE_VARIANTS_EVERY_MS);
+    // Rows are inserted behind the app's back here. Once a batch found nothing, the job re-checks only while the
+    // database is awake anyway (users / other jobs active): model that.
+    app.db.record();
     return app.jobs.run('image_variants');
   }
 

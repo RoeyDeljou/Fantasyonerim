@@ -1,7 +1,12 @@
-import type { AppContext } from '../context.js';
-
-/** /health runs `SELECT 1` at most this often. */
-export const DB_PING_INTERVAL_MS = 60 * 1000;
+/**
+ * Quiet hours (night, Israel time): due jobs run at most every QUIET_JOBS_EVERY_MS.
+ *
+ * There is deliberately NO database keep-alive any more (the old /health `SELECT 1` kept Neon awake ~19 h a day and
+ * burned the free plan's compute hours). Neon suspends ~5 minutes after the last query; the first query after that
+ * waits ~0.5–1 s for the cold start. That is the accepted trade-off: the hot caches and the CDN serve almost every
+ * public read without the database, so only a signed-in user's first uncached request pays it.
+ * See docs/PERFORMANCE.md "Keeping Neon asleep".
+ */
 /** During quiet hours, due jobs run at most this often (scheduler and cron tick alike). */
 export const QUIET_JOBS_EVERY_MS = 30 * 60 * 1000;
 export const KEEPALIVE_TIME_ZONE = 'Asia/Jerusalem';
@@ -31,30 +36,4 @@ export function parseQuietHours(raw: string): readonly [number, number] | null {
   const end = Number(m[2]);
   if (start > 23 || end > 24) throw new Error('hours must be 0–24');
   return [start, end % 24];
-}
-
-/**
- * Neon suspends its compute after ~5 idle minutes and the next query then waits ~1 s for a cold start. The
- * external keep-alive pings /health every 5 minutes; this makes that ping touch the database too (one cheap
- * `SELECT 1`, at most once a minute, never awaited by the health response), except during quiet hours.
- */
-export function createDbKeepAlive(ctx: Pick<AppContext, 'prisma' | 'clock' | 'config'>) {
-  let lastPingAt = -Infinity;
-  let inflight = false;
-  return {
-    /** Returns whether a ping was started. */
-    touch(): boolean {
-      const now = ctx.clock.now();
-      if (inflight || now.getTime() - lastPingAt < DB_PING_INTERVAL_MS) return false;
-      if (isQuietHour(now, ctx.config.keepAlive?.quietHours)) return false;
-      lastPingAt = now.getTime();
-      inflight = true;
-      void ctx.prisma.$queryRaw`SELECT 1`
-        .catch(() => undefined)
-        .finally(() => {
-          inflight = false;
-        });
-      return true;
-    },
-  };
 }

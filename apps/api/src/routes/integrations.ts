@@ -82,7 +82,7 @@ export function integrationRoutes(app: FastifyInstance, ctx: AppContext, auth: A
   };
   const statusOf = async (id: IntegrationId) => {
     const loaded = await loadIntegration(prisma, key, id);
-    return toIntegrationStatus(loaded, await extrasFor(loaded));
+    return toIntegrationStatus(loaded, { ...(await extrasFor(loaded)), checked: jobs.integrationCheck(id) });
   };
   const status = async (id: IntegrationId) => serialize(IntegrationStatusSchema, await statusOf(id));
 
@@ -315,6 +315,8 @@ export function integrationRoutes(app: FastifyInstance, ctx: AppContext, auth: A
       },
     });
     for (const job of SYNC_JOBS.instagram) await jobs.reset(job, { forgetState: true });
+    // A GET, so the admin onSend hook doesn't fire: the derived Instagram social link changed.
+    ctx.hot.invalidateConfig();
     return back(
       reply,
       warning === null

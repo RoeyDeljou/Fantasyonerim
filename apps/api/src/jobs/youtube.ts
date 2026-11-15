@@ -8,7 +8,7 @@ import { PodcastMetaSchema } from '@fant/shared';
 import type { AppContext } from '../context.js';
 import { loadIntegration } from '../integrations/store.js';
 import { readLinks } from '../news/serialize.js';
-import { runContentSource, runSummary } from './content.js';
+import { carriedSource, planContentPoll, runContentSource, runSummary } from './content.js';
 import { MINUTE, type Job } from './types.js';
 
 /** Podcast episodes compared against YouTube uploads (the feed only lists the newest 15 uploads). */
@@ -109,17 +109,38 @@ export async function hideEpisodeVideos(app: AppContext, episodes: readonly YouT
 export const youtubeJob: Job = {
   name: 'youtube',
   everyMs: 10 * MINUTE,
+  // DB-free: the channel feed (conditional GET) is compared with the last saved result first.
+  async plan(ctx) {
+    const yt = await ctx.integration('youtube');
+    if (!yt.active) return { run: false, summary: 'youtube disabled or not configured' };
+    const source = ctx.app.integrations.createYouTubeSource(
+      { channelId: yt.settings['channelId'] ?? '' },
+      ctx.app.integrationCtx,
+    );
+    const poll = await planContentPoll(ctx, yt, source, { rehost: true, stateKey: 'synced' });
+    return poll.changed
+      ? { run: true, reason: poll.reason, carry: poll.carry }
+      : { run: false, summary: poll.reason };
+  },
   async run(ctx) {
     const { app } = ctx;
     const yt = await loadIntegration(app.prisma, app.config.secretsKey, 'youtube');
     if (!yt.active) return { summary: 'youtube disabled or not configured' };
     const episodes = await recentEpisodeRefs(app);
-    const filtered = withoutEpisodeVideos(
+    // The plan's raw feed result (fingerprinted unfiltered), then the episode-video filter.
+    const raw = carriedSource(
       app.integrations.createYouTubeSource({ channelId: yt.settings['channelId'] ?? '' }, app.integrationCtx),
-      episodes,
+      ctx.carry,
+      yt.row.cursor,
+      true,
     );
+    const filtered = withoutEpisodeVideos(raw.source, episodes);
     // Thumbnails are re-hosted (served from our media CDN, not i.ytimg.com).
-    const result = await runContentSource(ctx, yt, filtered.source, { rehost: true, stateKey: 'synced' });
+    const result = await runContentSource(ctx, yt, filtered.source, {
+      rehost: true,
+      stateKey: 'synced',
+      fingerprint: raw.fingerprint,
+    });
     const hidden = await hideEpisodeVideos(app, episodes);
     const state = { ...result.state };
     const oldest = filtered.oldestAt();

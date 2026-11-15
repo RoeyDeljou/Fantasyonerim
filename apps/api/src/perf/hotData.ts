@@ -51,8 +51,13 @@ export const HOT_POLICY = {
   live: { freshMs: 10 * SECOND, staleMs: MINUTE, staleIfErrorMs: 30 * MINUTE },
   standings: { freshMs: 30 * SECOND, staleMs: 2 * MINUTE, staleIfErrorMs: 30 * MINUTE },
   fixtures: { freshMs: 10 * SECOND, staleMs: MINUTE, staleIfErrorMs: 30 * MINUTE },
-  config: { freshMs: 30 * SECOND, staleMs: MINUTE },
-  news: { freshMs: 15 * SECOND, staleMs: 45 * SECOND },
+  // DB-derived responses: every write in this process drops them at once (admin onSend hook, news jobs,
+  // invalidateCaptainCaches), so the TTL only bounds drift from writes elsewhere. Long TTLs keep app opens off the
+  // database (docs/PERFORMANCE.md "Keeping Neon asleep").
+  config: { freshMs: 5 * MINUTE, staleMs: 10 * MINUTE },
+  news: { freshMs: 10 * MINUTE, staleMs: 30 * MINUTE },
+  /** Stories also expire by time (24 h after posting): an expired one lingers at most a few minutes. */
+  stories: { freshMs: 2 * MINUTE, staleMs: 5 * MINUTE },
   /** League avatars: every avatar change / ban / account deletion drops the key, so this only bounds drift. */
   avatars: { freshMs: MINUTE, staleMs: 4 * MINUTE },
 } as const satisfies Record<string, HotPolicy>;
@@ -85,8 +90,11 @@ interface PositionIndex {
 /** Recompute now (deduped with any refresh in flight): the warmer and jobs that need current data. */
 export const REFRESH_NOW: HotPolicy = { freshMs: 0, staleMs: 0 };
 
-/** The in-memory settings copy is re-read at least this often (admin edits invalidate it at once). */
-export const SETTINGS_TTL_MS = 15 * SECOND;
+/**
+ * The in-memory settings / latest-captain-battle copies are re-read at least this often (admin edits and the
+ * community captain job invalidate them at once; the TTL only bounds drift from another process).
+ */
+export const SETTINGS_TTL_MS = 10 * MINUTE;
 /** How often the pre-warmer looks for a live fixture. */
 export const PREWARM_INTERVAL_MS = 30 * SECOND;
 /** Picks lookups in flight at once for one standings page (≤ 50 rows; FplService caches each). */
@@ -146,6 +154,7 @@ export class HotData {
   readonly cache: HotCache;
   private log: FastifyBaseLogger | null = null;
   private settingsMemo: { at: number; value: Promise<AppSettings> } | null = null;
+  private battleMemo: { at: number; value: ReturnType<typeof getLatestBattle> } | null = null;
   private timer: NodeJS.Timeout | null = null;
   private warming: Promise<string> | null = null;
   private positionIndex: PositionIndex | null = null;
@@ -178,6 +187,19 @@ export class HotData {
     return this.settingsMemo.value;
   }
 
+  /** The latest saved captain battle (memo like settings: the live recompute every 10 s never re-reads it). */
+  private latestBattle(): ReturnType<typeof getLatestBattle> {
+    const now = this.deps.clock.now().getTime();
+    if (this.battleMemo === null || now - this.battleMemo.at >= SETTINGS_TTL_MS) {
+      const value = getLatestBattle(this.deps.prisma);
+      this.battleMemo = { at: now, value };
+      value.catch(() => {
+        if (this.battleMemo?.value === value) this.battleMemo = null;
+      });
+    }
+    return this.battleMemo.value;
+  }
+
   /** The configured league, or null. */
   async leagueId(): Promise<FplLeagueId | null> {
     const settings = await this.settings();
@@ -187,6 +209,7 @@ export class HotData {
   /** After an admin edit of settings / captain battle / integrations: drop everything derived from them. */
   invalidateConfig(): void {
     this.settingsMemo = null;
+    this.battleMemo = null;
     this.positionIndex = null;
     this.newEntries = null;
     this.cache.invalidate('config');
@@ -207,7 +230,7 @@ export class HotData {
     return this.cache.get('config', HOT_POLICY.config, async () => {
       const [settings, battle, defaults] = await Promise.all([
         this.settings(),
-        getLatestBattle(this.deps.prisma),
+        this.latestBattle(),
         derivedSocials(this.deps.prisma),
       ]);
       return { build: () => serialize(PublicConfigSchema, toPublicConfig(settings, battle, defaults)) };
@@ -373,7 +396,7 @@ export class HotData {
 
   private async computeBattle(): Promise<CaptainBattle> {
     const now = this.deps.clock.now().toISOString();
-    const battle = await getLatestBattle(this.deps.prisma);
+    const battle = await this.latestBattle();
     if (!battle) return serialize(CaptainBattleSchema, { event: null, rows: [], updatedAt: now });
     const savedEvent: Gameweek = GameweekSchema.parse(battle.event);
     const event = await this.battleEvent(savedEvent);

@@ -1,23 +1,45 @@
 import { xOptions } from '../integrations/config.js';
-import { loadIntegration, describeIntegrationError } from '../integrations/store.js';
-import { runContentSource, runSummary } from './content.js';
-import { HOUR, MINUTE, type Job } from './types.js';
+import type { ContentSource } from '@fant/integrations';
+import type { AppContext } from '../context.js';
+import { loadIntegration, describeIntegrationError, type LoadedIntegration } from '../integrations/store.js';
+import { planContentPoll, runContentSource, runSummary } from './content.js';
+import { HOUR, MINUTE, type Job, type JobPlan, type JobPlanContext } from './types.js';
+
+function instagramConfig(ig: LoadedIntegration) {
+  return {
+    igUserId: ig.settings['igUserId'] ?? '',
+    accessToken: ig.secrets['accessToken'] ?? '',
+    ...(ig.settings['username'] ? { username: ig.settings['username'] } : {}),
+  };
+}
+
+/** DB-free: poll Instagram with the cached connection; the database only when the result differs from the last save. */
+async function planInstagram(
+  ctx: JobPlanContext,
+  create: (app: AppContext, ig: LoadedIntegration) => ContentSource,
+): Promise<JobPlan> {
+  const ig = await ctx.integration('instagram');
+  if (!ig.active) return { run: false, summary: 'instagram not connected' };
+  const poll = await planContentPoll(ctx, ig, create(ctx.app, ig), { rehost: true, stateKey: 'synced' });
+  return poll.changed
+    ? { run: true, reason: poll.reason, carry: poll.carry }
+    : { run: false, summary: poll.reason };
+}
+
+const postsSource = (app: AppContext, ig: LoadedIntegration) =>
+  app.integrations.createInstagramPostsSource(instagramConfig(ig), app.integrationCtx);
+const storiesSource = (app: AppContext, ig: LoadedIntegration) =>
+  app.integrations.createInstagramStoriesSource(instagramConfig(ig), app.integrationCtx);
 
 export const instagramPostsJob: Job = {
   name: 'instagram_posts',
   everyMs: 10 * MINUTE,
+  plan: (ctx) => planInstagram(ctx, postsSource),
   async run(ctx) {
     const { app } = ctx;
     const ig = await loadIntegration(app.prisma, app.config.secretsKey, 'instagram');
     if (!ig.active) return { summary: 'instagram not connected' };
-    const source = app.integrations.createInstagramPostsSource(
-      {
-        igUserId: ig.settings['igUserId'] ?? '',
-        accessToken: ig.secrets['accessToken'] ?? '',
-        ...(ig.settings['username'] ? { username: ig.settings['username'] } : {}),
-      },
-      app.integrationCtx,
-    );
+    const source = postsSource(app, ig);
     const result = await runContentSource(ctx, ig, source, { rehost: true, stateKey: 'synced' });
     return { summary: runSummary(result), state: result.state };
   },
@@ -26,18 +48,12 @@ export const instagramPostsJob: Job = {
 export const instagramStoriesJob: Job = {
   name: 'instagram_stories',
   everyMs: 5 * MINUTE,
+  plan: (ctx) => planInstagram(ctx, storiesSource),
   async run(ctx) {
     const { app } = ctx;
     const ig = await loadIntegration(app.prisma, app.config.secretsKey, 'instagram');
     if (!ig.active) return { summary: 'instagram not connected' };
-    const source = app.integrations.createInstagramStoriesSource(
-      {
-        igUserId: ig.settings['igUserId'] ?? '',
-        accessToken: ig.secrets['accessToken'] ?? '',
-        ...(ig.settings['username'] ? { username: ig.settings['username'] } : {}),
-      },
-      app.integrationCtx,
-    );
+    const source = storiesSource(app, ig);
     const result = await runContentSource(ctx, ig, source, { rehost: true, stateKey: 'synced' });
     return { summary: runSummary(result), state: result.state };
   },
@@ -65,6 +81,18 @@ export const xJob: Job = {
   // (pollEveryMinutes, default twice a day) has passed. One server-side fetch serves every user; since_id means
   // each post is read (and billed) once.
   everyMs: X_WAKE_MS,
+  // DB-free until a fetch is actually due (twice a day by default).
+  async plan(ctx) {
+    const x = await ctx.integration('x');
+    if (!x.row.enabled || !x.secrets['bearerToken'] || !x.settings['username']) {
+      return { run: false, summary: 'x disabled or not configured' };
+    }
+    const due = xNextFetchAt(ctx.state, xOptions(x.settings).pollEveryMinutes);
+    if (due !== null && ctx.now.getTime() < due.getTime() - X_EARLY_SLACK_MS) {
+      return { run: false, summary: `waiting: next X fetch at ${due.toISOString()}` };
+    }
+    return { run: true, reason: 'X fetch due' };
+  },
   async run(ctx) {
     const { app } = ctx;
     let x = await loadIntegration(app.prisma, app.config.secretsKey, 'x');

@@ -103,11 +103,29 @@ export async function backfillImageVariants(
   return result;
 }
 
+/** Memo: when a batch last found nothing (the back-fill then re-checks only while the DB is awake anyway). */
+const EMPTY_AT = 'emptyAt';
+
 export const imageVariantsJob: Job = {
   name: 'image_variants',
   everyMs: IMAGE_VARIANTS_EVERY_MS,
+  // A safety net (ingest and uploads make variants themselves): once the backlog is empty it never wakes the DB
+  // on its own; quiet hours and live matches are decided without the DB too.
+  async plan(ctx) {
+    if (isQuietHour(ctx.now, ctx.app.config.keepAlive?.quietHours))
+      return { run: false, summary: 'quiet hours' };
+    if (await liveFixtureNow(ctx.app)) return { run: false, summary: 'a fixture is live' };
+    if (typeof ctx.memo[EMPTY_AT] === 'number' && !ctx.dbAwake) {
+      return { run: false, summary: 'backlog empty (re-checked while the database is awake)' };
+    }
+    return { run: true, reason: 'back-fill batch' };
+  },
   async run(ctx) {
     const r = await backfillImageVariants(ctx.app, ctx.now, { force: ctx.force });
+    if (r.skipped === null) {
+      if (r.done + r.none + r.failed === 0) ctx.memo[EMPTY_AT] = ctx.now.getTime();
+      else delete ctx.memo[EMPTY_AT];
+    }
     return {
       summary:
         r.skipped !== null

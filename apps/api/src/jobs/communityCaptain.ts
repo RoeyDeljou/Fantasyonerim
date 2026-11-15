@@ -28,35 +28,65 @@ const ADMIN_URL = '/admin/?card=vote';
  * - a tie for the top count: `tied` (admins are pushed to break it); nobody voted: `no_votes` (admins pushed).
  * The admin push is deduped per admin, GW and kind, and retried on the next run if it failed after the commit.
  */
+/** Memo: GWs whose result is final in this process (decided, or the admins were pushed): never re-read. */
+const SETTLED = 'settled';
+
+function settledOf(memo: Record<string, unknown>): Set<number> {
+  let set = memo[SETTLED];
+  if (!(set instanceof Set)) {
+    set = new Set<number>();
+    memo[SETTLED] = set;
+  }
+  return set as Set<number>;
+}
+
+/** GWs whose deadline passed within the last 24 h (after the grace), oldest first. */
+function dueEvents(events: readonly GameweekInfo[], nowMs: number): GameweekInfo[] {
+  return events
+    .filter((e) => {
+      const age = nowMs - Date.parse(e.deadlineTime);
+      return age >= TALLY_GRACE_MS && age <= TALLY_MAX_AGE_MS;
+    })
+    .sort((a, b) => a.id - b.id);
+}
+
 export const communityCaptainJob: Job = {
   name: 'community_captain',
   everyMs: 2 * MINUTE,
+  // DB-free outside the 24 h after a deadline (cached bootstrap), and once a GW is settled.
+  async plan(ctx) {
+    const nowMs = ctx.now.getTime();
+    const settled = settledOf(ctx.memo);
+    const due = dueEvents((await ctx.app.fpl.getBootstrap()).events, nowMs).filter((e) => !settled.has(e.id));
+    return due.length === 0
+      ? { run: false, summary: 'no deadline to tally' }
+      : { run: true, reason: `GW${due.map((e) => e.id).join(', GW')} to tally` };
+  },
   async run(ctx) {
     const { app } = ctx;
     const nowMs = app.clock.now().getTime();
     const bootstrap = await app.fpl.getBootstrap();
-    const due = bootstrap.events
-      .filter((e) => {
-        const age = nowMs - Date.parse(e.deadlineTime);
-        return age >= TALLY_GRACE_MS && age <= TALLY_MAX_AGE_MS;
-      })
-      .sort((a, b) => a.id - b.id);
+    const due = dueEvents(bootstrap.events, nowMs);
     if (due.length === 0) return { summary: 'no deadline in the last 24 h' };
+    const settled = settledOf(ctx.memo);
+    const isFinal = (row: CommunityCaptainResult) => row.status === 'decided' || row.adminNotifiedAt !== null;
 
     const summary: string[] = [];
     let changed = false;
     for (const gw of due) {
       const existing = await app.prisma.communityCaptainResult.findUnique({ where: { event: gw.id } });
       if (existing !== null) {
-        if (await notifyIfNeeded(app, bootstrap.players, existing))
-          summary.push(`GW${gw.id}: admins notified`);
+        const notified = await notifyIfNeeded(app, bootstrap.players, existing);
+        if (notified) summary.push(`GW${gw.id}: admins notified`);
+        if (notified || isFinal(existing)) settled.add(gw.id);
         continue;
       }
       const row = await decide(app, gw);
       if (row === null) continue; // another instance got there first
       changed = true;
       summary.push(`GW${gw.id}: ${row.status}${row.source ? ` (${row.source})` : ''}`);
-      await notifyIfNeeded(app, bootstrap.players, row);
+      const notified = await notifyIfNeeded(app, bootstrap.players, row);
+      if (notified || isFinal(row)) settled.add(gw.id);
     }
     if (changed) invalidateCaptainCaches(app);
     return { summary: summary.length === 0 ? 'nothing to tally' : summary.join('; ') };

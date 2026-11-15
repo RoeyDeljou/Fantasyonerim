@@ -100,6 +100,17 @@ interface PlannedAlert {
 export const liveAlertsJob: Job = {
   name: 'live_alerts',
   everyMs: LIVE_ALERTS_EVERY_MS,
+  // DB-free (two cached FPL reads) unless a fixture is live or the final pass after one is pending.
+  async plan(ctx) {
+    const stored = readLiveState(ctx.state['live']);
+    const gw = (await ctx.app.fpl.getBootstrap()).currentEvent;
+    if (gw === null) return { run: false, summary: 'no current gameweek' };
+    const live = (await ctx.app.fpl.getFixtures(gw)).some((f) => f.status === 'live');
+    if (!live && !(stored !== null && stored.gw === gw && stored.wasLive)) {
+      return { run: false, summary: `GW${gw}: no live fixture` };
+    }
+    return { run: true, reason: live ? `GW${gw}: live` : `GW${gw}: final pass` };
+  },
   async run(ctx) {
     const { app } = ctx;
     const stored = readLiveState(ctx.state['live']);

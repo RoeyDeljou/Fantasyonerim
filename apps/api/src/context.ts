@@ -4,6 +4,7 @@ import type { IntegrationContext } from '@fant/integrations';
 import type { IntegrationFactories } from './integrations/factories.js';
 import type { MediaUrlMapper } from './media/publicUrl.js';
 import type { MediaStore } from './media/store.js';
+import type { DbActivity } from './perf/dbActivity.js';
 import type { HotData } from './perf/hotData.js';
 import type { PushProvider } from './push/provider.js';
 import type { PushBatchRecorder } from './push/stats.js';
@@ -69,9 +70,8 @@ export interface AppConfig {
    */
   mediaPublicBaseUrl?: string | null;
   /**
-   * Neon keep-alive: GET /health also runs `SELECT 1` (at most once a minute) so the database doesn't suspend.
-   * `quietHours` [start, end) in Asia/Jerusalem local hours skips that ping (and slows the scheduler) so Neon
-   * can suspend at night; null = always on. See docs/PERFORMANCE.md for the compute-hours maths.
+   * `quietHours` [start, end) in Asia/Jerusalem local hours: due jobs run at most every 30 min (and the image
+   * back-fill not at all). null = no quiet hours. Nothing keeps the database awake (docs/PERFORMANCE.md).
    */
   keepAlive?: { quietHours: readonly [number, number] | null };
 }
@@ -97,6 +97,8 @@ export interface AppContext {
   mediaUrl: MediaUrlMapper;
   /** Shared precomputed hot responses (live league, fixtures, captain battle, config, news) + settings memo. */
   hot: HotData;
+  /** Counts the app's queries and estimates Neon's awake time; jobs batch optional DB work while it is awake. */
+  db: DbActivity;
   /** Evicts a user's cached sessions after a change to the user or their sessions (set by buildApp). */
   forgetUser(userId: string): void;
 }

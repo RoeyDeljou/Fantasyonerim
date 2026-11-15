@@ -16,9 +16,42 @@ import { deleteWithVariants } from '../media/variants.js';
 export const REMINDER_MAX_LATENESS_MS = 30 * MINUTE;
 export const SUMMARY_FPL_CONCURRENCY = 5;
 
+/** Reminder offsets due now for the next deadline (fire time passed, not more than 30 min late, before it). */
+function dueOffsets(offsets: readonly number[], deadlineMs: number, nowMs: number): number[] {
+  return offsets.filter((offset) => {
+    const fireAt = deadlineMs - offset * MINUTE;
+    return nowMs >= fireAt && nowMs < deadlineMs && nowMs - fireAt <= REMINDER_MAX_LATENESS_MS;
+  });
+}
+
+/** Memo: `${event}:${offset}` reminders this process already sent (the dedupe log is the real guard). */
+function sentReminders(memo: Record<string, unknown>): Set<string> {
+  let set = memo['sent'];
+  if (!(set instanceof Set)) {
+    set = new Set<string>();
+    memo['sent'] = set;
+  }
+  return set as Set<string>;
+}
+
 export const deadlineRemindersJob: Job = {
   name: 'deadline_reminders',
   everyMs: 5 * MINUTE,
+  // DB-free unless a reminder's fire time has been crossed (cached bootstrap + cached settings).
+  async plan(ctx) {
+    const nowMs = ctx.now.getTime();
+    const next = nextDeadline((await ctx.app.fpl.getBootstrap()).events, nowMs);
+    if (next === null) return { run: false, summary: 'no upcoming deadline' };
+    const sent = sentReminders(ctx.memo);
+    const due = dueOffsets(
+      (await ctx.settings()).deadlineReminderMinutes,
+      Date.parse(next.deadlineTime),
+      nowMs,
+    ).filter((offset) => !sent.has(`${next.event}:${offset}`));
+    return due.length === 0
+      ? { run: false, summary: `GW${next.event}: nothing due` }
+      : { run: true, reason: `GW${next.event}: ${due.join(', ')} min reminder due` };
+  },
   async run(ctx) {
     const { app } = ctx;
     const nowMs = app.clock.now().getTime();
@@ -28,9 +61,8 @@ export const deadlineRemindersJob: Job = {
     const deadlineMs = Date.parse(next.deadlineTime);
     const settings = await getSettings(app.prisma);
     const sent: string[] = [];
-    for (const offset of settings.deadlineReminderMinutes) {
-      const fireAt = deadlineMs - offset * MINUTE;
-      if (nowMs < fireAt || nowMs >= deadlineMs || nowMs - fireAt > REMINDER_MAX_LATENESS_MS) continue;
+    const remembered = sentReminders(ctx.memo);
+    for (const offset of dueOffsets(settings.deadlineReminderMinutes, deadlineMs, nowMs)) {
       const ttlSec = Math.max(60, Math.min(3600, Math.floor((deadlineMs - nowMs) / 1000)));
       const result = await notify(app, {
         kind: 'deadline',
@@ -47,6 +79,7 @@ export const deadlineRemindersJob: Job = {
         }),
       });
       sent.push(`${offset}m → ${result.recipients}`);
+      remembered.add(`${next.event}:${offset}`);
     }
     return {
       summary: sent.length === 0 ? `GW${next.event}: nothing due` : `GW${next.event}: ${sent.join(', ')}`,
@@ -60,9 +93,48 @@ export const deadlineRemindersJob: Job = {
  * of 3+, into the top 3 / top 10. The league is read in full (all standings pages); if that fails, everyone
  * gets the plain summary.
  */
+/** Users whose picks failed are retried with backoff (30 min, 1 h, 2 h … at most 12 h), not every 30 minutes. */
+export const SUMMARY_RETRY_BASE_MS = 30 * MINUTE;
+export const SUMMARY_RETRY_MAX_MS = 12 * HOUR;
+
+function summaryRetryOf(
+  state: Readonly<Record<string, unknown>>,
+): { gw: number; attempts: number; nextAt: number } | null {
+  const raw = state['summaryRetry'];
+  if (typeof raw !== 'object' || raw === null) return null;
+  const { gw, attempts, nextAt } = raw as Record<string, unknown>;
+  return typeof gw === 'number' && typeof attempts === 'number' && typeof nextAt === 'number'
+    ? { gw, attempts, nextAt }
+    : null;
+}
+
+function nextSummaryRetry(state: Readonly<Record<string, unknown>>, gw: number, nowMs: number) {
+  const previous = summaryRetryOf(state);
+  const attempts = previous !== null && previous.gw === gw ? previous.attempts + 1 : 1;
+  const wait = Math.min(SUMMARY_RETRY_MAX_MS, SUMMARY_RETRY_BASE_MS * 2 ** (attempts - 1));
+  return { gw, attempts, nextAt: nowMs + wait };
+}
+
 export const gameweekSummaryJob: Job = {
   name: 'gameweek_summary',
   everyMs: 30 * MINUTE,
+  // DB-free until FPL makes the current GW official and it hasn't been summarized yet.
+  async plan(ctx) {
+    const event = (await ctx.app.fpl.getBootstrap()).events.find(
+      (e) => e.isCurrent && e.finished && e.dataChecked,
+    );
+    if (event === undefined) return { run: false, summary: 'no finished gameweek to summarize' };
+    if (ctx.state['summarizedGw'] === event.id)
+      return { run: false, summary: `GW${event.id} already summarized` };
+    const retry = summaryRetryOf(ctx.state);
+    if (retry !== null && retry.gw === event.id && ctx.now.getTime() < retry.nextAt) {
+      return {
+        run: false,
+        summary: `GW${event.id}: retrying failed users at ${new Date(retry.nextAt).toISOString()}`,
+      };
+    }
+    return { run: true, reason: `GW${event.id} to summarize` };
+  },
   async run(ctx) {
     const { app } = ctx;
     const bootstrap = await app.fpl.getBootstrap();
@@ -139,7 +211,10 @@ export const gameweekSummaryJob: Job = {
       summary: `GW${event.id}: ${result.recipients} sent (${moments.size} with league moments${
         highlights === null ? ', league unavailable' : ''
       }), ${failures} failed`,
-      state: failures === 0 ? { ...ctx.state, summarizedGw: event.id } : ctx.state,
+      state:
+        failures === 0
+          ? { ...ctx.state, summarizedGw: event.id, summaryRetry: null }
+          : { ...ctx.state, summaryRetry: nextSummaryRetry(ctx.state, event.id, ctx.now.getTime()) },
     };
   },
 };
@@ -167,9 +242,34 @@ async function leagueHighlightsByEntry(ctx: JobRunContext): Promise<Map<number, 
 
 export const STORY_MEDIA_RETENTION_MS = 48 * HOUR;
 
+/** Notification dedupe rows older than this are deleted: every dedupe key is about a GW / item long gone by then. */
+export const NOTIFICATION_LOG_RETENTION_MS = 90 * 24 * HOUR;
+export const RETENTION_BATCH = 5000;
+const RETENTION_MAX_BATCHES = 20;
+
+/** Deletes rows in bounded batches (one short statement each: no long lock, no compute spike). */
+async function deleteInBatches(
+  app: AppContext,
+  table: 'NotificationLog' | 'Session',
+  column: string,
+  before: Date,
+) {
+  let total = 0;
+  for (let i = 0; i < RETENTION_MAX_BATCHES; i += 1) {
+    const sql = `DELETE FROM "${table}" WHERE ctid IN (SELECT ctid FROM "${table}" WHERE "${column}" < $1 LIMIT ${RETENTION_BATCH})`;
+    const n = await app.prisma.$executeRawUnsafe(sql, before);
+    total += n;
+    if (n < RETENTION_BATCH) break;
+  }
+  return total;
+}
+
 export const cleanupJob: Job = {
   name: 'cleanup',
+  // Housekeeping only (expired stories are already hidden at read time): hourly while the database is awake for
+  // other reasons, otherwise once a day, so it never wakes Neon on its own more than that.
   everyMs: HOUR,
+  idleEveryMs: 24 * HOUR,
   async run(ctx) {
     const { app } = ctx;
     const now = app.clock.now();
@@ -205,8 +305,16 @@ export const cleanupJob: Job = {
     const removedImages = await purgeDeletedPostImages(app.prisma, app.media);
     // Files whose rows are already gone (deleted accounts) and whose first delete attempt failed.
     const pending = await purgePendingMediaDeletes(app.prisma, app.media);
+    // Retention: the tables that grow with every user and push (1 GB storage cap).
+    const logs = await deleteInBatches(
+      app,
+      'NotificationLog',
+      'createdAt',
+      new Date(now.getTime() - NOTIFICATION_LOG_RETENTION_MS),
+    );
+    const sessions = await deleteInBatches(app, 'Session', 'expiresAt', now);
     return {
-      summary: `${hidden.count} stories hidden, ${deleted} media files deleted, ${uploads} unused uploads deleted, ${removedImages} deleted-post images purged, ${pending} pending files deleted`,
+      summary: `${hidden.count} stories hidden, ${deleted} media files deleted, ${uploads} unused uploads deleted, ${removedImages} deleted-post images purged, ${pending} pending files deleted, ${logs} old notification logs and ${sessions} expired sessions deleted`,
     };
   },
 };

@@ -34,11 +34,6 @@ let app: FastifyInstance;
 let fpl: FakeFplService;
 let clock: TestClock;
 
-async function until(check: () => boolean, ms = 3000): Promise<void> {
-  const end = Date.now() + ms;
-  while (!check() && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
-}
-
 async function boot(options: TestAppOptions = {}) {
   ({ app, fpl, clock } = await buildTestApp(prisma, options));
 }
@@ -382,34 +377,25 @@ describe('sessions + rate limits under polling', () => {
   });
 });
 
-describe('Neon keep-alive + quiet hours', () => {
-  it('GET /health touches the database at most once a minute, never during quiet hours', async () => {
-    const pings: number[] = [];
+describe('Neon may sleep + quiet hours', () => {
+  it('GET /health never touches the database (no keep-alive)', async () => {
+    const queries: string[] = [];
     const counting = new PrismaClient({
       datasourceUrl: TEST_DATABASE_URL,
       log: [{ emit: 'event', level: 'query' }],
     });
-    counting.$on('query', (e) => {
-      if (e.query.trim() === 'SELECT 1') pings.push(1);
-    });
+    counting.$on('query', (e) => queries.push(e.query));
     await app.close();
-    // 2026-10-25T12:00Z = 15:00 in Israel: awake hours.
     ({ app, fpl, clock } = await buildTestApp(counting, { config: { keepAlive: { quietHours: [2, 7] } } }));
     try {
-      expect((await get('/health')).json()).toEqual({ ok: true });
-      await get('/health');
-      await until(() => pings.length >= 1);
+      const before = app.db.snapshot().queries;
+      for (let i = 0; i < 5; i += 1) {
+        expect((await get('/health')).json()).toEqual({ ok: true });
+        clock.advance(61_000);
+      }
       await new Promise((r) => setTimeout(r, 50));
-      expect(pings).toHaveLength(1);
-      clock.advance(61_000);
-      await get('/health');
-      await until(() => pings.length >= 2);
-      expect(pings).toHaveLength(2);
-      // 01:30 UTC = 04:30 in Israel (winter): quiet.
-      clock.advance(Date.parse('2026-10-26T01:30:00Z') - clock.now().getTime());
-      await get('/health');
-      await new Promise((r) => setTimeout(r, 50));
-      expect(pings).toHaveLength(2);
+      expect(queries).toEqual([]);
+      expect(app.db.snapshot().queries).toBe(before);
       expect((await get('/health')).headers['cache-control']).toBe('no-store');
     } finally {
       await app.close();

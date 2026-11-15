@@ -45,8 +45,8 @@ export const EnvSchema = z
     /** Prisma connection pool size (`connection_limit`); an explicit one in DATABASE_URL wins. */
     DB_POOL_SIZE: z.coerce.number().int().min(1).max(50).default(5),
     /**
-     * Israel-time hours ("HH-HH") when the database may sleep: /health skips its `SELECT 1` keep-alive and jobs
-     * run at most every 30 min. "off" = always on. Default 02–07 (docs/PERFORMANCE.md has the Neon maths).
+     * Israel-time hours ("HH-HH") when due jobs run at most every 30 min (nothing keeps the database awake at any
+     * hour any more). "off" = no quiet hours. Default 02–07 (docs/PERFORMANCE.md "Keeping Neon asleep").
      */
     DB_QUIET_HOURS: z
       .string()
