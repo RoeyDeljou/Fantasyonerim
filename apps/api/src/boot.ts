@@ -128,7 +128,7 @@ export async function startServer({
   if (admin === 'created')
     app.log.info({ username: env.ADMIN_BOOTSTRAP_USERNAME }, 'bootstrap admin created');
 
-  const scheduler = new JobScheduler(app.jobs);
+  const scheduler = new JobScheduler(app.jobs, app.log);
   const monitor = startRuntimeMonitor(app.log, () => ({ hot: app.hot.cache.size }));
 
   const shutdown = async (signal: string): Promise<void> => {

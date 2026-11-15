@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { IntegrationListSchema } from '@fant/shared';
 import { encryptSecrets } from '../src/integrations/store.js';
+import { JobScheduler, TICK_ERROR_LOG_EVERY_MS } from '../src/jobs/runner.js';
 import { devSecretsKey } from '../src/secrets.js';
 import {
   FakePushProvider,
@@ -225,6 +226,33 @@ describe('content jobs write only when the upstream changed', () => {
     ).toBeNull();
   });
 
+  it('podcast: a source that fails before its first sync records the failure once, then a new error / recovery', async () => {
+    fakes.podcast.error = new Error('boom');
+    await app.jobs.runDue(); // boot: first sync attempt fails
+    await ticks(10 * MINUTE);
+    const row = await prisma.integrationConfig.findUniqueOrThrow({ where: { id: 'podcast_rss' } });
+    expect(row.lastError).toContain('boom');
+    expect(row.initialSyncDone).toBe(false);
+    // The same failure on every poll: no query (the podcast polls every 5 min).
+    const polls = fakes.podcast.cursors.length;
+    expect(await ticks(HOUR)).toBe(0);
+    expect(fakes.podcast.cursors.length - polls).toBe(12);
+    // A different error is recorded.
+    fakes.podcast.error = new Error('bang');
+    expect(await ticks(5 * MINUTE)).toBeGreaterThan(0);
+    expect(
+      (await prisma.integrationConfig.findUniqueOrThrow({ where: { id: 'podcast_rss' } })).lastError,
+    ).toContain('bang');
+    expect(await ticks(HOUR)).toBe(0);
+    // Recovery: the first sync happens and the error clears.
+    fakes.podcast.error = null;
+    expect(await ticks(5 * MINUTE)).toBeGreaterThan(0);
+    const after = await prisma.integrationConfig.findUniqueOrThrow({ where: { id: 'podcast_rss' } });
+    expect(after.lastError).toBeNull();
+    expect(after.initialSyncDone).toBe(true);
+    expect(await prisma.newsItem.count({ where: { source: 'podcast' } })).toBe(1);
+  });
+
   it('instagram: the same posts every poll (rotating CDN URLs) cost no query; a new post is imported', async () => {
     await connectInstagram();
     const pAt = new Date(clock.now().getTime() - HOUR);
@@ -338,9 +366,71 @@ describe('time-driven jobs touch the database only around their action times', (
     expect(await ticks(HOUR)).toBe(0);
   });
 
+  it('live alerts keep a 2-minute cadence while live (their own queries never make them run early)', async () => {
+    await app.jobs.runDue();
+    await ticks(10 * MINUTE);
+    fpl.fixtures = [makeFixture(100, 11, 'live')];
+    const runs: number[] = [];
+    const end = clock.now().getTime() + HOUR;
+    while (clock.now().getTime() < end) {
+      clock.advance(30_000);
+      if ((await app.jobs.runDue()).includes('live_alerts')) runs.push(clock.now().getTime());
+    }
+    expect(runs).toHaveLength(30);
+    for (let i = 1; i < runs.length; i += 1) expect((runs[i] ?? 0) - (runs[i - 1] ?? 0)).toBe(2 * MINUTE);
+  });
+
+  it('GW summary: failed users are retried with backoff capped at 2 h', async () => {
+    // A fan with a push device but no GW11 picks: their summary fails every time.
+    const user = await registerUser(app, fpl, 601);
+    await subscribe(app, user.token, 'https://push.test/601');
+    const runs: number[] = [];
+    const end = clock.now().getTime() + 12 * HOUR;
+    while (clock.now().getTime() < end) {
+      if ((await app.jobs.runDue()).includes('gameweek_summary')) {
+        const lease = await prisma.jobLease.findUnique({ where: { name: 'gameweek_summary' } });
+        const at = lease?.lastRunAt?.getTime();
+        if (at !== undefined && at !== runs.at(-1)) runs.push(at);
+      }
+      clock.advance(30_000);
+    }
+    const gaps = runs.slice(1).map((t, i) => (t - (runs[i] ?? 0)) / MINUTE);
+    expect(gaps.slice(0, 2)).toEqual([30, 60]);
+    expect(gaps.length).toBeGreaterThanOrEqual(6);
+    for (const gap of gaps.slice(2)) expect(gap).toBe(120);
+  });
+
   it('roundup, GW summary, cleanup, image back-fill: an idle afternoon costs no query', async () => {
     await app.jobs.runDue();
     await ticks(10 * MINUTE);
     expect(await ticks(HOUR)).toBe(0);
+  });
+});
+
+describe('job scheduler', () => {
+  it('logs tick failures (e.g. database unreachable), once per distinct message per 10 min', async () => {
+    let now = 0;
+    let error = new Error('db unreachable');
+    const logged: unknown[] = [];
+    const scheduler = new JobScheduler(
+      {
+        runDue: () => Promise.reject(error),
+      },
+      { error: (obj: unknown) => void logged.push(obj) },
+      30_000,
+      () => now,
+    );
+    for (let i = 0; i < 20; i += 1) {
+      await scheduler.tick();
+      now += 30_000;
+    }
+    expect(logged).toHaveLength(1);
+    error = new Error('other failure');
+    await scheduler.tick();
+    expect(logged).toHaveLength(2);
+    error = new Error('db unreachable');
+    now = TICK_ERROR_LOG_EVERY_MS + 1;
+    await scheduler.tick();
+    expect(logged).toHaveLength(3);
   });
 });

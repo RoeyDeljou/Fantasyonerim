@@ -93,9 +93,9 @@ export const deadlineRemindersJob: Job = {
  * of 3+, into the top 3 / top 10. The league is read in full (all standings pages); if that fails, everyone
  * gets the plain summary.
  */
-/** Users whose picks failed are retried with backoff (30 min, 1 h, 2 h … at most 12 h), not every 30 minutes. */
+/** Users whose picks failed are retried with backoff (30 min, 1 h, then every 2 h), not every 30 minutes. */
 export const SUMMARY_RETRY_BASE_MS = 30 * MINUTE;
-export const SUMMARY_RETRY_MAX_MS = 12 * HOUR;
+export const SUMMARY_RETRY_MAX_MS = 2 * HOUR;
 
 function summaryRetryOf(
   state: Readonly<Record<string, unknown>>,

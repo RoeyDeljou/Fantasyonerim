@@ -80,7 +80,7 @@ export async function planContentPoll(
     const note = describeIntegrationError(id, err);
     ctx.checked(id, { ok: false, error: note });
     const carry: ContentCarry = { cursor: stored, fetched: null, error: err, fingerprint: null };
-    if (!firstSync && note === integration.row.lastError) {
+    if (note === integration.row.lastError) {
       ctx.log.warn({ integration: id, error: note }, 'integration poll failed (unchanged)');
       return { changed: false, reason: 'same failure as last time', carry };
     }

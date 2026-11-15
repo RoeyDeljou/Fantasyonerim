@@ -46,6 +46,8 @@ export const HEARTBEAT_EVERY_MS = HOUR;
 export const CACHE_REFRESH_AWAKE_MS = 10 * MINUTE;
 /** ...or unconditionally after this long (another instance may have changed them). */
 export const CACHE_MAX_AGE_MS = 12 * HOUR;
+/** A scheduler tick failure (e.g. database unreachable) is logged at most this often per distinct message. */
+export const TICK_ERROR_LOG_EVERY_MS = 10 * MINUTE;
 
 interface JobMemory {
   /** Last run or DB-free check (ms). null = never / reset: due now. */
@@ -218,7 +220,10 @@ export class JobRunner {
   private intervalOf(job: Job, now: number): number {
     const awake = this.awake(now);
     const every = job.idleEveryMs !== undefined && !awake ? job.idleEveryMs : job.everyMs;
-    return Math.max(0, every - (awake ? EARLY_WHILE_AWAKE_MS : 0));
+    // A short-period job's own queries keep the DB "awake", so running it early would compound (a 2-min job
+    // would run every minute): only jobs with an interval well above the early window ride along with bursts.
+    const early = awake && every > 2 * EARLY_WHILE_AWAKE_MS ? EARLY_WHILE_AWAKE_MS : 0;
+    return Math.max(0, every - early);
   }
 
   private isDue(job: Job, m: JobMemory, now: number): boolean {
@@ -428,9 +433,14 @@ export class JobScheduler {
   private timers: NodeJS.Timeout[] = [];
   private running = false;
 
+  /** Last time each distinct tick error message was logged (ms), so a database outage doesn't flood the logs. */
+  private readonly loggedErrors = new Map<string, number>();
+
   constructor(
-    private readonly runner: JobRunner,
+    private readonly runner: Pick<JobRunner, 'runDue'>,
+    private readonly log: Pick<FastifyBaseLogger, 'error'>,
     private readonly intervalMs = 30_000,
+    private readonly now: () => number = Date.now,
   ) {}
 
   start(firstDelayMs = 5_000): void {
@@ -442,17 +452,30 @@ export class JobScheduler {
     this.timers = [first, every];
   }
 
-  /** Never overlaps itself; errors are logged by the runner. */
+  /** Never overlaps itself; job failures are logged by the runner, anything else here. */
   async tick(): Promise<void> {
     if (this.running) return;
     this.running = true;
     try {
       await this.runner.runDue();
-    } catch {
+    } catch (err) {
       // e.g. the lease rows couldn't be loaded (database briefly unreachable): retried on the next tick.
+      this.logTickError(err);
     } finally {
       this.running = false;
     }
+  }
+
+  private logTickError(err: unknown): void {
+    const key = errorText(err);
+    const now = this.now();
+    const last = this.loggedErrors.get(key);
+    if (last !== undefined && now - last < TICK_ERROR_LOG_EVERY_MS) return;
+    for (const [k, at] of this.loggedErrors) {
+      if (now - at >= TICK_ERROR_LOG_EVERY_MS) this.loggedErrors.delete(k);
+    }
+    this.loggedErrors.set(key, now);
+    this.log.error({ err }, 'job scheduler tick failed (retried on the next tick)');
   }
 
   stop(): void {
