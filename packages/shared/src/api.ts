@@ -212,7 +212,7 @@ export const DEFAULT_ASSISTANT_CONFIG: AssistantConfig = {
   visibility: 'admins',
   scriptUrl: null,
   partnerId: null,
-  fallbackUrl: 'https://www.fpl-lad.com/',
+  fallbackUrl: 'https://www.fpl-lad.com/chat',
   testerEntryIds: ASSISTANT_DEFAULT_TESTER_ENTRY_IDS.map((id) => FplEntryIdSchema.parse(id)),
 };
 
