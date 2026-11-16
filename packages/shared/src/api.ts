@@ -173,7 +173,13 @@ export function isAllowedAssistantScriptUrl(url: string): boolean {
   return ASSISTANT_SCRIPT_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
 }
 
-/** Who sees the "Ask Alfie" launcher: nobody, admins only (to test before launch), or every fan and guest. */
+/**
+ * The default testers of the "Ask Alfie" widget (FPL Team IDs) while it is admins-only: Roey Deljou's
+ * "Amnon TiKinski FC" (28060), the owner's own fan account. Used when no tester list was saved yet.
+ */
+export const ASSISTANT_DEFAULT_TESTER_ENTRY_IDS: readonly number[] = [28060];
+
+/** Who sees the "Ask Alfie" launcher: nobody, admins (+ the listed testers) only, to test before launch, or every fan and guest. */
 export const AssistantVisibilitySchema = z.enum(['off', 'admins', 'everyone']);
 export type AssistantVisibility = z.infer<typeof AssistantVisibilitySchema>;
 
@@ -192,6 +198,13 @@ export const AssistantConfigSchema = z.object({
   partnerId: z.nullable(z.string().check(z.trim(), z.minLength(1), z.maxLength(80))),
   /** Opened in the in-app panel when no script is set (and behind the panel's "open in a new tab" link). */
   fallbackUrl: HttpsUrlSchema,
+  /**
+   * Testers: fans (by FPL Team ID) who also see the launcher while `visibility` is 'admins', to try it with a real
+   * registered team before launch. Ignored for 'off' (nobody) and 'everyone'. Defaults to none for older stored values.
+   */
+  testerEntryIds: z._default(z.array(FplEntryIdSchema).check(z.maxLength(50)), () =>
+    ASSISTANT_DEFAULT_TESTER_ENTRY_IDS.map((id) => FplEntryIdSchema.parse(id)),
+  ),
 });
 export type AssistantConfig = z.infer<typeof AssistantConfigSchema>;
 
@@ -200,6 +213,7 @@ export const DEFAULT_ASSISTANT_CONFIG: AssistantConfig = {
   scriptUrl: null,
   partnerId: null,
   fallbackUrl: 'https://www.fpl-lad.com/',
+  testerEntryIds: ASSISTANT_DEFAULT_TESTER_ENTRY_IDS.map((id) => FplEntryIdSchema.parse(id)),
 };
 
 export const PublicConfigSchema = z.object({

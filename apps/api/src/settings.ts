@@ -97,9 +97,12 @@ function socialsOf(s: AppSettings, defaults: Socials): Socials {
  * ASSISTANT_SCRIPT_HOSTS, also falls back rather than failing the response).
  */
 export function assistantOf(s: Pick<AppSettings, 'assistant'>): AssistantConfig {
-  if (s.assistant === null) return { ...DEFAULT_ASSISTANT_CONFIG };
-  const parsed = AssistantConfigSchema.safeParse(s.assistant);
-  return parsed.success ? parsed.data : { ...DEFAULT_ASSISTANT_CONFIG };
+  // A stored config without `testerEntryIds` (saved before the field existed) parses with the contract's default
+  // testers; an explicitly saved [] stays [].
+  const parsed = s.assistant === null ? null : AssistantConfigSchema.safeParse(s.assistant);
+  if (parsed?.success) return parsed.data;
+  // Fresh array so no caller can mutate the shared defaults.
+  return { ...DEFAULT_ASSISTANT_CONFIG, testerEntryIds: [...DEFAULT_ASSISTANT_CONFIG.testerEntryIds] };
 }
 
 export function toAdminSettings(s: AppSettings, defaults: Socials = NO_SOCIALS): AdminSettings {
