@@ -17,7 +17,7 @@ export interface AssistantContext {
 /** Sent until FPL Lad assigns us a partner id (Admin → Settings → Ask Alfie). */
 export const DEFAULT_PARTNER = 'fantasyonerim';
 
-/** FPL Lad's round badge (512×512 transparent PNG; the badge is the circle) for the launcher and panel header. */
+/** FPL Lad's round badge (160×160 transparent PNG; the badge is the circle) for the launcher and panel header. */
 export const FPL_LAD_LOGO = '/brand/fpl-lad-badge.png';
 
 export function partnerOf(partnerId: string | null | undefined): string {
