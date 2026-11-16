@@ -198,7 +198,9 @@ const NO_SCOPE: RefreshScope = [];
 let alfieLate = false;
 function AlfieSlot() {
   const { status } = useSession();
-  const shown = assistantFor(useConfig().data?.assistant, useMe(status === 'signedIn').data?.role);
+  const me = useMe(status === 'signedIn').data;
+  // Guests are never testers: only a signed-in viewer's role / Team ID counts.
+  const shown = assistantFor(useConfig().data?.assistant, status === 'signedIn' ? me : null);
   // Each tab renders its own shell: only the app's first screen waits, later tabs show it straight away.
   const [late, setLate] = useState(alfieLate);
   useEffect(() => {

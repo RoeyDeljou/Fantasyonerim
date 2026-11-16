@@ -1,9 +1,15 @@
-import { AssistantConfigSchema, HttpsUrlSchema } from '@fant/shared';
-import type { AssistantConfig, AssistantVisibility } from '@fant/shared';
+import { AssistantConfigSchema, FplEntryIdSchema, HttpsUrlSchema } from '@fant/shared';
+import type { AssistantConfig, AssistantVisibility, FplEntryId } from '@fant/shared';
 
 /** Admin → Settings → "Ask Alfie": the form's text fields ⇄ an `AssistantConfig` (screens/admin/AssistantCard.tsx). */
 export type AssistantField = 'scriptUrl' | 'partnerId' | 'fallbackUrl';
-export type AssistantDraft = { visibility: AssistantVisibility } & Record<AssistantField, string>;
+export type AssistantDraft = {
+  visibility: AssistantVisibility;
+  testerEntryIds: readonly FplEntryId[];
+} & Record<AssistantField, string>;
+
+/** At most this many testers (the shared schema's own cap). */
+export const MAX_ASSISTANT_TESTERS = 50;
 
 export function draftOf(c: AssistantConfig): AssistantDraft {
   return {
@@ -11,7 +17,22 @@ export function draftOf(c: AssistantConfig): AssistantDraft {
     scriptUrl: c.scriptUrl ?? '',
     partnerId: c.partnerId ?? '',
     fallbackUrl: c.fallbackUrl,
+    testerEntryIds: c.testerEntryIds,
   };
+}
+
+export type AddTesterResult =
+  { ok: true; list: FplEntryId[] } | { ok: false; error: 'invalid' | 'duplicate' | 'full' };
+
+/** The "Testers" input → the list with one more FPL Team ID (a positive integer, no duplicates, at most 50). */
+export function addTester(list: readonly FplEntryId[], input: string): AddTesterResult {
+  const raw = input.trim();
+  if (!/^\d+$/.test(raw)) return { ok: false, error: 'invalid' };
+  const parsed = FplEntryIdSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: 'invalid' };
+  if (list.includes(parsed.data)) return { ok: false, error: 'duplicate' };
+  if (list.length >= MAX_ASSISTANT_TESTERS) return { ok: false, error: 'full' };
+  return { ok: true, list: [...list, parsed.data] };
 }
 
 /** The form → a config, validated with the shared schema (the API's own rule), or the fields in error. */
@@ -35,6 +56,7 @@ export function parseAssistantDraft(
     scriptUrl: script.data,
     partnerId: partner.data,
     fallbackUrl: fallback.data,
+    testerEntryIds: [...d.testerEntryIds],
   });
   return parsed.success ? { ok: true, config: parsed.data } : { ok: false, errors: { fallbackUrl: true } };
 }

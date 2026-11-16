@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_ASSISTANT_CONFIG } from '@fant/shared';
-import { draftOf, parseAssistantDraft } from './draft';
+import { DEFAULT_ASSISTANT_CONFIG, FplEntryIdSchema } from '@fant/shared';
+import { MAX_ASSISTANT_TESTERS, addTester, draftOf, parseAssistantDraft } from './draft';
 
 const base = draftOf(DEFAULT_ASSISTANT_CONFIG);
 
@@ -22,7 +22,21 @@ describe('parseAssistantDraft (Admin → Settings → Ask Alfie)', () => {
         scriptUrl: 'https://cdn.fpl-lad.com/embed.js',
         partnerId: 'fant',
         fallbackUrl: 'https://www.fpl-lad.com/',
+        testerEntryIds: [28060],
       },
+    });
+  });
+  it('keeps the tester list as edited (an empty list stays empty — no testers)', () => {
+    const one = addTester([], '77');
+    expect(one.ok).toBe(true);
+    if (!one.ok) return;
+    expect(parseAssistantDraft({ ...base, testerEntryIds: one.list })).toEqual({
+      ok: true,
+      config: { ...DEFAULT_ASSISTANT_CONFIG, testerEntryIds: [77] },
+    });
+    expect(parseAssistantDraft({ ...base, testerEntryIds: [] })).toEqual({
+      ok: true,
+      config: { ...DEFAULT_ASSISTANT_CONFIG, testerEntryIds: [] },
     });
   });
   it('rejects a script on another host, over http, or a look-alike domain', () => {
@@ -44,5 +58,24 @@ describe('parseAssistantDraft (Admin → Settings → Ask Alfie)', () => {
       ok: false,
       errors: { partnerId: true },
     });
+  });
+});
+
+describe('addTester (Ask Alfie → Testers)', () => {
+  const ids = (...n: number[]) => n.map((x) => FplEntryIdSchema.parse(x));
+  it('adds a positive integer Team ID (trimmed)', () => {
+    expect(addTester(ids(28060), ' 123 ')).toEqual({ ok: true, list: ids(28060, 123) });
+  });
+  it('rejects non-integers, zero, negatives, decimals and empty input', () => {
+    for (const input of ['', ' ', 'abc', '0', '-5', '1.5', '1e3', '123456789']) {
+      expect(addTester([], input)).toEqual({ ok: false, error: 'invalid' });
+    }
+  });
+  it('rejects a duplicate', () => {
+    expect(addTester(ids(28060), '28060')).toEqual({ ok: false, error: 'duplicate' });
+  });
+  it('caps the list at 50', () => {
+    const full = ids(...Array.from({ length: MAX_ASSISTANT_TESTERS }, (_, i) => i + 1));
+    expect(addTester(full, '999')).toEqual({ ok: false, error: 'full' });
   });
 });

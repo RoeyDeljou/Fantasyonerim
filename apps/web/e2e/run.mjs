@@ -6356,6 +6356,7 @@ const alfieConfig = (over = {}) => ({
   scriptUrl: null,
   partnerId: null,
   fallbackUrl: 'https://www.fpl-lad.com/',
+  testerEntryIds: [],
   ...over,
 });
 /** The fake FPL Lad widget, as we expect them to ship it (docs/INTEGRATIONS.md): records every call. */
@@ -6453,6 +6454,11 @@ async function alfieJourneys(browser, userPage) {
     })
   ).json();
   const adminToken = login.token;
+  const fanMe = await (
+    await globalThis.fetch(`${API}/v1/me`, { headers: { authorization: `Bearer ${fanToken}` } })
+  ).json();
+  const fanEntry = fanMe.entryId;
+  assert(Number.isInteger(fanEntry) && fanEntry > 0, `the signed-in fan has a Team ID: ${fanEntry}`);
   const shots = process.env.E2E_ALFIE_SHOTS;
   if (shots) spawnSync('mkdir', ['-p', shots]);
   const shot = async (p, name) => {
@@ -6460,7 +6466,7 @@ async function alfieJourneys(browser, userPage) {
   };
 
   await step(
-    'Ask Alfie: hidden when off and for fans in admins mode; shown for an admin and for everyone',
+    'Ask Alfie: hidden when off and for fans in admins mode; shown for an admin, a tester and everyone',
     async () => {
       const cases = [
         {
@@ -6487,6 +6493,30 @@ async function alfieJourneys(browser, userPage) {
           assistant: alfieConfig({ visibility: 'admins' }),
           token: adminToken,
           shown: true,
+        },
+        {
+          what: 'admins, tester fan',
+          assistant: alfieConfig({ visibility: 'admins', testerEntryIds: [fanEntry + 1, fanEntry] }),
+          token: fanToken,
+          shown: true,
+        },
+        {
+          what: 'admins, fan not a tester',
+          assistant: alfieConfig({ visibility: 'admins', testerEntryIds: [fanEntry + 1] }),
+          token: fanToken,
+          shown: false,
+        },
+        {
+          what: 'admins, guest (testers listed)',
+          assistant: alfieConfig({ visibility: 'admins', testerEntryIds: [fanEntry] }),
+          guest: true,
+          shown: false,
+        },
+        {
+          what: 'off, tester fan',
+          assistant: alfieConfig({ visibility: 'off', testerEntryIds: [fanEntry] }),
+          token: fanToken,
+          shown: false,
         },
         { what: 'everyone, fan', assistant: alfieConfig(), token: fanToken, shown: true },
         { what: 'everyone, guest', assistant: alfieConfig(), guest: true, shown: true },
@@ -6844,6 +6874,86 @@ async function alfieJourneys(browser, userPage) {
       await p.keyboard.press('Escape');
       await panel.waitFor({ state: 'hidden' });
       await noHorizontalScroll(p, 'admin alfie card');
+      await ctx.close();
+    },
+  );
+
+  await step(
+    'Admin → Settings → Ask Alfie → Testers: chips with team names, add (validated) / remove, saved in testerEntryIds',
+    async () => {
+      const other = Number(DEMO.normal) === fanEntry ? Number(DEMO.vice) : Number(DEMO.normal);
+      const start = alfieConfig({ visibility: 'admins', testerEntryIds: [other] });
+      const { ctx } = await alfieContext(browser, { assistant: start, token: adminToken });
+      const real = await (
+        await globalThis.fetch(`${API}/v1/admin/settings`, {
+          headers: { authorization: `Bearer ${adminToken}` },
+        })
+      ).json();
+      let stored = { ...real, assistant: start };
+      const puts = [];
+      await ctx.route(
+        (u) => u.origin === API && u.pathname === '/v1/admin/settings',
+        async (r) => {
+          if (r.request().method() === 'PUT') {
+            const body = JSON.parse(r.request().postData() ?? '{}');
+            puts.push(body);
+            stored = { ...body, leagueName: real.leagueName ?? null };
+          }
+          await r.fulfill(json(stored));
+        },
+      );
+      const p = await ctx.newPage();
+      watch(p, 'alfie-testers');
+      await p.goto(`${WEB}/admin/`);
+      const card = await openCard(p, 'settings.assistant');
+      const testers = card.getByTestId('alfie-testers');
+      await testers.getByText('אוהדים עם מספרי הקבוצה האלה רואים את הכפתור').waitFor();
+      const chip = (id) => testers.locator(`[data-testid=alfie-tester][data-entry-id="${id}"]`);
+      await chip(other).waitFor();
+      // The chip names the team once the existing entry lookup answers.
+      const otherEntry = await (
+        await globalThis.fetch(`${API}/v1/fpl/entries/${other}`, {
+          headers: { authorization: `Bearer ${adminToken}` },
+        })
+      ).json();
+      if (otherEntry.teamName) await chip(other).getByText(otherEntry.teamName).waitFor();
+      const input = testers.getByTestId('alfie-tester-input');
+      const add = testers.getByTestId('alfie-tester-add');
+      await input.fill('abc');
+      await add.click();
+      await testers.getByText('מספר קבוצה חייב להיות מספר שלם חיובי').waitFor();
+      await input.fill(String(other));
+      await input.press('Enter'); // Enter adds (not the whole form's submit)
+      await testers.getByText('מספר הקבוצה הזה כבר ברשימה').waitFor();
+      assert(puts.length === 0, 'Enter in the testers input does not save the form');
+      await input.fill(` ${fanEntry} `);
+      await add.click();
+      await chip(fanEntry).waitFor();
+      assert((await input.inputValue()) === '', 'input cleared after adding');
+      await noHorizontalScroll(p, 'admin alfie testers');
+      await testers.scrollIntoViewIfNeeded();
+      await p.waitForTimeout(300);
+      await shot(p, 'admin-testers-he');
+      await chip(other).getByTestId('alfie-tester-remove').click();
+      await chip(other).waitFor({ state: 'detached' });
+      await card.getByTestId('alfie-save').click();
+      await card.getByText('נשמר').waitFor();
+      assert(puts.length === 1, `one PUT: ${puts.length}`);
+      assert(
+        JSON.stringify(puts[0].assistant) ===
+          JSON.stringify(alfieConfig({ visibility: 'admins', testerEntryIds: [fanEntry] })),
+        `saved assistant: ${JSON.stringify(puts[0].assistant)}`,
+      );
+      assert(puts[0].leagueId === real.leagueId, 'other settings kept');
+      // Removing the last tester saves an explicit empty list (= no testers).
+      await chip(fanEntry).getByTestId('alfie-tester-remove').click();
+      await testers.getByTestId('alfie-testers-empty').waitFor();
+      await card.getByTestId('alfie-save').click();
+      await waitUntil(() => puts.length === 2, 'second PUT');
+      assert(
+        JSON.stringify(puts[1].assistant.testerEntryIds) === '[]',
+        `saved empty testers: ${JSON.stringify(puts[1].assistant.testerEntryIds)}`,
+      );
       await ctx.close();
     },
   );

@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import {
   AdminSettingsSchema,
   ApiErrorSchema,
+  ASSISTANT_DEFAULT_TESTER_ENTRY_IDS,
   DEFAULT_ASSISTANT_CONFIG,
+  FplEntryIdSchema,
   PublicConfigSchema,
   type AssistantConfig,
 } from '@fant/shared';
@@ -33,7 +35,9 @@ const LIVE: AssistantConfig = {
   scriptUrl: 'https://cdn.fpl-lad.com/alfie/embed.js',
   partnerId: 'fantasyonerim',
   fallbackUrl: 'https://www.fpl-lad.com/alfie',
+  testerEntryIds: [FplEntryIdSchema.parse(28060)],
 };
+const entryIds = (...ids: number[]) => ids.map((id) => FplEntryIdSchema.parse(id));
 
 beforeAll(() => migrateTestDb());
 beforeEach(async () => {
@@ -73,6 +77,75 @@ describe('"Ask Alfie" assistant config', () => {
     expect((await adminSettings()).assistant).toEqual(DEFAULT_ASSISTANT_CONFIG);
     expect((await config()).assistant).toEqual(DEFAULT_ASSISTANT_CONFIG);
     expect((await prisma.appSettings.findFirstOrThrow()).assistant).toBeNull();
+  });
+
+  it('the default testers are [28060] when nothing is stored', async () => {
+    expect(ASSISTANT_DEFAULT_TESTER_ENTRY_IDS).toEqual([28060]);
+    expect((await adminSettings()).assistant?.testerEntryIds).toEqual([28060]);
+    expect((await config()).assistant?.testerEntryIds).toEqual([28060]);
+  });
+
+  it('a stored config saved before testerEntryIds existed reads back with the default testers', async () => {
+    await adminSettings(); // creates the row
+    const { testerEntryIds: _omitted, ...legacy } = LIVE;
+    await prisma.appSettings.updateMany({ data: { assistant: { ...legacy, visibility: 'admins' } } });
+    const expected = { ...legacy, visibility: 'admins', testerEntryIds: entryIds(28060) };
+    expect((await adminSettings()).assistant).toEqual(expected);
+    expect((await config()).assistant).toEqual(expected);
+  });
+
+  it('PUT with testerEntryIds [] keeps [] (not replaced by the default)', async () => {
+    const none = { ...LIVE, visibility: 'admins', testerEntryIds: [] };
+    const res = await putSettings({ assistant: none });
+    expect(res.statusCode).toBe(200);
+    expect(AdminSettingsSchema.parse(res.json()).assistant?.testerEntryIds).toEqual([]);
+    expect((await adminSettings()).assistant?.testerEntryIds).toEqual([]);
+    expect((await config()).assistant?.testerEntryIds).toEqual([]);
+    expect((await prisma.appSettings.findFirstOrThrow()).assistant).toMatchObject({ testerEntryIds: [] });
+    // A later PUT without `assistant` keeps the stored [].
+    expect((await putSettings({ deadlineReminderMinutes: [60] })).statusCode).toBe(200);
+    expect((await config()).assistant?.testerEntryIds).toEqual([]);
+  });
+
+  it('PUT with testerEntryIds [28060, 123] round-trips to admin settings and /v1/config', async () => {
+    const two: AssistantConfig = { ...LIVE, visibility: 'admins', testerEntryIds: entryIds(28060, 123) };
+    const res = await putSettings({ assistant: two });
+    expect(res.statusCode).toBe(200);
+    expect(AdminSettingsSchema.parse(res.json()).assistant).toEqual(two);
+    expect((await adminSettings()).assistant).toEqual(two);
+    expect((await config()).assistant).toEqual(two);
+  });
+
+  it('PUT with testerEntryIds omitted stores the default testers', async () => {
+    const { testerEntryIds: _omitted, ...legacy } = LIVE;
+    expect((await putSettings({ assistant: legacy })).statusCode).toBe(200);
+    expect((await config()).assistant?.testerEntryIds).toEqual([28060]);
+  });
+
+  it.each([
+    ['51 ids', Array.from({ length: 51 }, (_, i) => i + 1)],
+    ['a zero id', [0]],
+    ['a negative id', [-5]],
+    ['a fractional id', [1.5]],
+    ['a non-numeric id', ['abc']],
+    ['an id above the FPL range', [100_000_000]],
+    ['null', null],
+    ['not an array', 28060],
+  ])('testerEntryIds with %s → 400, nothing stored', async (_label, testerEntryIds) => {
+    expect((await putSettings({ assistant: LIVE })).statusCode).toBe(200);
+    const res = await putSettings({ assistant: { ...LIVE, testerEntryIds } });
+    expect(res.statusCode).toBe(400);
+    const err = ApiErrorSchema.parse(res.json()).error;
+    expect(err.code).toBe('bad_request');
+    expect(err.message).toContain('assistant.testerEntryIds');
+    expect((await adminSettings()).assistant).toEqual(LIVE);
+  });
+
+  it('50 tester ids is the maximum accepted', async () => {
+    const fifty = { ...LIVE, testerEntryIds: entryIds(...Array.from({ length: 50 }, (_, i) => i + 1)) };
+    const res = await putSettings({ assistant: fifty });
+    expect(res.statusCode).toBe(200);
+    expect((await config()).assistant?.testerEntryIds).toHaveLength(50);
   });
 
   it('a stored value that no longer matches the contract falls back to the defaults', async () => {
