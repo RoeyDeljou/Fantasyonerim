@@ -167,7 +167,7 @@ is built so WhatsApp can be added later as one more target.
 ## 7. FPL Lad — Ask Alfie widget
 
 FPL Lad's AI assistant **Alfie** ([fpl-lad.com](https://www.fpl-lad.com/)) is available on every app screen behind a
-floating **"Ask Alfie"** button (FPL Lad logo, "Ask Alfie" underneath). Their embed script does not exist yet: until
+floating **"Ask Alfie"** button (FPL Lad's round badge, "Ask Alfie" underneath). Their embed script does not exist yet: until
 it does, the button opens their site in an in-app panel. When they deliver it, an admin pastes its URL in Admin →
 Settings — **no code change and no new app version**.
 
@@ -219,6 +219,7 @@ It should define a global `window.FPLLad` (`FplLad` / `fplLad` also accepted) wi
 | `partner`      | `"fantasyonerim"`                                                  | Our partner ID (Admin → Settings; `fantasyonerim` until they assign one). |
 | `teamId`       | `1234567`                                                          | The visitor's FPL Team ID (number), omitted when unknown.                 |
 | `locale`       | `"he"` / `"en"`                                                    | The app's language (Hebrew is RTL).                                       |
+| `lang`         | `"he"` / `"en"`                                                    | Same as `locale`, under the name their `/chat` page reads.                |
 | `theme`        | `"light"` / `"dark"`                                               | The app's current theme.                                                  |
 | `launcher`     | `false`                                                            | Don't draw your own button — we draw "Ask Alfie".                         |
 | `colors`       | `{ primary: "#3d185b", onPrimary: "#ffffff", surface: "#ffffff" }` | The current theme's colours, so the widget matches the app.               |
@@ -231,16 +232,26 @@ uses the in-app panel and logs one console warning (`[Ask Alfie] …`).
 
 ### The fallback URL (in-app panel)
 
-`fallbackUrl` (default `https://www.fpl-lad.com/`) is opened with these query parameters (kept alongside any already
-on the URL):
+`fallbackUrl` (default `https://www.fpl-lad.com/chat`, FPL Lad's chat page) is opened with these query parameters,
+in this order (after any already on the URL, which are kept; ours win on a clash):
 
 | Parameter | Value                                                               |
 | --------- | ------------------------------------------------------------------- |
-| `partner` | the partner ID, else `fantasyonerim`                                |
-| `embed`   | `1` inside the app's panel (absent on the "open in a new tab" link) |
-| `locale`  | `he` / `en`                                                         |
-| `theme`   | `light` / `dark`                                                    |
 | `teamId`  | the FPL Team ID, when known                                         |
+| `lang`    | `he` / `en`                                                         |
+| `embed`   | `1` inside the app's panel (absent on the "open in a new tab" link) |
+| `partner` | the partner ID, else `fantasyonerim`                                |
+| `theme`   | `light` / `dark`                                                    |
+
+Example: `https://www.fpl-lad.com/chat?teamId=28060&lang=he&embed=1&partner=fantasyonerim&theme=light`.
+
+FPL Lad confirmed (Nov 2026) that `/chat` already reads `teamId` and `lang`: the button takes the visitor straight into
+the chat in Hebrew with their squad loaded. `embed=1` (a compact view) and `partner=fantasyonerim` are sent now and
+are coming on their side; `theme` is sent for when they support it. (The script's `init()` options above still use
+`locale`; we also send the same value as `lang` there.)
+
+The launcher and the panel header use FPL Lad's round badge (`apps/web/public/brand/fpl-lad-badge.png`, supplied by
+FPL Lad); the wide wordmark (`fpl-lad.png`) stays on the Captain Battle tag and share posters.
 
 For the panel to work, their site must allow being framed by our domains (no `X-Frame-Options: DENY/SAMEORIGIN`; a
 `Content-Security-Policy: frame-ancestors` listing the domains below).

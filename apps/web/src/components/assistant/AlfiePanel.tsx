@@ -79,9 +79,13 @@ export function AlfiePanel({
         <div className="flex h-full flex-col pb-[env(safe-area-inset-bottom)]">
           <div className="shrink-0 border-b border-line pt-[env(safe-area-inset-top)]">
             <div className="flex items-center gap-2 ps-3 pe-1 py-1.5">
-              <span className="flex h-9 shrink-0 items-center rounded-full border border-line bg-logo-chip px-2.5">
-                <img src={FPL_LAD_LOGO} alt="" width={74} height={15} className="h-[15px] w-[74px]" />
-              </span>
+              <img
+                src={FPL_LAD_LOGO}
+                alt=""
+                width={36}
+                height={36}
+                className="size-9 shrink-0 rounded-full"
+              />
               <div className="flex min-w-0 flex-1 flex-col leading-tight">
                 <h2 id={titleId} className="truncate text-base font-extrabold text-ink">
                   <span className="sr-only">{s.dialogLabel}</span>

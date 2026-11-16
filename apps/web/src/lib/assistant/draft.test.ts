@@ -21,7 +21,7 @@ describe('parseAssistantDraft (Admin → Settings → Ask Alfie)', () => {
         visibility: 'everyone',
         scriptUrl: 'https://cdn.fpl-lad.com/embed.js',
         partnerId: 'fant',
-        fallbackUrl: 'https://www.fpl-lad.com/',
+        fallbackUrl: 'https://www.fpl-lad.com/chat',
         testerEntryIds: [28060],
       },
     });

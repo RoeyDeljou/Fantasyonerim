@@ -17,8 +17,8 @@ export interface AssistantContext {
 /** Sent until FPL Lad assigns us a partner id (Admin → Settings → Ask Alfie). */
 export const DEFAULT_PARTNER = 'fantasyonerim';
 
-/** The launcher's FPL Lad logo (a wordmark; swap for a square Alfie icon here if FPL Lad provides one). */
-export const FPL_LAD_LOGO = '/brand/fpl-lad.png';
+/** FPL Lad's round badge (512×512 transparent PNG; the badge is the circle) for the launcher and panel header. */
+export const FPL_LAD_LOGO = '/brand/fpl-lad-badge.png';
 
 export function partnerOf(partnerId: string | null | undefined): string {
   const p = partnerId?.trim();
@@ -40,18 +40,22 @@ export function resolveTeamId(
   return n > 0 && Number.isSafeInteger(n) ? n : undefined;
 }
 
+/** The query parameters we own on FPL Lad's URL, in the order their example uses. */
+const OWN_PARAMS = ['teamId', 'lang', 'embed', 'partner', 'theme', 'locale'] as const;
+
 /**
- * FPL Lad's site with our context as query parameters: `partner`, `locale`, `theme`, `teamId` (when known) and,
- * for the in-app iframe, `embed=1`. Parameters already on `base` are kept (ours win on a clash).
+ * FPL Lad's chat (`/chat`) with our context as query parameters, in the order FPL Lad's example uses:
+ * `teamId` (when known), `lang` (he/en), `embed=1` (in-app iframe only), `partner`, `theme` — e.g.
+ * `https://www.fpl-lad.com/chat?teamId=28060&lang=he&embed=1&partner=fantasyonerim&theme=light`. Parameters already
+ * on `base` are kept, before ours (ours win on a clash; a stale `locale` from older configs is dropped).
  */
 export function assistantUrl(base: string, ctx: AssistantContext, { embed }: { embed: boolean }): string {
   const url = new URL(base);
-  url.searchParams.set('partner', ctx.partner);
-  if (embed) url.searchParams.set('embed', '1');
-  else url.searchParams.delete('embed');
-  url.searchParams.set('locale', ctx.locale);
-  url.searchParams.set('theme', ctx.theme);
-  if (ctx.teamId !== undefined) url.searchParams.set('teamId', String(ctx.teamId));
-  else url.searchParams.delete('teamId');
+  for (const k of OWN_PARAMS) url.searchParams.delete(k);
+  if (ctx.teamId !== undefined) url.searchParams.append('teamId', String(ctx.teamId));
+  url.searchParams.append('lang', ctx.locale);
+  if (embed) url.searchParams.append('embed', '1');
+  url.searchParams.append('partner', ctx.partner);
+  url.searchParams.append('theme', ctx.theme);
   return url.toString();
 }

@@ -5,36 +5,36 @@ import type { AssistantContext } from './context';
 const ctx: AssistantContext = { partner: 'fantasyonerim', teamId: 1234567, locale: 'he', theme: 'dark' };
 
 describe('assistantUrl (in-app panel + "open in a new tab")', () => {
-  it('embed URL carries partner, embed=1, locale, theme and teamId', () => {
-    const u = new URL(assistantUrl('https://www.fpl-lad.com/', ctx, { embed: true }));
-    expect(u.origin + u.pathname).toBe('https://www.fpl-lad.com/');
-    expect(Object.fromEntries(u.searchParams)).toEqual({
-      partner: 'fantasyonerim',
-      embed: '1',
-      locale: 'he',
-      theme: 'dark',
-      teamId: '1234567',
-    });
+  it("embed URL: FPL Lad's example order — teamId, lang, embed=1, partner, theme", () => {
+    expect(assistantUrl('https://www.fpl-lad.com/chat', { ...ctx, teamId: 28060 }, { embed: true })).toBe(
+      'https://www.fpl-lad.com/chat?teamId=28060&lang=he&embed=1&partner=fantasyonerim&theme=dark',
+    );
+  });
+  it('sends lang, never locale', () => {
+    const u = new URL(
+      assistantUrl('https://www.fpl-lad.com/chat', { ...ctx, locale: 'en' }, { embed: true }),
+    );
+    expect(u.searchParams.get('lang')).toBe('en');
+    expect(u.searchParams.has('locale')).toBe(false);
   });
   it('the new-tab link has no embed flag; no teamId when unknown', () => {
-    const u = new URL(
-      assistantUrl('https://www.fpl-lad.com/?embed=1', { ...ctx, teamId: undefined }, { embed: false }),
-    );
-    expect(u.searchParams.has('embed')).toBe(false);
-    expect(u.searchParams.has('teamId')).toBe(false);
-    expect(u.searchParams.get('locale')).toBe('he');
+    expect(
+      assistantUrl('https://www.fpl-lad.com/chat?embed=1', { ...ctx, teamId: undefined }, { embed: false }),
+    ).toBe('https://www.fpl-lad.com/chat?lang=he&partner=fantasyonerim&theme=dark');
   });
-  it('keeps parameters already on the URL; ours win on a clash', () => {
+  it('keeps parameters already on the URL (first); ours win on a clash; a stale locale is dropped', () => {
     const u = new URL(
       assistantUrl(
-        'https://chat.fpl-lad.com/alfie?ref=x&locale=fr',
+        'https://chat.fpl-lad.com/alfie?ref=x&lang=fr&locale=fr&teamId=1',
         { ...ctx, locale: 'en' },
         { embed: true },
       ),
     );
     expect(u.pathname).toBe('/alfie');
+    expect([...u.searchParams.keys()]).toEqual(['ref', 'teamId', 'lang', 'embed', 'partner', 'theme']);
     expect(u.searchParams.get('ref')).toBe('x');
-    expect(u.searchParams.get('locale')).toBe('en');
+    expect(u.searchParams.get('lang')).toBe('en');
+    expect(u.searchParams.get('teamId')).toBe('1234567');
   });
 });
 

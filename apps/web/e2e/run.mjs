@@ -6355,7 +6355,7 @@ const alfieConfig = (over = {}) => ({
   visibility: 'everyone',
   scriptUrl: null,
   partnerId: null,
-  fallbackUrl: 'https://www.fpl-lad.com/',
+  fallbackUrl: 'https://www.fpl-lad.com/chat',
   testerEntryIds: [],
   ...over,
 });
@@ -6381,7 +6381,7 @@ const FPL_LAD_PAGE = `<!doctype html><meta name="viewport" content="width=device
   <div style="font-size:28px;font-weight:800">FPL <span style="color:#d4ff3a">LAD</span></div>
   <div data-alfie-mock>Alfie (mock fpl-lad.com page)</div>
   <div id="q" style="opacity:.7;font-size:13px;padding:0 16px;word-break:break-all"></div>
-  <script>document.getElementById('q').textContent = location.search</script></body>`;
+  <script>document.getElementById('q').textContent = location.pathname + location.search</script></body>`;
 
 /**
  * A phone context with `assistant` in /v1/config, fpl-lad.com mocked (`script`: null = a 404, 'fake', 'silent' =
@@ -6432,7 +6432,10 @@ async function alfieContext(
         return r.fulfill({ status: 200, contentType: 'text/javascript', body: '/* no global */' });
       return r.fulfill({ status: 404, body: '' });
     }
-    return r.fulfill({ status: 200, contentType: 'text/html', body: FPL_LAD_PAGE });
+    // The panel's page: FPL Lad's /chat (fallbackUrl default) and / (older configs).
+    if (u.pathname === '/chat' || u.pathname === '/')
+      return r.fulfill({ status: 200, contentType: 'text/html', body: FPL_LAD_PAGE });
+    return r.fulfill({ status: 404, body: '' });
   });
   return { ctx, scriptHits };
 }
@@ -6575,7 +6578,7 @@ async function alfieJourneys(browser, userPage) {
       return {
         vw: document.documentElement.clientWidth,
         launcher: box(document.querySelector('[data-testid=alfie-launcher]')),
-        circle: box(document.querySelector('[data-testid=alfie-launcher] > span')),
+        circle: box(document.querySelector('[data-testid=alfie-launcher] > img')), // FPL Lad's round badge
         tabBar: box(document.querySelector('[data-tab-bar]')),
         join: box(document.querySelector('[data-testid=join-league]')),
       };
@@ -6608,7 +6611,11 @@ async function alfieJourneys(browser, userPage) {
         assert(!overlaps(g.launcher, g.join), `launcher must not overlap the Join pill: ${at}`);
         assert(g.launcher.bottom <= g.join.y + 0.5, `launcher stacked above the Join pill: ${at}`);
         assert(g.launcher.w >= 44 && g.launcher.h >= 44, `44px tap target: ${at}`);
-        assert(Math.abs(g.circle.w - 52) < 1, `52px circle: ${at}`);
+        assert(Math.abs(g.circle.w - 52) < 1 && Math.abs(g.circle.h - 52) < 1, `52px circle: ${at}`);
+        assert(
+          (await launcher(p).locator('img').getAttribute('src')) === '/brand/fpl-lad-badge.png',
+          'launcher uses the FPL Lad badge',
+        );
         if (locale === 'he') assert(g.launcher.x < g.vw / 2, `RTL: launcher at the left (inline end): ${at}`);
         else assert(g.launcher.x > g.vw / 2, `LTR: launcher at the right (inline end): ${at}`);
         await noHorizontalScroll(p, `alfie ${locale} table`);
@@ -6636,7 +6643,7 @@ async function alfieJourneys(browser, userPage) {
   }
 
   await step(
-    'Ask Alfie: tap opens the in-app panel (iframe with teamId + locale); Escape / close return focus',
+    'Ask Alfie: tap opens the in-app panel (/chat iframe with teamId + lang); Escape / close return focus',
     async () => {
       const { ctx } = await alfieContext(browser, { assistant: alfieConfig(), token: fanToken });
       const p = await ctx.newPage();
@@ -6650,22 +6657,23 @@ async function alfieJourneys(browser, userPage) {
       await panel.waitFor();
       const src = await panel.getByTestId('alfie-frame').getAttribute('src');
       const q = new URL(src);
-      assert(q.origin === 'https://www.fpl-lad.com', `frame origin: ${src}`);
-      for (const [k, v] of Object.entries({
-        partner: 'fantasyonerim',
-        embed: '1',
-        locale: 'he',
-        theme: 'light',
-        teamId: DEMO.tripleCaptain,
-      }))
-        assert(q.searchParams.get(k) === v, `frame ${k}: ${src}`);
+      assert(q.origin === 'https://www.fpl-lad.com' && q.pathname === '/chat', `frame URL: ${src}`);
+      // FPL Lad's example order: teamId, lang, embed, partner, theme.
+      assert(
+        q.search === `?teamId=${DEMO.tripleCaptain}&lang=he&embed=1&partner=fantasyonerim&theme=light`,
+        `frame query: ${src}`,
+      );
+      assert(!q.searchParams.has('locale'), `no locale param: ${src}`);
       assert(
         (await panel.getByTestId('alfie-frame').getAttribute('sandbox')) === null,
         'no sandbox (Google popup sign-in)',
       );
       const tab = new URL(await panel.getByTestId('alfie-open-tab').getAttribute('href'));
       assert(
-        !tab.searchParams.has('embed') && tab.searchParams.get('teamId') === DEMO.tripleCaptain,
+        tab.pathname === '/chat' &&
+          !tab.searchParams.has('embed') &&
+          tab.searchParams.get('teamId') === DEMO.tripleCaptain &&
+          tab.searchParams.get('lang') === 'he',
         `new-tab link: ${tab}`,
       );
       assert((await panel.getByTestId('alfie-open-tab').getAttribute('target')) === '_blank', 'new tab');
@@ -6714,15 +6722,15 @@ async function alfieJourneys(browser, userPage) {
     );
     assert(box.x + box.width > 1200, `LTR: right corner: ${JSON.stringify(box)}`);
     assert(
-      new URL(await panel.getByTestId('alfie-frame').getAttribute('src')).searchParams.get('locale') === 'en',
-      'locale=en',
+      new URL(await panel.getByTestId('alfie-frame').getAttribute('src')).searchParams.get('lang') === 'en',
+      'lang=en',
     );
     await shot(p, 'panel-desktop-en');
     await ctx.close();
   });
 
   await step(
-    "Ask Alfie with FPL Lad's script: init({partner, teamId, locale, launcher:false}) + open(), no in-app panel",
+    "Ask Alfie with FPL Lad's script: init({partner, teamId, locale, lang, launcher:false}) + open(), no in-app panel",
     async () => {
       const { ctx, scriptHits } = await alfieContext(browser, {
         assistant: alfieConfig({ scriptUrl: ALFIE_SCRIPT, partnerId: 'fant-e2e' }),
@@ -6742,6 +6750,7 @@ async function alfieJourneys(browser, userPage) {
         init.partner === 'fant-e2e' &&
           init.teamId === Number(DEMO.tripleCaptain) &&
           init.locale === 'he' &&
+          init.lang === 'he' &&
           init.theme === 'dark' &&
           init.launcher === false &&
           typeof init.colors.primary === 'string' &&

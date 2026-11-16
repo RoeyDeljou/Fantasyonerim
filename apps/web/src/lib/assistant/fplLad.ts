@@ -26,6 +26,8 @@ export interface FplLadOptions {
   partner: string;
   teamId?: number;
   locale: 'he' | 'en';
+  /** Same value as `locale`, under the name FPL Lad's /chat page reads. */
+  lang: 'he' | 'en';
   theme: 'light' | 'dark';
   /** We render our own launcher button. */
   launcher: false;
@@ -102,6 +104,7 @@ export function buildOptions(
     partner: ctx.partner,
     ...(ctx.teamId !== undefined ? { teamId: ctx.teamId } : {}),
     locale: ctx.locale,
+    lang: ctx.locale,
     theme: ctx.theme,
     launcher: false,
     colors: extra.colors,

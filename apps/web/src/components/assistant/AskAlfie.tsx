@@ -62,21 +62,15 @@ export default function AskAlfie({ config }: { config: AssistantConfig }) {
                 open && 'invisible',
               )}
             >
-              <span
-                className={cx(
-                  'flex size-[52px] items-center justify-center overflow-hidden rounded-full border border-line bg-logo-chip shadow-card',
-                  alfie.busy && 'animate-pulse',
-                )}
-              >
-                <img
-                  src={FPL_LAD_LOGO}
-                  alt=""
-                  width={44}
-                  height={9}
-                  draggable={false}
-                  className="h-[9px] w-[44px]"
-                />
-              </span>
+              {/* FPL Lad's round badge IS the button's circle: edge to edge, no border/background of our own. */}
+              <img
+                src={FPL_LAD_LOGO}
+                alt=""
+                width={52}
+                height={52}
+                draggable={false}
+                className={cx('size-[52px] rounded-full shadow-card', alfie.busy && 'animate-pulse')}
+              />
               <span className="rounded-full border border-line bg-surface px-1.5 text-[11px] leading-4 font-bold whitespace-nowrap text-ink shadow-card">
                 {s.launcher}
               </span>

@@ -93,6 +93,7 @@ describe('FplLadEmbed (the FPL Lad script adapter)', () => {
       partner: 'fantasyonerim',
       teamId: 1000003,
       locale: 'he',
+      lang: 'he',
       theme: 'light',
       launcher: false,
       zIndex: 60,
@@ -107,7 +108,7 @@ describe('FplLadEmbed (the FPL Lad script adapter)', () => {
     await embed.open(SCRIPT, 'fantasyonerim', options({ locale: 'en' }), h);
     expect(state.injected).toHaveLength(1);
     expect(fake.calls.map((c) => c[0])).toEqual(['init', 'open', 'update', 'open']);
-    expect(fake.calls[2]?.[1]).toMatchObject({ locale: 'en' });
+    expect(fake.calls[2]?.[1]).toMatchObject({ locale: 'en', lang: 'en' });
     expect(state.warnings).toEqual([]);
   });
 
