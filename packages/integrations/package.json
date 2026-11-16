@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@fant/shared": "0.1.0",
-    "fast-xml-parser": "^5.11.2",
+    "fast-xml-parser": "^5.12.1",
     "zod": "^4.6.7"
   }
 }
