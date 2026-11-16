@@ -200,7 +200,7 @@ export const AssistantConfigSchema = z.object({
   fallbackUrl: HttpsUrlSchema,
   /**
    * Testers: fans (by FPL Team ID) who also see the launcher while `visibility` is 'admins', to try it with a real
-   * registered team before launch. Ignored for 'off' (nobody) and 'everyone'. Defaults to none for older stored values.
+   * registered team before launch. Ignored for 'off' (nobody) and 'everyone'. Absent (never saved, or stored before testers existed) = ASSISTANT_DEFAULT_TESTER_ENTRY_IDS.
    */
   testerEntryIds: z._default(z.array(FplEntryIdSchema).check(z.maxLength(50)), () =>
     ASSISTANT_DEFAULT_TESTER_ENTRY_IDS.map((id) => FplEntryIdSchema.parse(id)),
