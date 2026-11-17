@@ -6385,11 +6385,13 @@ const FPL_LAD_PAGE = `<!doctype html><meta name="viewport" content="width=device
 
 /**
  * A phone context with `assistant` in /v1/config, fpl-lad.com mocked (`script`: null = a 404, 'fake', 'silent' =
- * loads but never defines the global), optional session (token / guest), locale and theme.
+ * loads but never defines the global), optional session (token / guest), locale and theme. `chatHang`: FPL Lad's
+ * /chat never answers the panel's frame (`embed=1`: the request stays pending until the context closes), so the frame
+ * never loads; the new-tab page (no `embed`) still loads.
  */
 async function alfieContext(
   browser,
-  { assistant, token, guest, locale = 'he', theme = 'light', script = null, join, viewport } = {},
+  { assistant, token, guest, locale = 'he', theme = 'light', script = null, join, viewport, chatHang } = {},
 ) {
   const ctx = await newContext(browser, { colorScheme: theme, ...(viewport ? { viewport } : {}) });
   await ctx.addInitScript(
@@ -6433,8 +6435,10 @@ async function alfieContext(
       return r.fulfill({ status: 404, body: '' });
     }
     // The panel's page: FPL Lad's /chat (fallbackUrl default) and / (older configs).
-    if (u.pathname === '/chat' || u.pathname === '/')
+    if (u.pathname === '/chat' || u.pathname === '/') {
+      if (chatHang && u.searchParams.get('embed') === '1') return new Promise(() => undefined); // a stuck frame
       return r.fulfill({ status: 200, contentType: 'text/html', body: FPL_LAD_PAGE });
+    }
     return r.fulfill({ status: 404, body: '' });
   });
   return { ctx, scriptHits };
@@ -6685,7 +6689,9 @@ async function alfieJourneys(browser, userPage) {
         `full screen on a phone: ${JSON.stringify(box)}`,
       );
       assert(!(await launcher(p).isVisible()), 'launcher hidden while Alfie is open');
-      await panel.getByTestId('alfie-hint').waitFor({ timeout: 8000 });
+      // A loaded chat never gets the "Not loading?" line (it would read like an error over a working chat).
+      await p.waitForTimeout(7000);
+      assert(!(await panel.getByTestId('alfie-hint').count()), 'no "not loading" hint once the frame loaded');
       await shot(p, 'panel-mobile-he');
       await panel.getByTestId('alfie-close').click();
       await panel.waitFor({ state: 'detached' }).catch(() => undefined);
@@ -6696,6 +6702,46 @@ async function alfieJourneys(browser, userPage) {
       await panel.waitFor();
       await p.keyboard.press('Escape');
       await p.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'alfie-launcher');
+      await ctx.close();
+    },
+  );
+
+  await step(
+    'Ask Alfie: a frame that never loads gets the "Not loading? Open in fpl-lad.com" line',
+    async () => {
+      const { ctx } = await alfieContext(browser, {
+        assistant: alfieConfig(),
+        token: fanToken,
+        chatHang: true,
+      });
+      const p = await ctx.newPage();
+      watch(p, 'alfie-hang');
+      await p.goto(`${WEB}/news/`);
+      await launcher(p).click();
+      const panel = p.locator('dialog[open][data-testid=alfie-panel]');
+      await panel.waitFor();
+      const panelOpenedAt = Date.now();
+      assert(!(await panel.getByTestId('alfie-hint').count()), 'no hint straight away');
+      const hint = panel.getByTestId('alfie-hint');
+      await hint.waitFor({ timeout: 8000 });
+      assert(Date.now() - panelOpenedAt >= 5000, `hint waits ~6 s (${Date.now() - panelOpenedAt} ms)`);
+      assert(await panel.getByRole('status').isVisible(), 'still loading underneath');
+      await shot(p, 'panel-hint-mobile-he');
+      const link = hint.getByRole('link');
+      const href = new URL(await link.getAttribute('href'));
+      assert(
+        href.origin === 'https://www.fpl-lad.com' &&
+          href.pathname === '/chat' &&
+          !href.searchParams.has('embed') &&
+          href.searchParams.get('teamId') === DEMO.tripleCaptain,
+        `hint link: ${href}`,
+      );
+      const opened = ctx.waitForEvent('page');
+      await link.click();
+      const tab = await opened;
+      await tab.locator('[data-alfie-mock]').waitFor();
+      assert(tab.url() === href.href, `hint opened FPL Lad in a new tab: ${tab.url()}`);
+      await tab.close();
       await ctx.close();
     },
   );
@@ -6849,7 +6895,11 @@ async function alfieJourneys(browser, userPage) {
       watch(p, 'alfie-admin');
       await p.goto(`${WEB}/admin/`);
       const card = await openCard(p, 'settings.assistant');
-      await card.getByTestId('alfie-status').getByText('ממתינים לסקריפט של FPL Lad').waitFor();
+      await card.getByTestId('alfie-status').getByText('פעיל: Alfie נפתח ב-').waitFor();
+      assert(
+        (await card.getByTestId('alfie-status').getAttribute('data-mode')) === 'panel',
+        'status: in-app panel',
+      );
       await card.getByTestId('alfie-script-url').fill('https://evil.example.com/embed.js');
       await card.getByTestId('alfie-save').click();
       await card.getByText('ולהיות בדומיין של FPL Lad').waitFor();

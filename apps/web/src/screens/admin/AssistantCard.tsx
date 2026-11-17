@@ -119,13 +119,11 @@ export function AssistantCard({ server }: { server: AdminSettings }) {
             onChange={(testerEntryIds) => setDraft({ ...draft, testerEntryIds })}
           />
           <p
-            className={cx(
-              'rounded-xl px-3 py-2 text-sm font-medium',
-              saved.scriptUrl ? 'bg-success-soft text-success' : 'bg-warning-soft text-warning',
-            )}
+            className="rounded-xl bg-success-soft px-3 py-2 text-sm font-medium text-success"
             data-testid="alfie-status"
+            data-mode={saved.scriptUrl ? 'script' : 'panel'}
           >
-            {saved.scriptUrl ? s.connected : s.waiting}
+            {saved.scriptUrl ? s.connected : s.panelLive}
           </p>
           <TextField
             label={s.scriptUrl}

@@ -167,9 +167,10 @@ is built so WhatsApp can be added later as one more target.
 ## 7. FPL Lad — Ask Alfie widget
 
 FPL Lad's AI assistant **Alfie** ([fpl-lad.com](https://www.fpl-lad.com/)) is available on every app screen behind a
-floating **"Ask Alfie"** button (FPL Lad's round badge, "Ask Alfie" underneath). Their embed script does not exist yet: until
-it does, the button opens their site in an in-app panel. When they deliver it, an admin pastes its URL in Admin →
-Settings — **no code change and no new app version**.
+floating **"Ask Alfie"** button (FPL Lad's round badge, "Ask Alfie" underneath). The button opens their chat page,
+`https://www.fpl-lad.com/chat`, in an **in-app panel (iframe)** — this is the live integration, agreed with and
+confirmed by FPL Lad (Nov 2026, see "The in-app panel" below). An embed script is an optional future path: if they
+ever ship one, an admin pastes its URL in Admin → Settings — **no code change and no new app version**.
 
 ### What is built (our side)
 
@@ -180,11 +181,11 @@ Settings — **no code change and no new app version**.
   Its code is its own chunk, fetched ~1.5 s after the screen has painted — nothing on first load.
 - **Embed adapter** (`apps/web/src/lib/assistant/fplLad.ts`): the ONLY file that knows FPL Lad's script API. If
   their real API differs from what is expected below, that one file changes.
-- **In-app panel** (`apps/web/src/components/assistant/AlfiePanel.tsx`): used while no script is set, or when the
-  script fails. Full-screen slide-up on phones, a 420×640 panel in the corner on wide screens; header with the FPL Lad
+- **In-app panel** (`apps/web/src/components/assistant/AlfiePanel.tsx`): the live integration; used whenever no
+  script is set, or when a script fails. Full-screen slide-up on phones, a 420×640 panel in the corner on wide screens; header with the FPL Lad
   logo, "Alfie · by FPL Lad", an "open in a new tab" link and close (button, Escape, Android back). It frames the
-  fallback URL (no `sandbox`, so their Google popup sign-in works). A site that refuses framing can't be detected,
-  so after a few seconds a "Not loading? Open in fpl-lad.com" line appears.
+  fallback URL (no `sandbox`, so their Google popup sign-in works). If the frame hasn't loaded after ~6 seconds a
+  "Not loading? Open in fpl-lad.com" line appears; once it has loaded the line never shows.
 - **Returning visitors**: if their script reports an `identity` event with a `visitorToken`, we keep it in our own
   (first-party) storage on the device and pass it back on `init`. Safari partitions third-party storage, so this is
   what lets an iPhone visitor be remembered. The token is only ever given back to their script.
@@ -193,9 +194,10 @@ Settings — **no code change and no new app version**.
 - **Headers**: `vercel.json` sets no `Cross-Origin-Opener-Policy: same-origin` (it would break the Google sign-in
   popup) and no Content-Security-Policy; a unit test (`apps/web/src/lib/vercelConfig.test.ts`) keeps it that way.
 
-### What we expect from FPL Lad's script
+### Optional future path: FPL Lad's embed script
 
-One line, which the app injects itself on the first tap (only from `https://*.fpl-lad.com` — any other host is
+Not needed today (the in-app panel is the agreed integration); kept so a script can be switched on without an app
+release if FPL Lad ever ship one. One line, which the app injects itself on the first tap (only from `https://*.fpl-lad.com` — any other host is
 rejected by the API and the client):
 
 ```html
@@ -230,7 +232,7 @@ It should define a global `window.FPLLad` (`FplLad` / `fplLad` also accepted) wi
 If the script fails to load, or `window.FPLLad` doesn't appear within 8 seconds, or `init`/`open` throws, the app
 uses the in-app panel and logs one console warning (`[Ask Alfie] …`).
 
-### The fallback URL (in-app panel)
+### The in-app panel (`/chat` in an iframe) — live, confirmed by FPL Lad
 
 `fallbackUrl` (default `https://www.fpl-lad.com/chat`, FPL Lad's chat page) is opened with these query parameters,
 in this order (after any already on the URL, which are kept; ours win on a clash):
@@ -245,18 +247,27 @@ in this order (after any already on the URL, which are kept; ours win on a clash
 
 Example: `https://www.fpl-lad.com/chat?teamId=28060&lang=he&embed=1&partner=fantasyonerim&theme=light`.
 
-FPL Lad confirmed (Nov 2026) that `/chat` already reads `teamId` and `lang`: the button takes the visitor straight into
-the chat in Hebrew with their squad loaded. `embed=1` (a compact view) and `partner=fantasyonerim` are sent now and
-are coming on their side; `theme` is sent for when they support it. (The script's `init()` options above still use
-`locale`; we also send the same value as `lang` there.)
+FPL Lad confirmed (Nov 2026) the iframe `/chat` integration, and it was verified live on mobile and desktop:
+
+- `teamId` and `lang` are read (`locale` is also accepted): the visitor lands straight in the chat, in their
+  language, with their squad loaded.
+- `embed=1` gives a compact view for the panel; `partner=fantasyonerim` is tracked on their side. `theme` is sent for
+  when they support it.
+- Their `Content-Security-Policy: frame-ancestors` allows our production, preview and Capacitor origins (table below).
+- Guest sessions are header-based and their cookies are partitioned, so the chat works with third-party cookies
+  blocked (Safari, Chrome) and the conversation survives closing and reopening the panel.
+- Google sign-in runs as a popup from inside the iframe (hence no `sandbox` and no COOP on our side).
+
+(The optional script's `init()` options above use `locale`; we also send the same value as `lang` there.)
 
 The launcher and the panel header use FPL Lad's round badge (`apps/web/public/brand/fpl-lad-badge.png`, supplied by
 FPL Lad); the wide wordmark (`fpl-lad.png`) stays on the Captain Battle tag and share posters.
 
-For the panel to work, their site must allow being framed by our domains (no `X-Frame-Options: DENY/SAMEORIGIN`; a
-`Content-Security-Policy: frame-ancestors` listing the domains below).
+The panel relies on their site allowing our domains to frame it (no `X-Frame-Options: DENY/SAMEORIGIN`; a
+`Content-Security-Policy: frame-ancestors` listing the domains below) — FPL Lad have this in place. A new origin
+(e.g. a custom domain) must be sent to them before it goes live.
 
-### Domains to whitelist (send these to FPL Lad)
+### Domains FPL Lad allow (`frame-ancestors`)
 
 | Where                          | Origin                                                          |
 | ------------------------------ | --------------------------------------------------------------- |
@@ -270,9 +281,11 @@ For the panel to work, their site must allow being framed by our domains (no `X-
 
 Admin console → **Settings** → **Ask Alfie (FPL Lad)**:
 
-1. **Who sees the button** — _Admins only_ (the default) to try it; _Everyone_ to launch; _Off_ to hide it.
-2. When FPL Lad sends their script line, paste the `src` URL into **FPL Lad's script URL** and their partner key into
-   **Partner ID**, press **Preview** to check, then **Save**. Clear the script URL to go back to the in-app panel.
+1. **Who sees the button** — _Admins only_ (the default) to try it; _Everyone_ to launch; _Off_ to hide it. With the
+   script URL empty (the normal setup) the card shows "Live: Alfie opens fpl-lad.com/chat in the in-app panel…".
+2. Optional, only if FPL Lad ever send an embed script: paste its `src` URL into **FPL Lad's script URL** and their
+   partner key into **Partner ID**, press **Preview** to check, then **Save**. Clear the script URL to go back to the
+   in-app panel.
 
 Changes reach the apps within a few minutes (the public config is cached briefly); no deploy needed.
 

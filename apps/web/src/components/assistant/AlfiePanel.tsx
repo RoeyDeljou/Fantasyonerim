@@ -10,8 +10,12 @@ import { openExternal } from '@/lib/external';
 import { CloseIcon, ExternalIcon } from '../icons';
 import { IconButton, Spinner } from '../ui';
 
-/** After this long the "Not loading? Open in fpl-lad.com" line appears (a refused frame can't be detected). */
-const HINT_MS = 4_000;
+/**
+ * If the iframe still hasn't fired `load` after this long, the "Not loading? Open in fpl-lad.com" line appears (a
+ * slow or stuck frame). Once the frame has loaded it never shows: FPL Lad's /chat works embedded, so the line would
+ * only read like an error over a working chat. The header's open-in-new-tab icon stays as the always-there escape.
+ */
+const HINT_MS = 6_000;
 
 /**
  * Our own Alfie panel, used while FPL Lad's embed script isn't set (or fails): their site in an iframe with our
@@ -49,9 +53,13 @@ export function AlfiePanel({
     if (!open) return;
     setLoaded(false);
     setHint(false);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || loaded) return;
     const id = window.setTimeout(() => setHint(true), HINT_MS);
     return () => window.clearTimeout(id);
-  }, [open]);
+  }, [open, loaded]);
 
   const frameSrc = assistantUrl(fallbackUrl, ctx, { embed: true });
   const tabUrl = assistantUrl(fallbackUrl, ctx, { embed: false });
@@ -112,7 +120,7 @@ export function AlfiePanel({
                 <ExternalIcon size={20} />
               </a>
             </div>
-            {hint && (
+            {hint && !loaded && (
               <p className="px-4 pb-2 text-xs text-muted" data-testid="alfie-hint">
                 {s.notLoading}{' '}
                 <a
