@@ -9,6 +9,7 @@ import type { AssistantContext } from '@/lib/assistant/context';
 import { openExternal } from '@/lib/external';
 import { CloseIcon, ExternalIcon } from '../icons';
 import { IconButton, Spinner } from '../ui';
+import { useFplLadBridge } from './useFplLadBridge';
 
 /**
  * If the iframe still hasn't fired `load` after this long, the "Not loading? Open in fpl-lad.com" line appears (a
@@ -23,7 +24,8 @@ const HINT_MS = 6_000;
  * on a phone, a 420×640 panel in the bottom inline-end corner on wide screens. Focus trap, inert background, Escape
  * and the Android back gesture (the dialog's cancel) for free; `onClose` hands focus back to the launcher.
  *
- * No `sandbox`: FPL Lad signs visitors in with Google in a popup, which a sandbox would break.
+ * No `sandbox`: FPL Lad signs visitors in with Google in a popup, which a sandbox would break. Their sign-in is kept
+ * on our side and handed back to the frame on every open (useFplLadBridge), so it survives the PWA being closed.
  */
 export function AlfiePanel({
   open,
@@ -41,6 +43,9 @@ export function AlfiePanel({
   const titleId = useId();
   const [loaded, setLoaded] = useState(false);
   const [hint, setHint] = useState(false);
+  const frame = useRef<HTMLIFrameElement>(null);
+  // Keeps the visitor signed in to Alfie across app restarts (iOS PWA): lib/assistant/fplLadBridge.ts.
+  const bridgeOnLoad = useFplLadBridge(frame, fallbackUrl, open);
 
   useEffect(() => {
     const d = ref.current;
@@ -146,11 +151,15 @@ export function AlfiePanel({
               </div>
             )}
             <iframe
+              ref={frame}
               src={frameSrc}
               title={s.frameTitle}
               allow="clipboard-write"
               referrerPolicy="strict-origin-when-cross-origin"
-              onLoad={() => setLoaded(true)}
+              onLoad={() => {
+                setLoaded(true);
+                bridgeOnLoad();
+              }}
               data-testid="alfie-frame"
               className="absolute inset-0 size-full border-0"
             />

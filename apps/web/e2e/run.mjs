@@ -6381,7 +6381,27 @@ const FPL_LAD_PAGE = `<!doctype html><meta name="viewport" content="width=device
   <div style="font-size:28px;font-weight:800">FPL <span style="color:#d4ff3a">LAD</span></div>
   <div data-alfie-mock>Alfie (mock fpl-lad.com page)</div>
   <div id="q" style="opacity:.7;font-size:13px;padding:0 16px;word-break:break-all"></div>
-  <script>document.getElementById('q').textContent = location.pathname + location.search</script></body>`;
+  <button id="post-auth" data-testid="mock-post-auth" style="min-height:44px;padding:0 16px">Sign in (mock)</button>
+  <div id="received" data-testid="mock-received" style="font-size:11px;padding:0 16px;word-break:break-all"></div>
+  <script>
+    document.getElementById('q').textContent = location.pathname + location.search;
+    // FPL Lad's host bridge, as their live /chat bundle does it (docs/INTEGRATIONS.md §7, "Staying signed in"):
+    // sign-in -> post fpl-auth-complete to the parent; restore from an fpl-auth-complete the parent posts back.
+    window.addEventListener('message', function (e) {
+      if (e.source !== window.parent || !e.data || e.data.type !== 'fpl-auth-complete') return;
+      var d = document.createElement('div');
+      d.setAttribute('data-replayed', '');
+      d.textContent = JSON.stringify(e.data);
+      document.getElementById('received').appendChild(d);
+    });
+    var auth = { type: 'fpl-auth-complete', user: { id: 'u-e2e-1', email: 'fan@example.com' }, embedToken: 'et-e2e-1',
+      cookies: [{ name: 'sb-e2e-auth-token', value: 'c-e2e-1' }] };
+    document.getElementById('post-auth').onclick = function () { window.parent.postMessage(auth, '*'); };
+    if (window.parent !== window) window.parent.postMessage({ type: 'fpl-render-height', height: 600 }, '*');
+    // A frame that is NOT the panel's own (another origin, or an extra fpl-lad.com frame) posting a sign-in.
+    if (/[?&]autopost=1/.test(location.search))
+      window.parent.postMessage({ type: 'fpl-auth-complete', user: { id: 'u-intruder' }, embedToken: 'x', cookies: [] }, '*');
+  </script></body>`;
 
 /**
  * A phone context with `assistant` in /v1/config, fpl-lad.com mocked (`script`: null = a 404, 'fake', 'silent' =
@@ -6423,6 +6443,10 @@ async function alfieContext(
       (u) => u.origin === API && u.pathname === '/v1/league/position',
       (r) => r.fulfill(json({ entryId: Number(DEMO.tripleCaptain), page: null, rank: null, member: false })),
     );
+  // A look-alike origin for the host-bridge journey: same page, but not fpl-lad.com.
+  await ctx.route(/^https:\/\/fpl-lad\.evil\.test\//, (r) =>
+    r.fulfill({ status: 200, contentType: 'text/html', body: FPL_LAD_PAGE }),
+  );
   const scriptHits = [];
   await ctx.route(/^https:\/\/([a-z0-9-]+\.)?fpl-lad\.com\//, (r) => {
     const u = new URL(r.request().url());
@@ -6702,6 +6726,103 @@ async function alfieJourneys(browser, userPage) {
       await panel.waitFor();
       await p.keyboard.press('Escape');
       await p.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'alfie-launcher');
+      await ctx.close();
+    },
+  );
+
+  await step(
+    "Ask Alfie: FPL Lad's sign-in from the panel's frame is kept on the device, replayed after a restart, cleared on sign-out",
+    async () => {
+      const { ctx } = await alfieContext(browser, { assistant: alfieConfig(), token: fanToken });
+      // Our sign-out calls /v1/auth/logout: mocked so the shared fan token stays valid for the later journeys.
+      await ctx.route(
+        (u) => u.origin === API && u.pathname === '/v1/auth/logout',
+        (r) => r.fulfill({ status: 204, body: '' }),
+      );
+      const p = await ctx.newPage();
+      watch(p, 'alfie-bridge');
+      const stored = () => p.evaluate(() => globalThis.localStorage.getItem('fant.alfie.auth'));
+      const panel = p.locator('dialog[open][data-testid=alfie-panel]');
+      const frame = p.frameLocator('[data-testid=alfie-frame]');
+      const openPanel = async () => {
+        await launcher(p).waitFor();
+        await launcher(p).click();
+        await panel.waitFor();
+        await frame.locator('[data-alfie-mock]').waitFor();
+      };
+      await p.goto(`${WEB}/news/`);
+      await openPanel();
+
+      // Intruders: a look-alike origin, a second fpl-lad.com frame that isn't the panel's, and the top page itself.
+      await p.evaluate(() => {
+        for (const [id, src] of [
+          ['intruder-evil', 'https://fpl-lad.evil.test/chat?autopost=1'],
+          ['intruder-apex', 'https://fpl-lad.com/chat?autopost=1'],
+        ]) {
+          const f = document.createElement('iframe');
+          f.id = id;
+          f.src = src;
+          document.body.appendChild(f);
+        }
+        globalThis.postMessage(
+          { type: 'fpl-auth-complete', user: { id: 'u-top' }, embedToken: 'x', cookies: [] },
+          '*',
+        );
+      });
+      await p.frameLocator('#intruder-evil').locator('[data-alfie-mock]').waitFor();
+      await p.frameLocator('#intruder-apex').locator('[data-alfie-mock]').waitFor();
+      await p.waitForTimeout(2500); // past the 1.5 s replay fallback too
+      assert((await stored()) === null, 'messages not from the panel frame are ignored and not stored');
+      assert((await frame.locator('[data-replayed]').count()) === 0, 'nothing to replay yet');
+
+      // The visitor signs in inside Alfie: their page posts fpl-auth-complete to us.
+      await frame.getByTestId('mock-post-auth').click();
+      await p.waitForFunction(() => globalThis.localStorage.getItem('fant.alfie.auth') !== null);
+      const saved = JSON.parse(await stored());
+      assert(
+        saved.payload.type === 'fpl-auth-complete' &&
+          saved.payload.user.id === 'u-e2e-1' &&
+          saved.payload.embedToken === 'et-e2e-1' &&
+          saved.payload.cookies.length === 1 &&
+          saved.payload.cookies[0].value === 'c-e2e-1' &&
+          typeof saved.savedAt === 'number',
+        `stored payload: ${JSON.stringify(saved)}`,
+      );
+      await p.waitForTimeout(500);
+      assert((await frame.locator('[data-replayed]').count()) === 0, 'a fresh sign-in is not echoed back');
+      await panel.getByTestId('alfie-close').click();
+
+      // "Close the app and reopen": a new page load, then Alfie again — their page gets the sign-in back.
+      await p.reload();
+      await openPanel();
+      const replayed = frame.locator('[data-replayed]').first();
+      await replayed.waitFor({ timeout: 5000 });
+      const got = JSON.parse(await replayed.textContent());
+      assert(
+        got.type === 'fpl-auth-complete' &&
+          got.user.id === 'u-e2e-1' &&
+          got.embedToken === 'et-e2e-1' &&
+          got.cookies[0].name === 'sb-e2e-auth-token',
+        `replayed: ${JSON.stringify(got)}`,
+      );
+      await p.waitForTimeout(2500);
+      const n = await frame.locator('[data-replayed]').count();
+      assert(n >= 1 && n <= 2, `replayed at most twice per load: ${n}`);
+      await shot(p, 'panel-bridge-replayed');
+      await panel.getByTestId('alfie-close').click();
+
+      // Signing out of our app forgets it (a shared phone).
+      await p.goto(`${WEB}/profile/`);
+      await p.getByRole('button', { name: 'התנתקות' }).click();
+      await p.getByRole('button', { name: 'התנתקות' }).first().click();
+      await p.waitForURL('**/onboarding/');
+      assert((await stored()) === null, 'FPL Lad sign-in cleared on sign-out');
+      // Back in (same token, restored by hand) and Alfie again: nothing is replayed.
+      await p.evaluate((t) => globalThis.localStorage.setItem('fant.token', t), fanToken);
+      await p.goto(`${WEB}/news/`);
+      await openPanel();
+      await p.waitForTimeout(2500);
+      assert((await frame.locator('[data-replayed]').count()) === 0, 'nothing replayed after sign-out');
       await ctx.close();
     },
   );

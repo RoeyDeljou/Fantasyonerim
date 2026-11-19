@@ -11,6 +11,7 @@ import { qk } from './queries';
 import { clearPersistedQueries } from './persist';
 import { useI18n } from '@/i18n';
 import { clearSignUpDraft, isGuest, setGuest } from './guest';
+import { clearFplLadAuth } from './assistant/authStorage';
 
 /** `guest`: browsing without an account (lib/guest.ts) — public screens work, account actions prompt sign-up. */
 export type SessionStatus = 'loading' | 'signedIn' | 'signedOut' | 'guest';
@@ -56,6 +57,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     qc.clear();
     clearPersistedQueries(); // nothing of the old session stays on the device
     clearSignUpDraft(); // nor what a guest once typed (a shared phone's next user starts blank)
+    clearFplLadAuth(); // nor their FPL Lad sign-in that Alfie's panel replays (lib/assistant/fplLadBridge.ts)
     const fan = await tokenStore.get('fan');
     if (fan) {
       await tokenStore.set(fan);

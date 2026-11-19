@@ -186,6 +186,8 @@ ever ship one, an admin pastes its URL in Admin → Settings — **no code chang
   logo, "Alfie · by FPL Lad", an "open in a new tab" link and close (button, Escape, Android back). It frames the
   fallback URL (no `sandbox`, so their Google popup sign-in works). If the frame hasn't loaded after ~6 seconds a
   "Not loading? Open in fpl-lad.com" line appears; once it has loaded the line never shows.
+- **Staying signed in** (`apps/web/src/lib/assistant/fplLadBridge.ts`): the panel keeps FPL Lad's sign-in on the
+  device and hands it back to their `/chat` frame on every open — see "Staying signed in to Alfie" below.
 - **Returning visitors**: if their script reports an `identity` event with a `visitorToken`, we keep it in our own
   (first-party) storage on the device and pass it back on `init`. Safari partitions third-party storage, so this is
   what lets an iPhone visitor be remembered. The token is only ever given back to their script.
@@ -259,6 +261,50 @@ FPL Lad confirmed (Nov 2026) the iframe `/chat` integration, and it was verified
 - Google sign-in runs as a popup from inside the iframe (hence no `sandbox` and no COOP on our side).
 
 (The optional script's `init()` options above use `locale`; we also send the same value as `lang` there.)
+
+### Staying signed in to Alfie (host bridge)
+
+On an iPhone home-screen app, the `/chat` iframe's storage is partitioned and does not survive the app being
+closed, so a fan who signed in to Alfie with Google was signed out on the next visit (a Safari tab keeps it, which
+is why it "works on their phone"). FPL Lad's `/chat` page already talks to its parent window; the app now keeps
+their sign-in in its own (first-party) storage and hands it back to the frame. Code:
+`apps/web/src/lib/assistant/fplLadBridge.ts` (the only file that knows this protocol, unit-tested in
+`fplLadBridge.test.ts`), wired by `components/assistant/useFplLadBridge.ts` while the panel's iframe exists.
+
+| Direction   | Message                                                                 | What happens                                                                                                                                                            |
+| ----------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| frame → app | `{ type: "fpl-auth-complete", user: { id, … }, embedToken?, cookies? }` | Validated, then stored as received with a `savedAt` timestamp. Not echoed back.                                                                                         |
+| frame → app | any other `fpl-…` message (e.g. `fpl-render-height`)                    | Proof their page is up: the first one after each frame load triggers the replay below.                                                                                  |
+| frame → app | `{ type: "fpl-auth-signout" }` or `{ type: "fpl-signout" }`             | Clears the stored sign-in. **FPL Lad don't send this yet** — handled so it works the day they do.                                                                       |
+| app → frame | the stored `fpl-auth-complete` payload, exactly as received             | Posted to the frame's exact origin (never `"*"`) on its first `fpl-…` message, and ~1.5 s after the iframe's `load` if it hasn't messaged yet (at most twice per load). |
+
+- **Accepted only from the panel's own frame**: `event.source` must be the iframe's `contentWindow`, and
+  `event.origin` must be the fallback URL's origin (`https://www.fpl-lad.com`) or its apex/www twin
+  (`https://fpl-lad.com`) — https on an fpl-lad.com host only. Messages from the top page, another frame or another
+  origin are ignored. If an admin points the fallback URL at another site, the bridge is off.
+- **Shape and size**: `user.id` a non-empty string (≤ 200 chars), `embedToken` a string if present, `cookies` at
+  most 20 `{ name, value }` strings if present, the whole message under 32 KB as JSON. Anything else is dropped.
+- **Storage**: `localStorage["fant.alfie.auth"]` = `{ payload, savedAt }` on the fan's device. It is never sent to our
+  API or anywhere else — only back into FPL Lad's frame. A corrupt entry is deleted on read.
+- **Clearing**: on signing out of the app, deleting the account, or the session ending (`lib/session.tsx` →
+  `clearFplLadAuth()`), so a shared phone's next user doesn't open someone else's Alfie; and on FPL Lad's (future)
+  sign-out message.
+- The script path's returning-visitor token (`fant.alfie.visitor`, above) is separate and unchanged.
+
+Gaps in FPL Lad's side of the protocol (to raise with them):
+
+- **No sign-out message.** When a fan signs out inside Alfie we keep the old payload and replay it on the next open,
+  signing them back in. Please post `{ type: "fpl-auth-signout" }` to the parent on sign-out (already handled here).
+- **No "ready" message.** We infer readiness from the first `fpl-…` message (or a 1.5 s timer after `load`). A
+  `{ type: "fpl-ready" }` posted once their listener is attached would make the hand-back exact.
+- **Token refresh isn't reported.** If their session tokens rotate after sign-in, we only hold the first ones; a fresh
+  `fpl-auth-complete` (or an `fpl-auth-refresh`) after each refresh would keep the stored copy valid.
+- **Target origin `"*"`.** They post the session (cookies + embed token) to the parent with `"*"`; any site allowed
+  by their `frame-ancestors` would receive it. Posting to the known parent origin (from a `partner` allow-list or
+  `document.referrer`) would be safer.
+- **Our sign-out can't sign the frame out.** Clearing our copy stops the replay, but a session still alive in the
+  frame's own storage (e.g. in a Safari tab context) stays until they expire it; a parent → frame sign-out message
+  would close that.
 
 The launcher and the panel header use FPL Lad's round badge (`apps/web/public/brand/fpl-lad-badge.png`, supplied by
 FPL Lad); the wide wordmark (`fpl-lad.png`) stays on the Captain Battle tag and share posters.
