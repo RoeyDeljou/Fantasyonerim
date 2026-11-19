@@ -83,6 +83,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const previousMe = qc.getQueryData<Me>(qk.me);
       if (auth.user.role === 'admin' && previous && previous !== auth.token && previousMe?.role !== 'admin') {
         await tokenStore.set(previous, 'fan');
+        clearFplLadAuth(); // the fan's FPL Lad sign-in must not be replayed into the admin's Alfie
       }
       await tokenStore.set(auth.token);
       setGuest(false);

@@ -3352,10 +3352,21 @@ async function journeys(browser) {
     async () => {
       await page.goto(`${WEB}/admin/login/`);
       await page.getByText('יישמר בצד').waitFor();
+      // The fan's FPL Lad sign-in (Alfie host bridge) must not carry over into the admin's session.
+      await page.evaluate(() =>
+        globalThis.localStorage.setItem(
+          'fant.alfie.auth',
+          JSON.stringify({ payload: { type: 'fpl-auth-complete', user: { id: 'u-fan' } }, savedAt: 1 }),
+        ),
+      );
       await page.getByLabel('שם משתמש').fill(ADMIN.username);
       await page.getByLabel('סיסמה').fill(ADMIN.password);
       await page.getByRole('button', { name: 'כניסה' }).click();
       await page.waitForURL('**/admin/');
+      assert(
+        (await page.evaluate(() => globalThis.localStorage.getItem('fant.alfie.auth'))) === null,
+        "the fan's FPL Lad sign-in is cleared when an admin signs in on their device",
+      );
       await page.getByRole('button', { name: 'יציאה מהניהול' }).click();
       await page.waitForURL('**/news/');
       await page.goto(`${WEB}/profile/`);
@@ -6386,18 +6397,25 @@ const FPL_LAD_PAGE = `<!doctype html><meta name="viewport" content="width=device
   <script>
     document.getElementById('q').textContent = location.pathname + location.search;
     // FPL Lad's host bridge, as their live /chat bundle does it (docs/INTEGRATIONS.md §7, "Staying signed in"):
-    // sign-in -> post fpl-auth-complete to the parent; restore from an fpl-auth-complete the parent posts back.
-    window.addEventListener('message', function (e) {
-      if (e.source !== window.parent || !e.data || e.data.type !== 'fpl-auth-complete') return;
-      var d = document.createElement('div');
-      d.setAttribute('data-replayed', '');
-      d.textContent = JSON.stringify(e.data);
-      document.getElementById('received').appendChild(d);
-    });
+    // sign-in -> post fpl-auth-complete to the parent; restore from an fpl-auth-complete the parent posts back. Like
+    // the real page it posts NOTHING else to the parent, and its listener attaches a while after load (~300 ms;
+    // ?mockLate=1 = 2.5 s, a slow iPhone cold start). ?mockReady=1 = posts the fpl-ready we asked FPL Lad for once
+    // the listener is attached. Each restore is recorded with its time since page start (data-at, ms).
+    var params = new URLSearchParams(location.search);
+    setTimeout(function () {
+      window.addEventListener('message', function (e) {
+        if (e.source !== window.parent || !e.data || e.data.type !== 'fpl-auth-complete') return;
+        var d = document.createElement('div');
+        d.setAttribute('data-replayed', '');
+        d.setAttribute('data-at', String(Math.round(performance.now())));
+        d.textContent = JSON.stringify(e.data);
+        document.getElementById('received').appendChild(d);
+      });
+      if (params.get('mockReady') === '1' && window.parent !== window) window.parent.postMessage({ type: 'fpl-ready' }, '*');
+    }, params.get('mockLate') === '1' ? 2500 : 300);
     var auth = { type: 'fpl-auth-complete', user: { id: 'u-e2e-1', email: 'fan@example.com' }, embedToken: 'et-e2e-1',
       cookies: [{ name: 'sb-e2e-auth-token', value: 'c-e2e-1' }] };
     document.getElementById('post-auth').onclick = function () { window.parent.postMessage(auth, '*'); };
-    if (window.parent !== window) window.parent.postMessage({ type: 'fpl-render-height', height: 600 }, '*');
     // A frame that is NOT the panel's own (another origin, or an extra fpl-lad.com frame) posting a sign-in.
     if (/[?&]autopost=1/.test(location.search))
       window.parent.postMessage({ type: 'fpl-auth-complete', user: { id: 'u-intruder' }, embedToken: 'x', cookies: [] }, '*');
@@ -6788,7 +6806,7 @@ async function alfieJourneys(browser, userPage) {
           typeof saved.savedAt === 'number',
         `stored payload: ${JSON.stringify(saved)}`,
       );
-      await p.waitForTimeout(500);
+      await p.waitForTimeout(2000); // past the +4 s timer: a fresh sign-in stops that load's hand-backs
       assert((await frame.locator('[data-replayed]').count()) === 0, 'a fresh sign-in is not echoed back');
       await panel.getByTestId('alfie-close').click();
 
@@ -6805,9 +6823,14 @@ async function alfieJourneys(browser, userPage) {
           got.cookies[0].name === 'sb-e2e-auth-token',
         `replayed: ${JSON.stringify(got)}`,
       );
-      await p.waitForTimeout(2500);
+      const at = Number(await replayed.getAttribute('data-at'));
+      assert(
+        at >= 1000 && at < 3500,
+        `first hand-back is the +1.5 s timer (the mock never messages us): ${at} ms`,
+      );
+      await p.waitForTimeout(3500);
       const n = await frame.locator('[data-replayed]').count();
-      assert(n >= 1 && n <= 2, `replayed at most twice per load: ${n}`);
+      assert(n === 2, `handed back on the +1.5 s and +4 s timers: ${n}`);
       await shot(p, 'panel-bridge-replayed');
       await panel.getByTestId('alfie-close').click();
 
@@ -6821,11 +6844,60 @@ async function alfieJourneys(browser, userPage) {
       await p.evaluate((t) => globalThis.localStorage.setItem('fant.token', t), fanToken);
       await p.goto(`${WEB}/news/`);
       await openPanel();
-      await p.waitForTimeout(2500);
+      await p.waitForTimeout(4800);
       assert((await frame.locator('[data-replayed]').count()) === 0, 'nothing replayed after sign-out');
       await ctx.close();
     },
   );
+
+  for (const variant of ['late', 'late+ready'])
+    await step(
+      `Ask Alfie: stored FPL Lad sign-in still restores when their listener attaches late (2.5 s, ${variant})`,
+      async () => {
+        const ready = variant === 'late+ready';
+        const { ctx } = await alfieContext(browser, {
+          assistant: alfieConfig({
+            fallbackUrl: `https://www.fpl-lad.com/chat?mockLate=1${ready ? '&mockReady=1' : ''}`,
+          }),
+          token: fanToken,
+        });
+        const saved = {
+          payload: {
+            type: 'fpl-auth-complete',
+            user: { id: 'u-late' },
+            embedToken: 'et-late',
+            cookies: [{ name: 'sb-e2e-auth-token', value: 'c-late' }],
+          },
+          savedAt: 1,
+        };
+        await ctx.addInitScript((v) => {
+          if (globalThis.location.origin !== 'https://www.fpl-lad.com')
+            globalThis.localStorage.setItem('fant.alfie.auth', v);
+        }, JSON.stringify(saved));
+        const p = await ctx.newPage();
+        watch(p, `alfie-bridge-${variant}`);
+        await p.goto(`${WEB}/news/`);
+        await launcher(p).waitFor();
+        await launcher(p).click();
+        const frame = p.frameLocator('[data-testid=alfie-frame]');
+        await frame.locator('[data-alfie-mock]').waitFor();
+        const replayed = frame.locator('[data-replayed]').first();
+        await replayed.waitFor({ timeout: 8000 });
+        const got = JSON.parse(await replayed.textContent());
+        assert(got.user.id === 'u-late' && got.embedToken === 'et-late', `restored: ${JSON.stringify(got)}`);
+        const at = Number(await replayed.getAttribute('data-at'));
+        if (ready)
+          assert(
+            at >= 2400 && at < 3800,
+            `handed back on fpl-ready (~2.5 s), before the +4 s timer: ${at} ms`,
+          );
+        else assert(at >= 3500, `the +1.5 s post was missed; the +4 s one restored: ${at} ms`);
+        await p.waitForTimeout(2500);
+        const n = await frame.locator('[data-replayed]').count();
+        assert(n === (ready ? 2 : 1), `${variant}: received ${n} (max 3 posts per load)`);
+        await ctx.close();
+      },
+    );
 
   await step(
     'Ask Alfie: a frame that never loads gets the "Not loading? Open in fpl-lad.com" line',

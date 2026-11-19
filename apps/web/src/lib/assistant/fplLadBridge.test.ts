@@ -5,8 +5,10 @@ import {
   FplLadBridge,
   isSignOutMessage,
   LIMITS,
+  MAX_REPLAYS_PER_LOAD,
   parseAuthComplete,
   readStoredAuth,
+  REPLAY_DELAYS_MS,
   saveAuth,
 } from './fplLadBridge';
 import type { AuthStorage, FrameWindow } from './fplLadBridge';
@@ -191,13 +193,32 @@ describe('stored auth', () => {
 });
 
 describe('FplLadBridge', () => {
+  /** A frame load followed by both timers, as the hook schedules them. */
+  const loadAndTimers = (t: ReturnType<typeof setup>) => {
+    t.bridge.onFrameLoad();
+    for (const _ of REPLAY_DELAYS_MS) t.bridge.onReplayTimer();
+  };
+
+  it('schedules hand-backs after +1.5 s and +4 s (a slow iPhone cold start), at most 3 per load', () => {
+    expect(REPLAY_DELAYS_MS).toEqual([1500, 4000]);
+    expect(MAX_REPLAYS_PER_LOAD).toBe(3);
+  });
+
   it('stores a valid fpl-auth-complete from the frame, with savedAt, and does not echo it back', () => {
     const t = setup();
     expect(t.fromFrame(auth())).toBe(true);
     expect(JSON.parse(t.s.value!)).toEqual({ payload: auth(), savedAt: 1234 });
-    t.bridge.onFrameLoad();
-    t.bridge.onLoadTimeout();
+    loadAndTimers(t);
     expect(t.frame.posted).toEqual([]);
+  });
+
+  it('a fresh sign-in mid-load stops the remaining timer hand-backs', () => {
+    const t = setup({ payload: auth(), savedAt: 1 });
+    t.bridge.onFrameLoad();
+    t.bridge.onReplayTimer();
+    t.fromFrame(auth({ user: { id: 'u-2' } }));
+    t.bridge.onReplayTimer();
+    expect(t.frame.posted).toHaveLength(1);
   });
 
   it('accepts the apex twin of the fallback origin', () => {
@@ -220,71 +241,82 @@ describe('FplLadBridge', () => {
     expect(t.frame.posted).toEqual([]);
   });
 
-  it('ignores everything once the frame is gone', () => {
-    const t = setup();
+  it('ignores everything once the frame is gone, and posts nothing to it', () => {
+    const t = setup({ payload: auth(), savedAt: 1 });
     t.unmount();
-    expect(t.fromFrame(auth())).toBe(false);
-    expect(t.s.value).toBeNull();
+    expect(t.fromFrame({ type: 'fpl-auth-signout' })).toBe(false);
+    loadAndTimers(t);
+    expect(t.frame.posted).toEqual([]);
+    expect(t.s.value).not.toBeNull();
   });
 
-  it('replays the stored payload on the first message after load, to the exact origin, once', () => {
+  it('hands the stored payload back on each timer (the real page never messages first), to the exact origin', () => {
     const t = setup({ payload: auth(), savedAt: 1 });
-    t.bridge.onFrameLoad();
-    t.fromFrame({ type: 'fpl-render-height', height: 600 });
-    t.fromFrame({ type: 'fpl-render-height', height: 610 });
-    t.bridge.onLoadTimeout();
-    expect(t.frame.posted).toEqual([{ message: auth(), target: ORIGIN }]);
+    loadAndTimers(t);
+    expect(t.frame.posted).toEqual([
+      { message: auth(), target: ORIGIN },
+      { message: auth(), target: ORIGIN },
+    ]);
   });
 
-  it('replays to the origin the frame actually messaged from (apex vs www)', () => {
+  it('also hands back on the first fpl-* message (e.g. a future fpl-ready), once per load, within the cap', () => {
     const t = setup({ payload: auth(), savedAt: 1 });
     t.bridge.onFrameLoad();
-    t.fromFrame({ type: 'fpl-render-height' }, 'https://fpl-lad.com');
-    expect(t.frame.posted).toEqual([{ message: auth(), target: 'https://fpl-lad.com' }]);
+    t.fromFrame({ type: 'fpl-ready' });
+    t.fromFrame({ type: 'fpl-ready' });
+    t.bridge.onReplayTimer();
+    t.bridge.onReplayTimer();
+    t.bridge.onReplayTimer(); // a stray extra timer: over the cap
+    expect(t.frame.posted).toHaveLength(MAX_REPLAYS_PER_LOAD);
   });
 
-  it('a message before the first load event counts (their page can post before load)', () => {
+  it('hands back to the origin the frame actually messaged from (apex vs www)', () => {
     const t = setup({ payload: auth(), savedAt: 1 });
-    t.fromFrame({ type: 'fpl-render-height' });
     t.bridge.onFrameLoad();
-    t.bridge.onLoadTimeout();
-    expect(t.frame.posted).toHaveLength(1);
+    t.fromFrame({ type: 'fpl-ready' }, 'https://fpl-lad.com');
+    t.bridge.onReplayTimer();
+    expect(t.frame.posted.map((p) => p.target)).toEqual(['https://fpl-lad.com', 'https://fpl-lad.com']);
   });
 
-  it('falls back to a replay after load when the frame stays silent, then once more on its first message', () => {
+  it('a message before the first load event still counts as the one message hand-back', () => {
     const t = setup({ payload: auth(), savedAt: 1 });
+    t.fromFrame({ type: 'fpl-ready' });
     t.bridge.onFrameLoad();
-    t.bridge.onLoadTimeout();
-    t.bridge.onLoadTimeout();
-    expect(t.frame.posted).toEqual([{ message: auth(), target: ORIGIN }]);
-    t.fromFrame({ type: 'fpl-render-height' });
-    t.fromFrame({ type: 'fpl-render-height' });
-    expect(t.frame.posted).toHaveLength(2);
+    t.fromFrame({ type: 'fpl-ready' });
+    for (const _ of REPLAY_DELAYS_MS) t.bridge.onReplayTimer();
+    expect(t.frame.posted).toHaveLength(3);
   });
 
   it('starts over on a later load (a new page in the frame)', () => {
     const t = setup({ payload: auth(), savedAt: 1 });
     t.bridge.onFrameLoad();
-    t.fromFrame({ type: 'fpl-render-height' }, 'https://fpl-lad.com');
+    t.fromFrame({ type: 'fpl-ready' }, 'https://fpl-lad.com');
+    t.bridge.onReplayTimer();
+    t.bridge.onReplayTimer();
+    t.bridge.onReplayTimer();
+    expect(t.frame.posted).toHaveLength(3);
     t.bridge.onFrameLoad();
-    t.bridge.onLoadTimeout();
-    expect(t.frame.posted.map((p) => p.target)).toEqual(['https://fpl-lad.com', ORIGIN]);
+    t.bridge.onReplayTimer();
+    expect(t.frame.posted.map((p) => p.target)).toEqual([
+      'https://fpl-lad.com',
+      'https://fpl-lad.com',
+      'https://fpl-lad.com',
+      ORIGIN,
+    ]);
   });
 
   it('posts nothing when nothing is stored', () => {
     const t = setup();
-    t.bridge.onFrameLoad();
-    t.bridge.onLoadTimeout();
-    t.fromFrame({ type: 'fpl-render-height' });
+    loadAndTimers(t);
+    t.fromFrame({ type: 'fpl-ready' });
     expect(t.frame.posted).toEqual([]);
   });
 
-  it('a newer sign-in replaces the stored one and is what gets replayed next time', () => {
+  it('a newer sign-in replaces the stored one and is what gets handed back next time', () => {
     const t = setup({ payload: auth(), savedAt: 1 });
     t.fromFrame(auth({ user: { id: 'u-2' } }));
     const next = setup(JSON.parse(t.s.value!));
-    next.bridge.onFrameLoad();
-    next.bridge.onLoadTimeout();
+    loadAndTimers(next);
     expect(next.frame.posted[0]?.message).toEqual(auth({ user: { id: 'u-2' } }));
   });
 
@@ -294,7 +326,7 @@ describe('FplLadBridge', () => {
     expect(t.s.value).not.toBeNull();
     expect(t.fromFrame({ type: 'fpl-auth-signout' })).toBe(true);
     expect(t.s.value).toBeNull();
-    t.bridge.onLoadTimeout();
+    t.bridge.onReplayTimer();
     expect(t.frame.posted).toEqual([]);
   });
 
@@ -303,7 +335,7 @@ describe('FplLadBridge', () => {
     const frame = fakeFrame();
     const b = new FplLadBridge({ origin: ORIGIN, frame: () => frame.win, storage, now: () => 0 });
     b.onFrameLoad();
-    b.onLoadTimeout();
+    b.onReplayTimer();
     expect(frame.posted).toEqual([]);
     expect(s.value).toBeNull();
   });

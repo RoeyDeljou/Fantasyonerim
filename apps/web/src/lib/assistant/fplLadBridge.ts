@@ -27,8 +27,15 @@ const SIGN_OUT_TYPES: readonly string[] = ['fpl-auth-signout', 'fpl-signout'];
 /** Size limits for a payload we are willing to store and replay. */
 export const LIMITS = { totalChars: 32 * 1024, cookies: 20, userIdChars: 200 } as const;
 
-/** Wait this long after the frame's `load` for a first message before replaying anyway (their hydration is later). */
-export const REPLAY_FALLBACK_MS = 1_500;
+/**
+ * When to hand the stored sign-in back after the frame's `load`. FPL Lad's /chat attaches its message listener some
+ * time after `load` (measured ~70–610 ms with CPU throttling ×1–×6) and posts nothing to say it is ready, so we post
+ * on timers: one comfortably after a normal start, one more for a slow iPhone cold start.
+ */
+export const REPLAY_DELAYS_MS: readonly number[] = [1_500, 4_000];
+
+/** At most this many hand-backs per frame load (the timers + one on a message from the frame). */
+export const MAX_REPLAYS_PER_LOAD = 3;
 
 export interface FplLadCookie {
   name: string;
@@ -184,16 +191,18 @@ export interface BridgeDeps {
 }
 
 /**
- * The bridge for one panel iframe. Readiness: replay on the first accepted message from the frame after each `load`
- * (their page is hydrated then), and as a fallback `REPLAY_FALLBACK_MS` after `load` if none came — so at most
- * twice per load (fallback, then once more on the first message). Their handler tolerates a repeat.
+ * The bridge for one panel iframe. Readiness is timer-based today: the host calls `onReplayTimer()` at each of
+ * `REPLAY_DELAYS_MS` after every `load`. If the frame ever messages us (any `fpl-…`, e.g. a future `fpl-ready`), the
+ * first such message per load triggers a hand-back too. At most `MAX_REPLAYS_PER_LOAD` posts per load; their handler
+ * tolerates repeats. A fresh sign-in or a sign-out from the frame stops the hand-backs for that load.
  */
 export class FplLadBridge {
   /** The frame's actual origin, once it has messaged us (www vs apex). */
   private frameOrigin: string | null = null;
-  private sentAfterMessage = false;
-  private sentBlind = false;
-  private heard = false;
+  private posts = 0;
+  private repliedToMessage = false;
+  /** The frame just signed in or out: nothing (more) to hand back for this load. */
+  private done = false;
   private loads = 0;
 
   constructor(private readonly deps: BridgeDeps) {}
@@ -208,46 +217,45 @@ export class FplLadBridge {
     const payload = type === AUTH_COMPLETE ? parseAuthComplete(e.data) : null;
     if (type === AUTH_COMPLETE && !payload) return false; // malformed / oversized: ignored entirely
     this.frameOrigin = e.origin;
-    this.heard = true;
     if (payload) {
       saveAuth(this.deps.storage, payload, this.deps.now());
-      this.sentAfterMessage = true; // they just signed in: no need to hand it back
+      this.done = true; // they just signed in: no need to hand it back
     } else if (isSignOutMessage(e.data)) {
       this.deps.storage.remove();
-      this.sentAfterMessage = true; // nothing to give back
-    } else if (!this.sentAfterMessage) {
-      this.sentAfterMessage = true;
+      this.done = true;
+    } else if (!this.repliedToMessage) {
+      this.repliedToMessage = true;
       this.replay();
     }
     return true;
   }
 
   /**
-   * The iframe fired `load`. Their page can message us before its own `load` fires, so the first load keeps what
-   * was already heard; a later load is a new page in the frame and starts over.
+   * The iframe fired `load`. Their page could message us before its own `load` fires, so the first load keeps what
+   * already happened; a later load is a new page in the frame and starts over.
    */
   onFrameLoad(): void {
     if (this.loads++ === 0) return;
-    this.sentAfterMessage = false;
-    this.sentBlind = false;
-    this.heard = false;
+    this.posts = 0;
+    this.repliedToMessage = false;
+    this.done = false;
     this.frameOrigin = null;
   }
 
-  /** `REPLAY_FALLBACK_MS` after `load`: replay if the frame hasn't messaged us yet. */
-  onLoadTimeout(): void {
-    if (this.heard || this.sentAfterMessage || this.sentBlind) return;
-    this.sentBlind = true;
+  /** One of the `REPLAY_DELAYS_MS` timers after `load` fired. */
+  onReplayTimer(): void {
     this.replay();
   }
 
-  /** Posts the stored sign-in into the frame, to its exact origin. False when there is nothing to send. */
+  /** Posts the stored sign-in into the frame, to its exact origin. False when nothing was sent. */
   private replay(): boolean {
+    if (this.done || this.posts >= MAX_REPLAYS_PER_LOAD) return false;
     const stored = readStoredAuth(this.deps.storage);
     const frame = this.deps.frame();
     if (!stored || !frame) return false;
     try {
       frame.postMessage(stored.payload, this.frameOrigin ?? this.deps.origin);
+      this.posts++;
       return true;
     } catch {
       return false;

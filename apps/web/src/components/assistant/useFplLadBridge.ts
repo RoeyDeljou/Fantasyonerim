@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
-import {
-  bridgeOrigin,
-  FplLadBridge,
-  prefsAuthStorage,
-  REPLAY_FALLBACK_MS,
-} from '@/lib/assistant/fplLadBridge';
+import { bridgeOrigin, FplLadBridge, prefsAuthStorage, REPLAY_DELAYS_MS } from '@/lib/assistant/fplLadBridge';
+
+function clearTimers(ids: number[]): void {
+  for (const id of ids) window.clearTimeout(id);
+  ids.length = 0;
+}
 
 /**
  * Wires the FPL Lad /chat host bridge (lib/assistant/fplLadBridge.ts) to the panel's iframe while it is mounted:
@@ -20,7 +20,7 @@ export function useFplLadBridge(
   active: boolean,
 ): () => void {
   const bridge = useRef<FplLadBridge | null>(null);
-  const timer = useRef<number | undefined>(undefined);
+  const timers = useRef<number[]>([]);
   const origin = bridgeOrigin(fallbackUrl);
 
   useEffect(() => {
@@ -38,7 +38,7 @@ export function useFplLadBridge(
     window.addEventListener('message', onMessage);
     return () => {
       window.removeEventListener('message', onMessage);
-      window.clearTimeout(timer.current);
+      clearTimers(timers.current);
       if (bridge.current === b) bridge.current = null;
     };
   }, [active, origin, frame]);
@@ -47,7 +47,7 @@ export function useFplLadBridge(
     const b = bridge.current;
     if (!b) return;
     b.onFrameLoad();
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => b.onLoadTimeout(), REPLAY_FALLBACK_MS);
+    clearTimers(timers.current);
+    timers.current = REPLAY_DELAYS_MS.map((ms) => window.setTimeout(() => b.onReplayTimer(), ms));
   }, []);
 }

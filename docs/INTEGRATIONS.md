@@ -271,12 +271,21 @@ their sign-in in its own (first-party) storage and hands it back to the frame. C
 `apps/web/src/lib/assistant/fplLadBridge.ts` (the only file that knows this protocol, unit-tested in
 `fplLadBridge.test.ts`), wired by `components/assistant/useFplLadBridge.ts` while the panel's iframe exists.
 
-| Direction   | Message                                                                 | What happens                                                                                                                                                            |
-| ----------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| frame → app | `{ type: "fpl-auth-complete", user: { id, … }, embedToken?, cookies? }` | Validated, then stored as received with a `savedAt` timestamp. Not echoed back.                                                                                         |
-| frame → app | any other `fpl-…` message (e.g. `fpl-render-height`)                    | Proof their page is up: the first one after each frame load triggers the replay below.                                                                                  |
-| frame → app | `{ type: "fpl-auth-signout" }` or `{ type: "fpl-signout" }`             | Clears the stored sign-in. **FPL Lad don't send this yet** — handled so it works the day they do.                                                                       |
-| app → frame | the stored `fpl-auth-complete` payload, exactly as received             | Posted to the frame's exact origin (never `"*"`) on its first `fpl-…` message, and ~1.5 s after the iframe's `load` if it hasn't messaged yet (at most twice per load). |
+| Direction   | Message                                                                 | What happens                                                                                      |
+| ----------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| frame → app | `{ type: "fpl-auth-complete", user: { id, … }, embedToken?, cookies? }` | Validated, then stored as received with a `savedAt` timestamp. Not echoed back.                   |
+| frame → app | `{ type: "fpl-auth-signout" }` or `{ type: "fpl-signout" }`             | Clears the stored sign-in. **FPL Lad don't send this yet** — handled so it works the day they do. |
+| frame → app | any other `fpl-…` message (e.g. a future `fpl-ready`)                   | The first one per frame load triggers a hand-back. **Their page sends none today.**               |
+| app → frame | the stored `fpl-auth-complete` payload, exactly as received             | Posted to the frame's exact origin (never `"*"`) — see "When the sign-in is handed back" below.   |
+
+**When the sign-in is handed back.** Today this runs on timers. FPL Lad's live `/chat` posts nothing to its parent
+except `fpl-auth-complete`; its other messages (`fpl-render-height`, `fpl-popup-auth-started`, `fpl-podcast-dismissed`)
+stay inside their own page. So we can't tell when their listener is attached. We measured it at ~70–610 ms after the
+iframe's `load` (CPU throttling ×1–×6), so the app posts the stored payload **1.5 s and 4 s after every `load`** (the
+second one covers a slow iPhone cold start). It also posts once on the first `fpl-…` message from the frame, if one ever
+arrives. That is at most 3 posts per frame load; their handler tolerates repeats. A fresh `fpl-auth-complete` or a
+sign-out message from the frame cancels the rest for that load. If their listener attaches later than 4 s, the sign-in
+isn't restored on that open: hence the `fpl-ready` request below.
 
 - **Accepted only from the panel's own frame**: `event.source` must be the iframe's `contentWindow`, and
   `event.origin` must be the fallback URL's origin (`https://www.fpl-lad.com`) or its apex/www twin
@@ -287,16 +296,18 @@ their sign-in in its own (first-party) storage and hands it back to the frame. C
 - **Storage**: `localStorage["fant.alfie.auth"]` = `{ payload, savedAt }` on the fan's device. It is never sent to our
   API or anywhere else — only back into FPL Lad's frame. A corrupt entry is deleted on read.
 - **Clearing**: on signing out of the app, deleting the account, or the session ending (`lib/session.tsx` →
-  `clearFplLadAuth()`), so a shared phone's next user doesn't open someone else's Alfie; and on FPL Lad's (future)
-  sign-out message.
+  `clearFplLadAuth()`), and when an admin signs in on a fan's device (the fan's session is put aside). That way a
+  shared phone's next user doesn't open someone else's Alfie. Also cleared on FPL Lad's (future) sign-out message.
 - The script path's returning-visitor token (`fant.alfie.visitor`, above) is separate and unchanged.
 
 Gaps in FPL Lad's side of the protocol (to raise with them):
 
 - **No sign-out message.** When a fan signs out inside Alfie we keep the old payload and replay it on the next open,
   signing them back in. Please post `{ type: "fpl-auth-signout" }` to the parent on sign-out (already handled here).
-- **No "ready" message.** We infer readiness from the first `fpl-…` message (or a 1.5 s timer after `load`). A
-  `{ type: "fpl-ready" }` posted once their listener is attached would make the hand-back exact.
+- **No "ready" message.** Their page posts nothing to the parent until a sign-in completes, so we hand the sign-in back
+  on timers (1.5 s and 4 s after `load`). A slow device whose listener attaches after 4 s misses it. Please post
+  `{ type: "fpl-ready" }` to the parent once the `message` listener is attached; we already hand back on it straight
+  away.
 - **Token refresh isn't reported.** If their session tokens rotate after sign-in, we only hold the first ones; a fresh
   `fpl-auth-complete` (or an `fpl-auth-refresh`) after each refresh would keep the stored copy valid.
 - **Target origin `"*"`.** They post the session (cookies + embed token) to the parent with `"*"`; any site allowed
